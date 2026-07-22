@@ -1,0 +1,436 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import type { ChatMessage, Thread } from "@/lib/types";
+import {
+  applyThreadOps,
+  clearActiveSession,
+  restoreThreads,
+  snapshotThreads,
+  useThreads,
+  writeActiveSession,
+  type ActiveSession,
+  type ThreadOp,
+} from "@/lib/store";
+import QuickCapture from "./QuickCapture";
+import ThreadRow from "./ThreadRow";
+
+export default function Session({
+  durationMin,
+  name,
+  initial,
+  onEnd,
+}: {
+  durationMin: number;
+  name?: string;
+  initial?: ActiveSession | null;
+  onEnd: (transcript: ChatMessage[]) => void;
+}) {
+  const { threads, add, patch, remove, ready } = useThreads();
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    initial?.messages ?? [],
+  );
+  const [input, setInput] = useState("");
+  const [streaming, setStreaming] = useState(false);
+  const [error, setError] = useState("");
+  const [elapsed, setElapsed] = useState(initial?.elapsedSec ?? 0);
+  const [running, setRunning] = useState(true);
+  const [panel, setPanel] = useState<"none" | "capture" | "threads">("none");
+  const [note, setNote] = useState("");
+  const [undoSnapshot, setUndoSnapshot] = useState<Thread[] | null>(null);
+
+  const elapsedRef = useRef(initial?.elapsedSec ?? 0);
+  const startedAtRef = useRef(initial?.startedAt ?? new Date().toISOString());
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const started = useRef(false);
+  const closed = useRef(false);
+
+  const totalSec = durationMin * 60;
+  const remaining = totalSec - elapsed;
+  const overtime = remaining < 0;
+
+  // Minuteur
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => {
+      elapsedRef.current += 1;
+      setElapsed(elapsedRef.current);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [running]);
+
+  // Ouverture — ou reprise d'une séance interrompue par un refresh.
+  // On attend que les fils soient chargés (ready) : sinon le guide démarre
+  // avec une liste vide et croit à tort qu'il n'y a rien à faire.
+  useEffect(() => {
+    if (started.current || !ready) return;
+    started.current = true;
+    const prior = (initial?.messages ?? []).filter((m) => m.content.trim());
+    if (prior.length === 0) {
+      void runTurn([]); // nouvelle séance : le guide t'accueille
+    } else if (prior[prior.length - 1].role === "user") {
+      void runTurn(prior); // le refresh a coupé la réponse du guide : on la relance
+    }
+    // sinon : on a déjà la dernière réponse du guide, on attend simplement l'utilisateur
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  // Sauvegarde continue : une séance survit à un refresh / une fermeture d'onglet
+  useEffect(() => {
+    writeActiveSession({
+      durationMin,
+      elapsedSec: elapsedRef.current,
+      messages,
+      startedAt: startedAtRef.current,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, elapsed]);
+
+  // Auto-défilement
+  useEffect(() => {
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [messages, streaming]);
+
+  // Clôture automatique quand le temps est écoulé : le guide reprend la parole
+  // tout seul pour rassurer et donner la permission de s'arrêter.
+  useEffect(() => {
+    if (closed.current || streaming) return;
+    if (remaining > 0) return;
+    const convo = messages.filter((m) => m.content.trim().length > 0);
+    if (convo.length === 0) return;
+    closed.current = true;
+    setRunning(false);
+    void runTurn(convo, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remaining, streaming, messages]);
+
+  async function runTurn(convo: ChatMessage[], ending = false) {
+    setError("");
+    setStreaming(true);
+    setMessages([...convo, { role: "assistant", content: "" }]);
+
+    try {
+      const res = await fetch("/api/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: convo,
+          threads: threadsRef.current,
+          meta: {
+            durationMin,
+            elapsedSec: elapsedRef.current,
+            remainingSec: totalSec - elapsedRef.current,
+            name,
+            ending,
+          },
+        }),
+      });
+
+      if (!res.ok || !res.body) {
+        const j = await res.json().catch(() => ({}));
+        setError(j.error || "Impossible de joindre le guide.");
+        setMessages(convo);
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let acc = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        acc += decoder.decode(value, { stream: true });
+        setMessages([...convo, { role: "assistant", content: acc }]);
+      }
+
+      // Après un échange normal (pas l'ouverture ni la clôture), l'IA relit
+      // ce qui vient d'être dit et met à jour les trucs si c'est justifié.
+      const lastWasUser = convo[convo.length - 1]?.role === "user";
+      if (!ending && lastWasUser) {
+        void reconcile([...convo, { role: "assistant", content: acc }]);
+      }
+    } catch {
+      setError("Connexion interrompue.");
+      setMessages(convo);
+    } finally {
+      setStreaming(false);
+    }
+  }
+
+  async function reconcile(msgs: ChatMessage[]) {
+    try {
+      const res = await fetch("/api/reconcile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threads: threadsRef.current, messages: msgs }),
+      });
+      if (!res.ok) return;
+      const j = (await res.json()) as { updates?: ThreadOp[]; note?: string };
+      if (Array.isArray(j.updates) && j.updates.length > 0) {
+        const before = snapshotThreads(); // pour pouvoir tout annuler
+        applyThreadOps(j.updates);
+        setUndoSnapshot(before);
+        setNote(j.note || "trucs mis à jour");
+        window.setTimeout(() => {
+          setNote("");
+          setUndoSnapshot(null);
+        }, 10000);
+      }
+    } catch {
+      // silencieux : la mise à jour des trucs ne doit jamais casser la séance
+    }
+  }
+
+  function send() {
+    const t = input.trim();
+    if (!t || streaming) return;
+    const convo: ChatMessage[] = [
+      ...messages.filter((m) => m.content.trim().length > 0),
+      { role: "user", content: t },
+    ];
+    setInput("");
+    void runTurn(convo);
+  }
+
+  const openThreads = threads.filter((t) => t.status === "open");
+
+  return (
+    <div className="fixed inset-0 z-40 flex flex-col bg-paper">
+      {/* Barre du haut : minuteur + contrôles */}
+      <header className="border-b border-line bg-paper/80 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-2xl items-center gap-4 px-5 py-3">
+          <div className="flex items-baseline gap-2">
+            <span
+              className={`font-display text-2xl font-semibold tabular-nums ${
+                overtime ? "text-amber" : "text-ink"
+              }`}
+            >
+              {fmt(Math.abs(remaining))}
+            </span>
+            <span className="text-xs text-muted">
+              {overtime ? "au-delà" : `sur ${durationMin} min`}
+            </span>
+          </div>
+          <div className="flex-1">
+            <div className="h-1.5 overflow-hidden rounded-full bg-sink">
+              <div
+                className={`h-full rounded-full transition-all duration-1000 ${
+                  overtime ? "bg-amber" : "bg-teal"
+                }`}
+                style={{
+                  width: `${Math.min(100, (elapsed / totalSec) * 100)}%`,
+                }}
+              />
+            </div>
+          </div>
+          <button
+            onClick={() => setRunning((r) => !r)}
+            className="rounded-lg px-2 py-1 text-sm text-muted transition hover:text-ink"
+          >
+            {running ? "Pause" : "Reprendre"}
+          </button>
+          <button
+            onClick={() => {
+              clearActiveSession();
+              onEnd(messages.filter((m) => m.content.trim()));
+            }}
+            className="rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-paper transition hover:opacity-90"
+          >
+            Terminer
+          </button>
+        </div>
+      </header>
+
+      {/* Fil de discussion */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-5 py-8">
+          {messages.map((m, i) =>
+            m.role === "assistant" ? (
+              <div key={i} className="animate-rise">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-teal" />
+                  <span className="text-xs font-medium tracking-wide text-teal">
+                    Élan
+                  </span>
+                </div>
+                {m.content ? (
+                  <p className="whitespace-pre-wrap text-[17px] leading-relaxed text-ink">
+                    {m.content}
+                  </p>
+                ) : (
+                  streaming && <TypingDots />
+                )}
+              </div>
+            ) : (
+              <div key={i} className="flex justify-end">
+                <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-teal-soft px-4 py-2.5 text-[15px] leading-relaxed text-teal-ink">
+                  {m.content}
+                </p>
+              </div>
+            ),
+          )}
+
+          {error && (
+            <div className="rounded-xl border border-amber/40 bg-amber-soft px-4 py-3 text-sm text-ink">
+              {error}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Panneaux repliables */}
+      {panel === "threads" && (
+        <ThreadDrawer threads={openThreads} patch={patch} remove={remove} />
+      )}
+      {panel === "capture" && (
+        <div className="mx-auto w-full max-w-2xl px-5 pb-2">
+          <QuickCapture onAdd={add} autoFocus />
+        </div>
+      )}
+
+      {/* Composer */}
+      <footer className="border-t border-line bg-paper">
+        <div className="mx-auto w-full max-w-2xl px-5 py-3">
+          {note && (
+            <div className="animate-rise mb-2 flex items-center gap-2 rounded-lg bg-teal-soft px-3 py-1.5 text-xs text-teal-ink">
+              <span>✏️</span>
+              <span className="flex-1">Élan a mis à jour tes trucs — {note}</span>
+              {undoSnapshot && (
+                <button
+                  onClick={() => {
+                    restoreThreads(undoSnapshot);
+                    setUndoSnapshot(null);
+                    setNote("");
+                  }}
+                  className="shrink-0 rounded-md px-2 py-0.5 font-medium text-teal underline-offset-2 hover:underline"
+                >
+                  annuler
+                </button>
+              )}
+            </div>
+          )}
+          <div className="mb-2 flex items-center gap-2">
+            <Toggle
+              active={panel === "capture"}
+              onClick={() =>
+                setPanel((p) => (p === "capture" ? "none" : "capture"))
+              }
+            >
+              + un truc
+            </Toggle>
+            <Toggle
+              active={panel === "threads"}
+              onClick={() =>
+                setPanel((p) => (p === "threads" ? "none" : "threads"))
+              }
+            >
+              Mes trucs ({openThreads.length})
+            </Toggle>
+          </div>
+          <div className="flex items-end gap-2 rounded-2xl border border-line bg-surface p-2 shadow-[0_2px_20px_-12px_rgba(38,35,29,0.25)]">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
+              rows={1}
+              placeholder="Réponds au guide…"
+              className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] leading-snug text-ink outline-none placeholder:text-faint"
+            />
+            <button
+              onClick={send}
+              disabled={!input.trim() || streaming}
+              className="mb-0.5 shrink-0 rounded-xl bg-teal px-4 py-2.5 text-sm font-medium text-white transition hover:bg-teal-ink disabled:opacity-40"
+            >
+              Envoyer
+            </button>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+function ThreadDrawer({
+  threads,
+  patch,
+  remove,
+}: {
+  threads: Thread[];
+  patch: (id: string, changes: Partial<Thread>) => void;
+  remove: (id: string) => void;
+}) {
+  return (
+    <div className="mx-auto max-h-64 w-full max-w-2xl overflow-y-auto px-5 pb-2">
+      <div className="rounded-2xl border border-line bg-surface p-2">
+        {threads.length === 0 ? (
+          <p className="px-3 py-4 text-center text-sm text-muted">
+            Rien d&apos;ouvert. Tête légère.
+          </p>
+        ) : (
+          threads.map((t) => (
+            <ThreadRow
+              key={t.id}
+              thread={t}
+              patch={patch}
+              remove={remove}
+              showSnooze
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Toggle({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
+        active
+          ? "border-teal bg-teal-soft text-teal-ink"
+          : "border-line bg-surface text-muted hover:text-ink"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function TypingDots() {
+  return (
+    <div className="flex items-center gap-1.5 py-1">
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="h-2 w-2 animate-breathe rounded-full bg-teal/50"
+          style={{ animationDelay: `${i * 0.2}s` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function fmt(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
