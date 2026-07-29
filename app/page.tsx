@@ -76,7 +76,15 @@ export default function Home() {
     if (chat.length > 0) chatEndRef.current?.scrollIntoView({ block: "end" });
   }, [chat]);
 
-  useEffect(() => setDuration(settings.defaultDurationMin), [settings]);
+  // La durée par défaut ne sert qu'au tout premier rendu. `settings` change
+  // d'identité à l'hydratation, et sans ce garde l'effet repartait APRÈS la
+  // recommandation d'Élan et l'écrasait — d'où une durée jamais présélectionnée
+  // sur celle qu'il conseille.
+  const durationSettled = useRef(false);
+  useEffect(() => {
+    if (durationSettled.current) return;
+    setDuration(settings.defaultDurationMin);
+  }, [settings]);
 
   // Les trucs mis en pause reviennent d'eux-mêmes le jour dit.
   useEffect(() => {
@@ -216,6 +224,7 @@ export default function Home() {
   function applyPick(pick: string, sig: string) {
     if (appliedSig.current === sig) return; // ne pas écraser un choix manuel sur le même backlog
     appliedSig.current = sig;
+    durationSettled.current = true;
     const n = Number(pick);
     setDuration(DURATIONS.includes(n) ? n : 15);
   }
@@ -312,6 +321,7 @@ export default function Home() {
   // « je te propose 15 min » alors qu'on vient de cliquer sur 50.
   async function pickDuration(d: number) {
     setDuration(d);
+    durationSettled.current = true;
     appliedSig.current = planSig; // le choix manuel prime sur la reco
     if (openThreads.length === 0) return;
     setPlanLoading(true);
@@ -539,23 +549,36 @@ export default function Home() {
               pas à la fois.
             </p>
 
+            {/* La durée est au-dessus du conseil : c'est elle qui le
+                détermine, la lire après serait lire l'effet avant la cause. */}
+            <div className="mt-4 flex items-center gap-2">
+              <DurationPick value={duration} onChange={pickDuration} />
+            </div>
+
             {open > 0 ? (
               <div className="mt-3 rounded-xl border border-teal-soft bg-teal-soft/50 px-4 py-3">
                 <div className="mb-1.5 flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-teal" />
+                  <span
+                    className={`h-2 w-2 rounded-full bg-teal ${planLoading ? "animate-breathe" : ""}`}
+                  />
                   <span className="text-xs font-medium tracking-wide text-teal">
-                    Élan te conseille pour aujourd&apos;hui
+                    {planLoading
+                      ? "Élan réfléchit à ce format…"
+                      : "Élan te conseille pour aujourd'hui"}
                   </span>
                 </div>
-                {plan?.message ? (
-                  <p className="animate-rise text-[15px] leading-relaxed text-teal-ink">
-                    {plan.message}
-                  </p>
-                ) : planLoading ? (
+                {/* Pendant le recalcul on masque l'ancien conseil : le laisser
+                    affiché ferait lire un texte qui ne correspond plus à la
+                    durée sélectionnée. */}
+                {planLoading ? (
                   <div className="flex flex-col gap-1.5 py-0.5">
                     <span className="h-3 w-4/5 animate-pulse rounded bg-teal/15" />
                     <span className="h-3 w-3/5 animate-pulse rounded bg-teal/15" />
                   </div>
+                ) : plan?.message ? (
+                  <p className="animate-rise text-[15px] leading-relaxed text-teal-ink">
+                    {plan.message}
+                  </p>
                 ) : (
                   <p className="text-[15px] leading-relaxed text-teal-ink">
                     Présente-toi et je prends le pouls de tout ça avec toi, un
@@ -569,10 +592,6 @@ export default function Home() {
                 le point, ou dépose ce qui te trotte en tête.
               </p>
             )}
-
-            <div className="mt-5 flex items-center gap-2">
-              <DurationPick value={duration} onChange={pickDuration} />
-            </div>
 
             <button
               onClick={startFresh}
