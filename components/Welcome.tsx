@@ -25,34 +25,43 @@ export default function Welcome() {
 
       <section className="animate-rise pt-6">
         <h1 className="font-display text-[30px] font-semibold leading-[1.15] text-ink sm:text-[34px]">
-          Des créneaux, pas des listes.
+          Chaque jour, un créneau. Élan te dit quoi y faire.
         </h1>
+        <p className="mt-4 text-[16px] leading-relaxed text-ink">
+          Élan est une app de tâches qui marche par rendez-vous. Tu déposes tout
+          ce que tu as à faire. Ensuite, plutôt qu&apos;une liste à trier, tu
+          prends un créneau de 15 ou 30 minutes — et c&apos;est Élan qui décide
+          ce qu&apos;on y met.
+        </p>
         <p className="mt-4 text-[16px] leading-relaxed text-muted">
-          Les autres applis te laissent empiler les tâches et les gérer une par
-          une. Le volume monte, et on ne sait plus où donner de la tête.
-        </p>
-        <p className="mt-4 text-[16px] leading-relaxed text-ink">
-          Élan prend l&apos;autre chemin : un rendez-vous régulier de 15 ou 30
-          minutes. Il regarde ce que tu as sur les bras, ce qui presse, ton envie
-          du moment, l&apos;endroit où tu es — et te propose un créneau à ta
-          taille avec, dedans, exactement quoi faire. Précis, cohérent,
-          motivant.
-        </p>
-        <p className="mt-4 text-[16px] leading-relaxed text-ink">
-          Et pendant ce créneau, tu n&apos;es pas seul devant tes tâches : Élan
-          reste là, et il aide pour de vrai.
+          Il regarde le volume, ce qui presse, ton envie du moment,
+          l&apos;endroit où tu es. Il en déduit la bonne taille de créneau, et
+          il te dit précisément par quoi commencer. Pendant que tu avances, il
+          reste là.
         </p>
       </section>
 
-      <figure className="animate-rise mt-8 rounded-2xl border-l-2 border-teal bg-surface px-5 py-4">
-        <blockquote className="font-display text-[17px] leading-snug text-ink">
-          « Ça m&apos;a débloqué des choses que je n&apos;aurais jamais touchées
-          autrement. »
-        </blockquote>
-        <figcaption className="mt-2 text-xs text-faint">
-          — l&apos;auteur d&apos;Élan, qui l&apos;a construite pour lui-même
+      <figure className="animate-rise mt-8 rounded-2xl border border-teal-soft bg-teal-soft/40 px-5 py-4">
+        <figcaption className="text-xs font-medium tracking-wide text-teal">
+          UN CRÉNEAU PROPOSÉ, POUR DONNER UNE IDÉE
         </figcaption>
+        <blockquote className="mt-2 text-[15px] leading-relaxed text-teal-ink">
+          « Tu as un peu de temps et tu es chez toi — on prend 30 minutes.
+          J&apos;ai trois trucs qui se font bien ensemble : le rendez-vous chez
+          le dentiste, la relance à l&apos;assurance, et la lettre à poster.
+          Deux appels et une enveloppe, tout depuis le canapé. On commence par
+          le dentiste, c&apos;est le plus court — je reste avec toi. »
+        </blockquote>
       </figure>
+
+      <section className="mt-8">
+        <p className="text-[16px] leading-relaxed text-muted">
+          Les autres applis te laissent empiler les tâches et les gérer une par
+          une. Le volume monte, et on ne sait plus où donner de la tête. Ici,
+          c&apos;est Élan qui porte le volume — toi, tu fais le pas suivant, et
+          tu n&apos;es pas seul devant.
+        </p>
+      </section>
 
       <section className="mt-9">
         <ExplainerBody />
