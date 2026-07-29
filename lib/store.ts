@@ -18,6 +18,7 @@ const PROJECTS_KEY = "elan.projects.v1";
 const SESSIONS_KEY = "elan.sessions.v1";
 const SETTINGS_KEY = "elan.settings.v1";
 const ACTIVE_KEY = "elan.active.v1";
+const CHAT_KEY = "elan.chat.v1";
 const PLAN_KEY = "elan.plan.v1";
 
 const SYNC_EVENT = "elan:sync";
@@ -639,6 +640,23 @@ export function readActiveSession(): ActiveSession | null {
 
 export function writeActiveSession(s: ActiveSession) {
   writeLocalOnly(ACTIVE_KEY, s);
+}
+
+// --- Discussion libre (hors séance) : locale, par appareil ---
+
+export function readChat(): ChatMessage[] {
+  return read<ChatMessage[]>(CHAT_KEY, []);
+}
+
+export function writeChat(messages: ChatMessage[]) {
+  // On coupe la queue : au-delà, le contexte utile vient des trucs eux-mêmes.
+  writeLocalOnly(CHAT_KEY, messages.slice(-40));
+}
+
+export function clearChat() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(CHAT_KEY);
+  window.dispatchEvent(new CustomEvent(SYNC_EVENT, { detail: CHAT_KEY }));
 }
 
 export function clearActiveSession() {

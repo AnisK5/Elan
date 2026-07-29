@@ -11,6 +11,9 @@ import {
   restoreThreads,
   snapshotThreads,
   wakeSnoozed,
+  readChat,
+  writeChat,
+  clearChat,
   useSessions,
   useSettings,
   useThreads,
@@ -59,11 +62,19 @@ export default function Home() {
   const [wrapUpCount, setWrapUpCount] = useState(0);
   const sessionStartRef = useRef("");
 
-  // Point rapide : dire ce qu'on a fait hors séance.
+  // Discussion libre hors séance : déposer, donner des nouvelles, réfléchir
+  // à un truc, demander comment s'organiser demain.
   const [pointText, setPointText] = useState("");
   const [pointBusy, setPointBusy] = useState(false);
   const [pointNote, setPointNote] = useState("");
   const [pointUndo, setPointUndo] = useState<Thread[] | null>(null);
+  const [chat, setChat] = useState<ChatMessage[]>([]);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => setChat(readChat()), []);
+  useEffect(() => {
+    if (chat.length > 0) chatEndRef.current?.scrollIntoView({ block: "end" });
+  }, [chat]);
 
   useEffect(() => setDuration(settings.defaultDurationMin), [settings]);
 
@@ -331,46 +342,98 @@ export default function Home() {
     if (!t || pointBusy) return;
     setPointBusy(true);
     setPointText("");
+    setPointNote("");
+
+    const withUser: ChatMessage[] = [
+      ...chat,
+      { role: "user", content: t, at: new Date().toISOString() },
+    ];
+    setChat(withUser);
+    writeChat(withUser);
+
+    let answer = "";
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threads: snapshotThreads(),
+          messages: withUser.map((m) => ({ role: m.role, content: m.content })),
+          meta: { name: settings.name },
+        }),
+      });
+      if (!res.ok || !res.body) throw new Error("chat");
+
+      setChat([...withUser, { role: "assistant", content: "" }]);
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        answer += dec.decode(value, { stream: true });
+        setChat([...withUser, { role: "assistant", content: answer }]);
+      }
+
+      const full: ChatMessage[] = [
+        ...withUser,
+        { role: "assistant", content: answer, at: new Date().toISOString() },
+      ];
+      setChat(full);
+      writeChat(full);
+    } catch {
+      // Ce champ sert aussi de capture : si l'IA est injoignable, ce qui vient
+      // d'être écrit ne doit surtout pas disparaître dans le vide.
+      keepAnyway(t);
+      setChat(chat);
+      writeChat(chat);
+      setPointBusy(false);
+      return;
+    }
+
+    setPointBusy(false);
+
+    // Ce qui vient d'être dit peut changer les trucs (fait, reporté, nouveau) :
+    // on réconcilie en arrière-plan, sans bloquer la conversation.
     try {
       const res = await fetch("/api/reconcile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           threads: snapshotThreads(),
-          messages: [{ role: "user", content: t }],
+          messages: [
+            { role: "user", content: t },
+            { role: "assistant", content: answer },
+          ],
         }),
       });
-      if (res.ok) {
-        const j = (await res.json()) as { updates?: ThreadOp[]; note?: string };
-        if (Array.isArray(j.updates) && j.updates.length > 0) {
-          const before = snapshotThreads();
-          applyThreadOps(j.updates);
-          setPointUndo(before);
-          setPointNote(j.note || "trucs mis à jour");
-          window.setTimeout(() => {
-            setPointNote("");
-            setPointUndo(null);
-          }, 10000);
-        } else {
-          setPointNote("Rien à changer de mon côté — mais bien noté.");
-          window.setTimeout(() => setPointNote(""), 4000);
-        }
-      } else {
-        keepAnyway(t);
+      if (!res.ok) return;
+      const j = (await res.json()) as { updates?: ThreadOp[]; note?: string };
+      if (Array.isArray(j.updates) && j.updates.length > 0) {
+        const before = snapshotThreads();
+        applyThreadOps(j.updates);
+        setPointUndo(before);
+        setPointNote(j.note || "trucs mis à jour");
+        window.setTimeout(() => {
+          setPointNote("");
+          setPointUndo(null);
+        }, 10000);
       }
     } catch {
-      // Le champ sert aussi de capture : si l'IA est injoignable, ce qui vient
-      // d'être écrit ne doit surtout pas disparaître dans le vide.
-      keepAnyway(t);
-    } finally {
-      setPointBusy(false);
+      // la discussion a eu lieu, c'est l'essentiel
     }
   }
 
   function keepAnyway(text: string) {
     add(text, "action");
-    setPointNote("Noté tel quel (je n'ai pas pu l'analyser).");
+    setPointNote("Noté tel quel (je n'ai pas pu joindre Élan).");
     window.setTimeout(() => setPointNote(""), 5000);
+  }
+
+  function resetChat() {
+    clearChat();
+    setChat([]);
+    setPointNote("");
+    setPointUndo(null);
   }
 
   if (loading) {
@@ -526,12 +589,52 @@ export default function Home() {
           qu'on écrit, et /api/reconcile sait déjà créer autant que mettre
           à jour. */}
       <section className="mt-8">
-        <h2 className="mb-2 px-1 text-sm font-medium text-muted">
-          {isNewcomer
-            ? "Vide ta tête — dépose tout ce qui traîne."
-            : "Quoi de neuf ? Dépose un truc, ou donne des nouvelles."}
-        </h2>
+        <div className="mb-2 flex items-baseline justify-between gap-3 px-1">
+          <h2 className="text-sm font-medium text-muted">
+            {isNewcomer
+              ? "Vide ta tête — dépose tout ce qui traîne."
+              : "Quoi de neuf ? Dépose, raconte, ou demande-moi."}
+          </h2>
+          {chat.length > 0 && (
+            <button
+              onClick={resetChat}
+              className="shrink-0 text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
+            >
+              effacer
+            </button>
+          )}
+        </div>
         <div className="rounded-2xl border border-line bg-surface p-2 shadow-[0_2px_20px_-12px_rgba(38,35,29,0.25)]">
+          {chat.length > 0 && (
+            <div className="max-h-80 overflow-y-auto px-1 pb-2 pt-1">
+              <div className="flex flex-col gap-2.5">
+                {chat.map((m, i) => (
+                  <div
+                    key={i}
+                    className={
+                      m.role === "user" ? "flex justify-end" : "flex justify-start"
+                    }
+                  >
+                    <div
+                      className={
+                        m.role === "user"
+                          ? "max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-sink px-3.5 py-2 text-[15px] leading-relaxed text-ink"
+                          : "max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-teal-soft/50 px-3.5 py-2 text-[15px] leading-relaxed text-teal-ink"
+                      }
+                    >
+                      {m.content ||
+                        (pointBusy ? (
+                          <span className="inline-flex gap-1 py-1">
+                            <Dot /> <Dot /> <Dot />
+                          </span>
+                        ) : null)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div ref={chatEndRef} />
+            </div>
+          )}
           <div className="flex items-end gap-2">
             <textarea
               value={pointText}
@@ -547,7 +650,7 @@ export default function Home() {
               placeholder={
                 isNewcomer
                   ? "ex. relancer Paul pour le devis"
-                  : "ex. j'ai appelé le dentiste · penser à réserver le kayak"
+                  : "ex. j'ai appelé le dentiste · on s'organise comment demain ?"
               }
               className="max-h-40 min-h-[46px] flex-1 resize-none rounded-xl bg-transparent px-3 py-3 text-[15px] leading-snug text-ink outline-none placeholder:text-faint"
             />
@@ -844,6 +947,12 @@ function greeting(): string {
   if (h < 12) return "Bonjour.";
   if (h < 18) return "Bel après-midi.";
   return "Bonsoir.";
+}
+
+function Dot() {
+  return (
+    <span className="h-1.5 w-1.5 animate-breathe rounded-full bg-teal/50" />
+  );
 }
 
 function Logo() {
