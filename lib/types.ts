@@ -18,6 +18,22 @@ export interface Thread {
   note?: string;
   touchedAt?: string; // dernière fois travaillé en séance
   snoozedUntil?: string; // ISO date
+  projectId?: string; // rattachement facultatif à un projet
+}
+
+// Le "projet" : un chantier plus gros que le truc (« Dvp de l'app », « Postuler »).
+// Optionnel — les trucs vivent très bien sans. Sert à la vue temporelle de la
+// semaine : l'IA raisonne sur l'ORDRE et les DÉPENDANCES entre projets.
+export type ProjectStatus = "active" | "paused" | "done";
+
+export interface Project {
+  id: string;
+  name: string;
+  status: ProjectStatus;
+  createdAt: string; // ISO
+  goal?: string; // à quoi ça sert / pourquoi ça compte (nourrit le raisonnement)
+  dependsOn?: string[]; // ids des projets à faire avancer avant celui-ci
+  due?: string; // échéance globale éventuelle (ISO)
 }
 
 export type Role = "assistant" | "user";

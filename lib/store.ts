@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import type {
   ChatMessage,
   Effort,
+  Project,
+  ProjectStatus,
   Settings,
   SessionLog,
   Thread,
@@ -12,6 +14,7 @@ import type {
 import { getSupabase } from "./supabase";
 
 const THREADS_KEY = "elan.threads.v1";
+const PROJECTS_KEY = "elan.projects.v1";
 const SESSIONS_KEY = "elan.sessions.v1";
 const SETTINGS_KEY = "elan.settings.v1";
 const ACTIVE_KEY = "elan.active.v1";
@@ -79,6 +82,7 @@ interface ThreadRow {
   note: string | null;
   touched_at: string | null;
   snoozed_until: string | null;
+  project_id: string | null;
 }
 interface SessionRow {
   id: string;
@@ -105,6 +109,7 @@ function threadToRow(t: Thread, userId: string) {
     note: t.note ?? null,
     touched_at: t.touchedAt ?? null,
     snoozed_until: t.snoozedUntil ?? null,
+    project_id: t.projectId ?? null,
   };
 }
 function rowToThread(r: ThreadRow): Thread {
@@ -120,6 +125,39 @@ function rowToThread(r: ThreadRow): Thread {
     note: r.note ?? undefined,
     touchedAt: r.touched_at ?? undefined,
     snoozedUntil: r.snoozed_until ?? undefined,
+    projectId: r.project_id ?? undefined,
+  };
+}
+interface ProjectRow {
+  id: string;
+  name: string;
+  status: string;
+  created_at: string;
+  goal: string | null;
+  depends_on: string[] | null;
+  due: string | null;
+}
+function projectToRow(p: Project, userId: string) {
+  return {
+    id: p.id,
+    user_id: userId,
+    name: p.name,
+    status: p.status,
+    created_at: p.createdAt,
+    goal: p.goal ?? null,
+    depends_on: p.dependsOn ?? null,
+    due: p.due ?? null,
+  };
+}
+function rowToProject(r: ProjectRow): Project {
+  return {
+    id: r.id,
+    name: r.name,
+    status: r.status as ProjectStatus,
+    createdAt: r.created_at,
+    goal: r.goal ?? undefined,
+    dependsOn: r.depends_on ?? undefined,
+    due: r.due ?? undefined,
   };
 }
 function sessionToRow(s: SessionLog, userId: string) {
@@ -179,6 +217,17 @@ async function pushToSupabase(key: string, value: unknown, old: unknown) {
           .upsert(next.map((s) => sessionToRow(s, uid)));
       if (removed.length)
         await sb.from("elan_sessions").delete().in("id", removed);
+    } else if (key === PROJECTS_KEY) {
+      const next = (value as Project[]) ?? [];
+      const prev = (old as Project[]) ?? [];
+      const nextIds = new Set(next.map((p) => p.id));
+      const removed = prev.filter((p) => !nextIds.has(p.id)).map((p) => p.id);
+      if (next.length)
+        await sb
+          .from("elan_projects")
+          .upsert(next.map((p) => projectToRow(p, uid)));
+      if (removed.length)
+        await sb.from("elan_projects").delete().in("id", removed);
     } else if (key === SETTINGS_KEY) {
       await sb.from("elan_settings").upsert(settingsToRow(value as Settings, uid));
     }
@@ -226,13 +275,33 @@ export async function hydrateFromSupabase(userId: string): Promise<void> {
   } catch {
     // silencieux
   }
+
+  // Projets : hydratés à part, dans leur propre try/catch — si la table
+  // n'existe pas encore (schéma pas migré), ça ne doit PAS casser le reste.
+  try {
+    const pRes = await sb
+      .from("elan_projects")
+      .select("*")
+      .eq("user_id", userId);
+    if (!pRes.error) {
+      const dbProjects = ((pRes.data as ProjectRow[]) ?? []).map(rowToProject);
+      const localProjects = read<Project[]>(PROJECTS_KEY, []);
+      if (dbProjects.length === 0 && localProjects.length > 0) {
+        void pushToSupabase(PROJECTS_KEY, localProjects, []);
+      } else {
+        writeLocalOnly(PROJECTS_KEY, dbProjects);
+      }
+    }
+  } catch {
+    // silencieux
+  }
 }
 
 // Efface les données locales (déconnexion), sans toucher à la DB.
 export function clearLocalData(): void {
   currentUserId = null;
   if (typeof window === "undefined") return;
-  for (const k of [THREADS_KEY, SESSIONS_KEY, SETTINGS_KEY, ACTIVE_KEY, PLAN_KEY]) {
+  for (const k of [THREADS_KEY, PROJECTS_KEY, SESSIONS_KEY, SETTINGS_KEY, ACTIVE_KEY, PLAN_KEY]) {
     window.localStorage.removeItem(k);
     window.dispatchEvent(new CustomEvent(SYNC_EVENT, { detail: k }));
   }
@@ -452,6 +521,49 @@ export function useThreads() {
   );
 
   return { threads: value, add, patch, remove, ready };
+}
+
+export function useProjects() {
+  const { value, update, ready } = usePersisted<Project[]>(PROJECTS_KEY, []);
+
+  const add = useCallback(
+    (name: string, extra?: Partial<Project>) => {
+      const p: Project = {
+        id: newId(),
+        name: name.trim(),
+        status: "active",
+        createdAt: new Date().toISOString(),
+        ...extra,
+      };
+      update([p, ...value]);
+      return p;
+    },
+    [value, update],
+  );
+
+  const patch = useCallback(
+    (id: string, changes: Partial<Project>) => {
+      update(value.map((p) => (p.id === id ? { ...p, ...changes } : p)));
+    },
+    [value, update],
+  );
+
+  const remove = useCallback(
+    (id: string) =>
+      update(
+        value
+          .filter((p) => p.id !== id)
+          // on retire aussi la dépendance vers un projet supprimé
+          .map((p) =>
+            p.dependsOn?.includes(id)
+              ? { ...p, dependsOn: p.dependsOn.filter((d) => d !== id) }
+              : p,
+          ),
+      ),
+    [value, update],
+  );
+
+  return { projects: value, add, patch, remove, ready };
 }
 
 export function useSessions() {

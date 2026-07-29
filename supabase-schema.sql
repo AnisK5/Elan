@@ -15,12 +15,31 @@ create table if not exists public.elan_threads (
   energy        text,
   note          text,
   touched_at    timestamptz,
-  snoozed_until timestamptz
+  snoozed_until timestamptz,
+  project_id    text                                        -- rattachement facultatif à un projet
 );
 alter table public.elan_threads enable row level security;
 create policy "own elan_threads" on public.elan_threads
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create index if not exists elan_threads_user_idx on public.elan_threads(user_id);
+-- Migration d'une base existante : ajoute la colonne si elle manque.
+alter table public.elan_threads add column if not exists project_id text;
+
+-- ── Projets (chantiers plus gros, pour la vue semaine) ─────────────
+create table if not exists public.elan_projects (
+  id          text primary key,                            -- id généré côté client
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  name        text not null,
+  status      text not null default 'active',              -- 'active' | 'paused' | 'done'
+  created_at  timestamptz not null default now(),
+  goal        text,                                         -- à quoi ça sert
+  depends_on  jsonb,                                        -- ids des projets prérequis
+  due         timestamptz
+);
+alter table public.elan_projects enable row level security;
+create policy "own elan_projects" on public.elan_projects
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create index if not exists elan_projects_user_idx on public.elan_projects(user_id);
 
 -- ── Séances (historique) ───────────────────────────────────────────
 create table if not exists public.elan_sessions (
