@@ -28,6 +28,11 @@ import { useAuth } from "@/components/AuthProvider";
 // des reco existantes pour que la nouvelle logique s'applique immédiatement.
 const PLAN_VERSION = 7;
 const DURATIONS = [5, 15, 30, 50];
+// Au-delà de ce délai depuis son démarrage, une séance laissée en plan est
+// considérée ratée : on ne rallume pas le minuteur de la veille, on rouvre
+// sur l'accueil. Assez large pour couvrir une vraie interruption (appel,
+// pause), assez court pour qu'une séance oubliée ne survive pas à la nuit.
+const RESUME_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 
 export default function Home() {
   const { user, loading, signOut } = useAuth();
@@ -56,15 +61,23 @@ export default function Home() {
 
   useEffect(() => setDuration(settings.defaultDurationMin), [settings]);
 
-  // Reprise automatique d'une séance laissée en cours (refresh, onglet fermé…)
+  // Reprise automatique d'une séance laissée en cours (refresh, onglet fermé…),
+  // mais seulement si elle est encore fraîche — sinon on la jette.
   useEffect(() => {
     const a = readActiveSession();
-    if (a && a.messages.length > 0) {
-      setResume(a);
-      setDuration(a.durationMin);
-      sessionStartRef.current = a.startedAt;
-      setView("session");
+    if (!a || a.messages.length === 0) return;
+    const startedMs = Date.parse(a.startedAt);
+    const fresh =
+      Number.isFinite(startedMs) &&
+      Date.now() - startedMs < RESUME_MAX_AGE_MS;
+    if (!fresh) {
+      clearActiveSession();
+      return;
     }
+    setResume(a);
+    setDuration(a.durationMin);
+    sessionStartRef.current = a.startedAt;
+    setView("session");
   }, []);
   useEffect(() => {
     setToday(
