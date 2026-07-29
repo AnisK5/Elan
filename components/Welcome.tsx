@@ -25,13 +25,13 @@ export default function Welcome() {
 
       <section className="animate-rise pt-6">
         <h1 className="font-display text-[30px] font-semibold leading-[1.15] text-ink sm:text-[34px]">
-          Chaque jour, un créneau. Élan te dit quoi y faire.
+          Chaque jour, un créneau. Élan s&apos;occupe de ce qu&apos;on y met.
         </h1>
         <p className="mt-4 text-[16px] leading-relaxed text-ink">
           Tu déposes tout ce que tu as à faire. Ensuite, au lieu d&apos;une
           liste à trier, tu prends un rendez-vous — et c&apos;est Élan qui
-          décide ce qu&apos;on y met, et qui reste avec toi pendant que tu
-          avances.
+          choisit ce qui mérite ton attention aujourd&apos;hui, pour que rien
+          ne se perde et que tu gardes ton énergie pour ce qui compte.
         </p>
       </section>
 
@@ -41,11 +41,12 @@ export default function Welcome() {
         </figcaption>
         <blockquote className="mt-2 text-[15px] leading-relaxed text-teal-ink">
           « Tu as deux relances qui traînent, dont une avec une échéance
-          vendredi — je propose 30 minutes plutôt que 15. Elles se font bien
-          ensemble : même énergie, tout depuis ton bureau. On commence par
-          l&apos;assurance, c&apos;est elle qui a la date : je t&apos;écris le
-          mail, tu relis et tu envoies. Ensuite le dentiste — je te donne quoi
-          dire, tu n&apos;as qu&apos;à lire. »
+          vendredi. Je te propose qu&apos;on prenne un créneau de 30 minutes ce
+          matin plutôt que 15 — on aura le temps de faire les deux. Elles vont
+          bien ensemble : même énergie, tout depuis ton bureau. On pourrait
+          commencer par l&apos;assurance, c&apos;est elle qui a la date : je te
+          prépare un brouillon de mail, tu en fais ce que tu veux. Et pour le
+          dentiste, je te note les points à ne pas oublier. »
         </blockquote>
       </figure>
 

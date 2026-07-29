@@ -16,8 +16,8 @@ const STEPS = [
     d: "Il regarde le volume, ce qui presse, ton envie du moment, l'endroit où tu es. Puis il propose la bonne taille : 15 minutes, 30, 50.",
   },
   {
-    t: "Il te dit quoi faire — et il aide",
-    d: "Des trucs précis, regroupés quand ils se font bien ensemble. Avec de l'aide concrète : un modèle de mail tout écrit, quoi dire au téléphone.",
+    t: "Il propose quoi y faire — et il aide",
+    d: "Des trucs précis, regroupés quand ils se font bien ensemble. Avec de la matière concrète : un brouillon de mail, les points à ne pas oublier dans un appel.",
   },
 ];
 
@@ -33,10 +33,11 @@ export function ExplainerBody() {
       <div className="rounded-2xl border border-teal-soft bg-teal-soft/50 px-5 py-4">
         <p className="text-xs font-medium tracking-wide text-teal">L&apos;IDÉE</p>
         <p className="mt-1 font-display text-lg font-semibold leading-snug text-teal-ink">
-          Tu donnes 15 minutes. Élan s&apos;occupe de savoir quoi en faire.
+          Tu poses un créneau. Élan s&apos;occupe de ce qu&apos;on y met.
         </p>
         <p className="mt-1.5 text-sm leading-relaxed text-teal-ink/80">
-          Ta liste, c&apos;est son travail. Toi, tu avances.
+          Trier, choisir, ne rien laisser filer : c&apos;est son travail. Le
+          tien, c&apos;est d&apos;avancer sur une chose à la fois.
         </p>
       </div>
 
