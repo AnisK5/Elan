@@ -45,6 +45,15 @@ function ageLabel(iso: string): string {
   return ` · déposé il y a ${n}j`;
 }
 
+function plannedLabel(iso?: string): string {
+  if (!iso) return "";
+  const n = dayDiff(iso);
+  if (n < 0) return ` · ⭑ ELLE AVAIT PRÉVU de s'en occuper il y a ${-n}j`;
+  if (n === 0) return " · ⭑ ELLE A PRÉVU de s'en occuper AUJOURD'HUI";
+  if (n === 1) return " · ⭑ elle prévoit de s'en occuper demain";
+  return ` · ⭑ elle prévoit de s'en occuper dans ${n}j`;
+}
+
 function render(threads: Thread[]): string {
   const open = threads.filter((t) => t.status === "open");
   const overdue = open.filter((t) => t.due && dayDiff(t.due) < 0).length;
@@ -52,7 +61,7 @@ function render(threads: Thread[]): string {
     const kind = t.kind === "suivi" ? "À SUIVRE" : "ACTION";
     const effort = t.effort ? ` · effort ${t.effort}` : "";
     const note = t.note ? ` · contexte: ${t.note}` : "";
-    return `- [${kind}] ${t.text}${dueLabel(t.due)}${ageLabel(t.createdAt)}${effort}${note}`;
+    return `- [${kind}] ${t.text}${dueLabel(t.due)}${plannedLabel(t.plannedFor)}${ageLabel(t.createdAt)}${effort}${note}`;
   });
   return `${open.length} trucs ouverts (${overdue} dont la fenêtre est passée) :\n${lines.join("\n")}`;
 }
@@ -81,7 +90,7 @@ function systemPrompt(
 ): string {
   const who = name ? ` La personne s'appelle ${name}.` : "";
   const chosenRule = chosen
-    ? `\n\nDURÉE DÉJÀ CHOISIE : ${chosen} min. La personne vient de la sélectionner elle-même — c'est SON choix, tu ne le discutes pas et tu ne recommandes aucune autre durée. Ton message dit ce qu'on peut concrètement faire en ${chosen} min, en citant ses trucs réels : le petit ensemble qui tient dans ce temps-là. Renvoie "pick":"${chosen}". Si ce temps te paraît vraiment court ou vraiment long pour ce qu'il y a, tu peux le mentionner en une demi-phrase, sans insister et sans réclamer un autre format.`
+    ? `\n\nDURÉE DÉJÀ CHOISIE : ${chosen} min. La personne vient de la sélectionner elle-même — c'est SON choix et tu fais avec. Ton message dit ce qu'on peut concrètement faire en ${chosen} min, en citant ses trucs réels : le petit ensemble qui tient dans ce temps-là. Renvoie "pick":"${chosen}". Si une autre durée servirait vraiment mieux ce qu'il y a aujourd'hui, dis-le UNE fois, franchement et sans insister — « je ferais plutôt 30, il y a de quoi » — puis enchaîne quand même sur ce qu'on peut faire en ${chosen} min. Un bon compagnon donne son avis ; il ne le répète pas et n'impose rien.`
     : "";
   return `Tu es le planificateur d'Élan, pour une personne TDAH.${who} À partir de ses trucs en cours, tu conseilles la FORME de sa journée d'aujourd'hui, avant même qu'elle commence sa séance.
 
@@ -101,6 +110,7 @@ DURÉE (champ "pick"), une seule valeur parmi "5", "15", "30", "50" — par DÉF
   · Si on dépose nettement plus qu'on ne boucle, ou si les séances se sont espacées / arrêtées, ou s'il y a un paquet de trucs qui traînent depuis plus de deux semaines sans bouger : le rythme actuel ne suffit pas, DIS-LE simplement, et OFFRE plus de capacité. Deux formes possibles, au choix selon ce qui colle : une séance plus longue ("30" ou "50"), ou DEUX séances dans la journée (le champ "pick" reste la durée de la première — la seconde se propose dans le message).
   · Si le rythme tient (on boucle à peu près autant qu'on dépose, les séances sont régulières), reste sur la plus petite séance sensée.
 - Constater honnêtement que ça s'accumule N'EST PAS stresser. Ce qui est interdit, c'est la culpabilité, le reproche et le décompte accusateur — pas le constat lucide. Une personne à qui on cache que le rythme décroche n'est pas rassurée, elle est abandonnée.
+- ELLE L'A PRÉVU (marque ⭑) — PRIORITÉ ABSOLUE. Un truc qu'elle a elle-même prévu pour AUJOURD'HUI passe avant tout le reste : elle s'est donné un rendez-vous, ton travail est de le tenir. Nomme-le, et bâtis la séance autour. Si le jour prévu est déjà passé sans que ça bouge, repropose-le simplement, sans le moindre reproche.
 - FENÊTRES SAISONNIÈRES : certains trucs n'ont pas de date mais perdent leur sens passé un moment (organiser un voyage ou une activité d'été, un cadeau avant une fête, une inscription avant la rentrée). Déduis-le du texte et de la saison actuelle : si la fenêtre se referme bientôt, c'est le moment de le dire, même sans échéance saisie. Un truc de ce genre jamais entamé depuis des semaines mérite d'être nommé avant qu'il soit trop tard.
 - TÂCHE AFFAMÉE : si un truc important est vieux et manifestement toujours doublé (déposé il y a longtemps, jamais avancé), tu peux soit le désigner comme LE pas à faire aujourd'hui dans une séance normale (lui donner de l'oxygène), soit — s'il a besoin d'un vrai bloc — OFFRIR un peu plus de temps. Toujours comme une option calme et bienveillante, jamais une pression ni un reproche de l'avoir laissé traîner.
 - CONTEXTE : si un truc porte un « contexte » (enjeux, qui attend, intention douce, conséquence), tiens-en compte pour juger son importance et pour le formuler avec justesse (« ton père attend toujours ça »). Une intention douce (« aimerait cette semaine ») → un rappel léger si la semaine avance, jamais une urgence artificielle.

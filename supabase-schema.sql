@@ -16,6 +16,7 @@ create table if not exists public.elan_threads (
   note          text,
   touched_at    timestamptz,
   snoozed_until timestamptz,
+  planned_for timestamptz,
   project_id    text                                        -- rattachement facultatif à un projet
 );
 alter table public.elan_threads enable row level security;

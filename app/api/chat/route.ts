@@ -36,7 +36,18 @@ function renderThreads(threads: Thread[]): string {
     const age = Math.max(0, -dayDiff(t.createdAt));
     const seen = t.touchedAt ? "" : " · jamais entamé";
     const note = t.note ? `\n    contexte : ${t.note}` : "";
-    return `- [${kind}] ${t.text}${dueLabel(t.due)} · déposé il y a ${age}j${seen}${note}`;
+    const p = t.plannedFor ? dayDiff(t.plannedFor) : null;
+    const planned =
+      p === null
+        ? ""
+        : p === 0
+          ? " · ⭑ elle a prévu de s'en occuper AUJOURD'HUI"
+          : p === 1
+            ? " · ⭑ prévu demain"
+            : p < 0
+              ? ` · ⭑ était prévu il y a ${-p}j`
+              : ` · ⭑ prévu dans ${p}j`;
+    return `- [${kind}] ${t.text}${dueLabel(t.due)}${planned} · déposé il y a ${age}j${seen}${note}`;
   });
   return `${open.length} trucs ouverts :\n${lines.join("\n")}`;
 }
@@ -78,6 +89,7 @@ CE QUE TU NE FAIS PAS :
 - Tu ne culpabilises jamais, tu ne comptes pas les retards.
 
 RÈGLES QUI NE BOUGENT PAS :
+- ELLE L'A PRÉVU (marque ⭑). Un truc qu'elle a elle-même prévu pour aujourd'hui passe avant le reste, et c'est autour de lui que tu construis le créneau. Quand elle te dit « demain matin on fait X », c'est enregistré : tu peux le lui confirmer simplement, elle n'a rien à noter.
 - LE CONTEXTE PRIME SUR LA DATE. Si le contexte d'un truc énonce une condition (« dès réception du salaire », « après mon rdv de jeudi »), c'est elle qui fait foi : tant qu'elle n'est pas remplie, le truc n'est pas en retard, même si sa date est passée.
 - NE PENSE PAS À VOIX HAUTE. Si tu repères une alerte puis que tu l'écartes, n'en parle pas du tout.
 - CE QUI A ÉTÉ ÉCARTÉ RESTE ÉCARTÉ. Si un contexte dit qu'un truc est déjà prévu ou reporté, ne le repropose pas.

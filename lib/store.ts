@@ -83,6 +83,7 @@ interface ThreadRow {
   note: string | null;
   touched_at: string | null;
   snoozed_until: string | null;
+  planned_for: string | null;
   project_id: string | null;
 }
 interface SessionRow {
@@ -110,6 +111,7 @@ function threadToRow(t: Thread, userId: string) {
     note: t.note ?? null,
     touched_at: t.touchedAt ?? null,
     snoozed_until: t.snoozedUntil ?? null,
+    planned_for: t.plannedFor ?? null,
     project_id: t.projectId ?? null,
   };
 }
@@ -126,6 +128,7 @@ function rowToThread(r: ThreadRow): Thread {
     note: r.note ?? undefined,
     touchedAt: r.touched_at ?? undefined,
     snoozedUntil: r.snoozed_until ?? undefined,
+    plannedFor: r.planned_for ?? undefined,
     projectId: r.project_id ?? undefined,
   };
 }
@@ -348,7 +351,14 @@ export type ThreadOp =
   | { op: "snooze"; id: string; until?: string }
   | { op: "rename"; id: string; text: string }
   | { op: "note"; id: string; note: string }
-  | { op: "set"; id: string; due?: string; effort?: Effort; kind?: ThreadKind }
+  | {
+      op: "set";
+      id: string;
+      due?: string;
+      effort?: Effort;
+      kind?: ThreadKind;
+      plannedFor?: string | null;
+    }
   | {
       op: "add";
       text: string;
@@ -523,6 +533,9 @@ export function applyThreadOps(ops: ThreadOp[]): void {
             ...(op.due !== undefined ? { due: normalizeDue(op.due) } : {}),
             ...(op.effort ? { effort: op.effort } : {}),
             ...(op.kind ? { kind: op.kind } : {}),
+            ...(op.plannedFor !== undefined
+              ? { plannedFor: normalizeDue(op.plannedFor ?? undefined) }
+              : {}),
             touchedAt: now,
           };
       }

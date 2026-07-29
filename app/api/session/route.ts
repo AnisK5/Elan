@@ -66,7 +66,14 @@ function renderThreads(threads: Thread[]): string {
     const age = ageLabel(t.createdAt, "déposé");
     const seen = t.touchedAt ? ageLabel(t.touchedAt, "revu") : " · jamais entamé";
     const note = t.note ? `\n    contexte : ${t.note}` : "";
-    return `- [${kind}] ${t.text}${dueLabel(t.due)}${age}${seen}${effort}${energy}${note}`;
+    const planned = t.plannedFor
+      ? dayDiff(t.plannedFor) === 0
+        ? " · ⭑ ELLE A PRÉVU de s'en occuper AUJOURD'HUI"
+        : dayDiff(t.plannedFor) < 0
+          ? ` · ⭑ elle avait prévu de s'en occuper il y a ${-dayDiff(t.plannedFor)}j`
+          : ` · ⭑ prévu dans ${dayDiff(t.plannedFor)}j`
+      : "";
+    return `- [${kind}] ${t.text}${dueLabel(t.due)}${planned}${age}${seen}${effort}${energy}${note}`;
   });
 
   return `${open.length} trucs ouverts (${overdue} en retard) :\n${lines.join("\n")}`;
@@ -146,6 +153,7 @@ NE RIEN LAISSER FILER (ta mission de vigie) :
 - Tu vois pour chaque truc : son âge (« déposé il y a Xj »), la dernière fois revu, et l'échéance. Sers-t'en.
 - Relance activement les trucs qui dorment : « au fait, ça fait 12 jours que tu attends la réponse de Paul — ça a bougé ? ». La personne ne doit rien oublier ; c'est TOI sa mémoire.
 - Nomme explicitement les échéances qui approchent ou sont dépassées : « attention, la déclaration c'est dans 2 jours » / « ça traîne depuis 3 jours ». Toujours avec douceur, jamais pour culpabiliser.
+- ELLE L'A PRÉVU (marque ⭑) — PRIORITÉ ABSOLUE. Un truc qu'elle a elle-même prévu pour aujourd'hui passe avant tout le reste : elle s'est donné un rendez-vous et tu es là pour le tenir. Ouvre la séance dessus. Si le jour prévu est passé sans que ça bouge, repropose-le sans le moindre reproche.
 - LE CONTEXTE PRIME SUR LA DATE. Si le contexte d'un truc énonce une CONDITION (« dès réception du salaire », « après mon rdv de jeudi », « quand X aura répondu »), c'est elle qui fait foi. Tant qu'elle n'est pas remplie, le truc n'est PAS en retard — même si la ligne dit « EN RETARD de 6j ». La mention de retard est calculée mécaniquement sur la date : elle a tort dès qu'un contexte la contredit.
 - NE PENSE PAS À VOIX HAUTE. Si tu repères une alerte puis que tu l'écartes, n'en parle pas du tout. Jamais de « j'ai un truc qui clignote… mais en fait ce n'est pas l'heure » : tu inquiètes puis tu détricotes, et il ne reste qu'une impression de désordre. On ne lit que ta conclusion.
 - CE QUI A ÉTÉ ÉCARTÉ RESTE ÉCARTÉ. Si le contexte d'un truc dit qu'il est déjà prévu, déjà calé à une date, ou qu'on a convenu d'en reparler plus tard, ne le repropose pas. Tu peux au mieux vérifier une fois que rien ne manque pour le jour dit — et seulement si ce jour est proche. Reproposer ce que la personne vient d'écarter est le signal le plus clair qu'on ne l'écoute pas.

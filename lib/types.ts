@@ -17,7 +17,10 @@ export interface Thread {
   energy?: Energy;
   note?: string;
   touchedAt?: string; // dernière fois travaillé en séance
-  snoozedUntil?: string; // ISO date
+  snoozedUntil?: string; // ISO date — CACHE le truc jusqu'à cette date
+  // ISO date — jour où on a prévu de s'en occuper. L'inverse de snoozedUntil :
+  // ça ne cache rien, ça FAIT REMONTER le truc le jour dit.
+  plannedFor?: string;
   projectId?: string; // rattachement facultatif à un projet
 }
 
