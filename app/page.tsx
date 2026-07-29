@@ -379,6 +379,8 @@ export default function Home() {
     setPointBusy(true);
     setPointText("");
     setPointNote("");
+    // Parler ouvre la discussion : sans ça, la réponse arriverait dans le vide.
+    setChatExpanded(true);
 
     const withUser: ChatMessage[] = [
       ...chat,
@@ -636,38 +638,30 @@ export default function Home() {
           </h2>
           {chat.length > 0 && (
             <div className="flex shrink-0 items-baseline gap-3">
+              <button
+                onClick={() => setChatExpanded((v) => !v)}
+                className="text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
+              >
+                {chatExpanded
+                  ? "masquer"
+                  : `${chat.length} message${chat.length > 1 ? "s" : ""}`}
+              </button>
               {chatExpanded && (
                 <button
-                  onClick={() => setChatExpanded(false)}
+                  onClick={resetChat}
                   className="text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
                 >
-                  replier
+                  effacer
                 </button>
               )}
-            <button
-              onClick={resetChat}
-              className="shrink-0 text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
-            >
-              effacer
-            </button>
             </div>
           )}
         </div>
-        <div className="rounded-2xl border border-line bg-surface p-2 shadow-[0_2px_20px_-12px_rgba(38,35,29,0.25)]">
-          {chat.length > 0 && (
-            <div
-              className={`px-1 pb-2 pt-1 ${chatExpanded ? "max-h-80 overflow-y-auto" : ""}`}
-            >
-              {!chatExpanded && chat.length > 2 && (
-                <button
-                  onClick={() => setChatExpanded(true)}
-                  className="mb-2 w-full text-center text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
-                >
-                  voir la discussion ({chat.length} messages)
-                </button>
-              )}
+        <div className="rounded-2xl border border-line px-1 py-0.5">
+          {chatExpanded && chat.length > 0 && (
+            <div className="max-h-80 overflow-y-auto px-2 pb-2 pt-2">
               <div className="flex flex-col gap-2.5">
-                {(chatExpanded ? chat : chat.slice(-2)).map((m, i) => (
+                {chat.map((m, i) => (
                   <div
                     key={i}
                     className={
