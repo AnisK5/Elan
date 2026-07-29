@@ -26,7 +26,7 @@ import { useAuth } from "@/components/AuthProvider";
 
 // Bump à chaque changement du prompt de reco (app/api/plan) : invalide le cache
 // des reco existantes pour que la nouvelle logique s'applique immédiatement.
-const PLAN_VERSION = 7;
+const PLAN_VERSION = 8;
 const DURATIONS = [5, 15, 30, 50];
 // Au-delà de ce délai depuis son démarrage, une séance laissée en plan est
 // considérée ratée : on ne rallume pas le minuteur de la veille, on rouvre
@@ -145,6 +145,38 @@ export default function Home() {
     };
   }, [threads, dayStart]);
 
+  // Rythme récent. Sans ça, le planificateur ne voit qu'un volume figé et ne
+  // peut pas distinguer « beaucoup de trucs mais on suit » de « ça s'accumule
+  // depuis trois semaines » — les deux appellent pourtant des séances
+  // différentes.
+  const planStats = useMemo(() => {
+    const now = Date.now();
+    const since = now - 7 * 86_400_000;
+    const recent = sessions.filter((s) => Date.parse(s.date) >= since);
+    const lastSession = sessions.reduce<number | null>((acc, s) => {
+      const ts = Date.parse(s.date);
+      if (!Number.isFinite(ts)) return acc;
+      return acc === null || ts > acc ? ts : acc;
+    }, null);
+    return {
+      addedLast7: threads.filter((t) => Date.parse(t.createdAt) >= since)
+        .length,
+      doneLast7: threads.filter(
+        (t) =>
+          t.status === "done" && t.touchedAt && Date.parse(t.touchedAt) >= since,
+      ).length,
+      sessionsLast7: recent.length,
+      minutesLast7: recent.reduce((a, s) => a + (s.durationMin || 0), 0),
+      daysSinceLastSession:
+        lastSession === null
+          ? null
+          : Math.floor((now - lastSession) / 86_400_000),
+      stale14: openThreads.filter(
+        (t) => now - Date.parse(t.createdAt) > 14 * 86_400_000,
+      ).length,
+    };
+  }, [threads, openThreads, sessions]);
+
   const planSig = useMemo(
     () =>
       openThreads
@@ -152,8 +184,9 @@ export default function Home() {
           (t) =>
             `${t.id}:${t.due ?? ""}:${t.effort ?? ""}:${t.kind}:${t.text}:${t.note ?? ""}`,
         )
-        .join("|"),
-    [openThreads],
+        .join("|") +
+      `#${planStats.doneLast7}:${planStats.sessionsLast7}:${planStats.daysSinceLastSession}`,
+    [openThreads, planStats],
   );
 
   // Premier lancement : jamais rien déposé ET jamais fait de séance.
@@ -194,6 +227,7 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         threads: openThreads,
+        stats: planStats,
         meta: { name: settings.name },
       }),
     })
