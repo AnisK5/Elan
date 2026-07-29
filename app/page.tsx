@@ -18,7 +18,6 @@ import {
   useSettings,
   useThreads,
   type ActiveSession,
-  type ThreadOp,
 } from "@/lib/store";
 import Session from "@/components/Session";
 import ThreadRow from "@/components/ThreadRow";
@@ -26,6 +25,7 @@ import InstallPrompt from "@/components/InstallPrompt";
 import Welcome from "@/components/Welcome";
 import HelpButton from "@/components/HelpButton";
 import { useAuth } from "@/components/AuthProvider";
+import { parseThreadOps } from "@/lib/ops";
 
 // Bump à chaque changement du prompt de reco (app/api/plan) : invalide le cache
 // des reco existantes pour que la nouvelle logique s'applique immédiatement.
@@ -76,6 +76,9 @@ export default function Home() {
   const [pointNote, setPointNote] = useState("");
   const [pointUndo, setPointUndo] = useState<Thread[] | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([]);
+  // Replié par défaut : l'accueil doit rester calme. Un historique qui grossit
+  // à chaque échange recrée le mur de texte que l'app promet d'éviter.
+  const [chatExpanded, setChatExpanded] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setChat(readChat()), []);
@@ -440,10 +443,11 @@ export default function Home() {
         }),
       });
       if (!res.ok) return;
-      const j = (await res.json()) as { updates?: ThreadOp[]; note?: string };
-      if (Array.isArray(j.updates) && j.updates.length > 0) {
-        const before = snapshotThreads();
-        applyThreadOps(j.updates);
+      const j = (await res.json()) as { updates?: unknown; note?: string };
+      const before = snapshotThreads();
+      const ops = parseThreadOps(j.updates, new Set(before.map((t) => t.id)));
+      if (ops.length > 0) {
+        applyThreadOps(ops);
         setPointUndo(before);
         setPointNote(j.note || "trucs mis à jour");
         window.setTimeout(() => {
@@ -631,19 +635,39 @@ export default function Home() {
               : "Quoi de neuf ? Dépose, raconte, ou demande-moi."}
           </h2>
           {chat.length > 0 && (
+            <div className="flex shrink-0 items-baseline gap-3">
+              {chatExpanded && (
+                <button
+                  onClick={() => setChatExpanded(false)}
+                  className="text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
+                >
+                  replier
+                </button>
+              )}
             <button
               onClick={resetChat}
               className="shrink-0 text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
             >
               effacer
             </button>
+            </div>
           )}
         </div>
         <div className="rounded-2xl border border-line bg-surface p-2 shadow-[0_2px_20px_-12px_rgba(38,35,29,0.25)]">
           {chat.length > 0 && (
-            <div className="max-h-80 overflow-y-auto px-1 pb-2 pt-1">
+            <div
+              className={`px-1 pb-2 pt-1 ${chatExpanded ? "max-h-80 overflow-y-auto" : ""}`}
+            >
+              {!chatExpanded && chat.length > 2 && (
+                <button
+                  onClick={() => setChatExpanded(true)}
+                  className="mb-2 w-full text-center text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
+                >
+                  voir la discussion ({chat.length} messages)
+                </button>
+              )}
               <div className="flex flex-col gap-2.5">
-                {chat.map((m, i) => (
+                {(chatExpanded ? chat : chat.slice(-2)).map((m, i) => (
                   <div
                     key={i}
                     className={

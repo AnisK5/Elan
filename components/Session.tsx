@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage, Thread } from "@/lib/types";
+import { parseThreadOps } from "@/lib/ops";
 import {
   applyThreadOps,
   clearActiveSession,
@@ -10,7 +11,6 @@ import {
   useThreads,
   writeActiveSession,
   type ActiveSession,
-  type ThreadOp,
 } from "@/lib/store";
 import QuickCapture from "./QuickCapture";
 import ThreadRow from "./ThreadRow";
@@ -171,10 +171,11 @@ export default function Session({
         body: JSON.stringify({ threads: threadsRef.current, messages: msgs }),
       });
       if (!res.ok) return;
-      const j = (await res.json()) as { updates?: ThreadOp[]; note?: string };
-      if (Array.isArray(j.updates) && j.updates.length > 0) {
-        const before = snapshotThreads(); // pour pouvoir tout annuler
-        applyThreadOps(j.updates);
+      const j = (await res.json()) as { updates?: unknown; note?: string };
+      const before = snapshotThreads(); // pour pouvoir tout annuler
+      const ops = parseThreadOps(j.updates, new Set(before.map((t) => t.id)));
+      if (ops.length > 0) {
+        applyThreadOps(ops);
         setUndoSnapshot(before);
         setNote(j.note || "trucs mis à jour");
         window.setTimeout(() => {
