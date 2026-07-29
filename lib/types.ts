@@ -25,6 +25,7 @@ export type Role = "assistant" | "user";
 export interface ChatMessage {
   role: Role;
   content: string;
+  at?: string; // ISO — horodatage du message
 }
 
 export interface SessionLog {

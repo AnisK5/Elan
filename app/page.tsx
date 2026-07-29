@@ -43,6 +43,11 @@ export default function Home() {
   const [view, setView] = useState<"home" | "session">("home");
   const [duration, setDuration] = useState(15);
   const [today, setToday] = useState("");
+  const [dayStart, setDayStart] = useState(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  });
   const [wrapUp, setWrapUp] = useState(false);
   const [resume, setResume] = useState<ActiveSession | null>(null);
   const [plan, setPlan] = useState<{ message: string; pick: string } | null>(
@@ -79,14 +84,31 @@ export default function Home() {
     sessionStartRef.current = a.startedAt;
     setView("session");
   }, []);
+  // « Aujourd'hui » et la carte de la semaine doivent basculer de jour même si
+  // l'onglet reste ouvert toute la nuit : on resynchronise à intervalle et au
+  // retour sur l'onglet (le setTimeout peut être gelé en arrière-plan / veille).
   useEffect(() => {
-    setToday(
-      new Intl.DateTimeFormat("fr-FR", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-      }).format(new Date()),
-    );
+    function sync() {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      setDayStart((prev) => (prev === d.getTime() ? prev : d.getTime()));
+      setToday(
+        new Intl.DateTimeFormat("fr-FR", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+        }).format(d),
+      );
+    }
+    sync();
+    const id = setInterval(sync, 60_000);
+    document.addEventListener("visibilitychange", sync);
+    window.addEventListener("focus", sync);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", sync);
+      window.removeEventListener("focus", sync);
+    };
   }, []);
 
   const openThreads = useMemo(
@@ -95,18 +117,15 @@ export default function Home() {
   );
 
   const { open, overdue } = useMemo(() => {
-    const today0 = new Date();
-    today0.setHours(0, 0, 0, 0);
     const od = openThreads.filter(
-      (t) => t.due && new Date(t.due).setHours(0, 0, 0, 0) < today0.getTime(),
+      (t) => t.due && new Date(t.due).setHours(0, 0, 0, 0) < dayStart,
     );
     return { open: openThreads.length, overdue: od.length };
-  }, [openThreads]);
+  }, [openThreads, dayStart]);
 
   // Avancement : trucs bouclés par jour cette semaine (colonne des victoires, sans dénominateur).
   const { doneToday, doneWeek, days, todayIdx } = useMemo(() => {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
+    const start = new Date(dayStart);
     const monday = new Date(start);
     monday.setDate(start.getDate() - ((start.getDay() + 6) % 7));
     const d = Array(7).fill(0) as number[];
@@ -124,7 +143,7 @@ export default function Home() {
       doneToday: d[idx],
       doneWeek: d.reduce((a, b) => a + b, 0),
     };
-  }, [threads]);
+  }, [threads, dayStart]);
 
   const planSig = useMemo(
     () =>

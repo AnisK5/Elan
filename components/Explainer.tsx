@@ -16,8 +16,8 @@ const STEPS = [
     d: "Il regarde le volume, ce qui presse, ton envie du moment, l'endroit où tu es. Puis il propose la bonne taille : 15 minutes, 30, 50.",
   },
   {
-    t: "Il te dit quoi faire — et il reste",
-    d: "Des trucs précis, regroupés quand ils se font bien ensemble. Et il t'accompagne pendant que tu les fais.",
+    t: "Il te dit quoi faire — et il aide",
+    d: "Des trucs précis, regroupés quand ils se font bien ensemble. Avec de l'aide concrète : un modèle de mail tout écrit, quoi dire au téléphone.",
   },
 ];
 

@@ -28,46 +28,28 @@ export default function Welcome() {
           Chaque jour, un créneau. Élan te dit quoi y faire.
         </h1>
         <p className="mt-4 text-[16px] leading-relaxed text-ink">
-          Élan est une app de tâches qui marche par rendez-vous. Tu déposes tout
-          ce que tu as à faire. Ensuite, plutôt qu&apos;une liste à trier, tu
-          prends un créneau de 15 ou 30 minutes — et c&apos;est Élan qui décide
-          ce qu&apos;on y met.
-        </p>
-        <p className="mt-4 text-[16px] leading-relaxed text-muted">
-          Il regarde le volume, ce qui presse, ton envie du moment,
-          l&apos;endroit où tu es. Il en déduit la bonne taille de créneau, et
-          il te dit précisément par quoi commencer. Pendant que tu avances, il
-          reste là.
+          Tu déposes tout ce que tu as à faire. Ensuite, au lieu d&apos;une
+          liste à trier, tu prends un rendez-vous — et c&apos;est Élan qui
+          décide ce qu&apos;on y met, et qui reste avec toi pendant que tu
+          avances.
         </p>
       </section>
 
-      <figure className="animate-rise mt-8 rounded-2xl border border-teal-soft bg-teal-soft/40 px-5 py-4">
+      <figure className="animate-rise mt-7 rounded-2xl border border-teal-soft bg-teal-soft/40 px-5 py-4">
         <figcaption className="text-xs font-medium tracking-wide text-teal">
-          UN CRÉNEAU PROPOSÉ, POUR DONNER UNE IDÉE
+          CE QU&apos;ÉLAN TE PROPOSE, PAR EXEMPLE
         </figcaption>
         <blockquote className="mt-2 text-[15px] leading-relaxed text-teal-ink">
-          « Tu as un peu de temps et tu es chez toi — on prend 30 minutes.
-          J&apos;ai trois trucs qui se font bien ensemble : le rendez-vous chez
-          le dentiste, la relance à l&apos;assurance, et la lettre à poster.
-          Deux appels et une enveloppe, tout depuis le canapé. On commence par
-          le dentiste, c&apos;est le plus court — je reste avec toi. »
+          « Tu as deux relances qui traînent, dont une avec une échéance
+          vendredi — je propose 30 minutes plutôt que 15. Elles se font bien
+          ensemble : même énergie, tout depuis ton bureau. On commence par
+          l&apos;assurance, c&apos;est elle qui a la date : je t&apos;écris le
+          mail, tu relis et tu envoies. Ensuite le dentiste — je te donne quoi
+          dire, tu n&apos;as qu&apos;à lire. »
         </blockquote>
       </figure>
 
-      <section className="mt-8">
-        <p className="text-[16px] leading-relaxed text-muted">
-          Les autres applis te laissent empiler les tâches et les gérer une par
-          une. Le volume monte, et on ne sait plus où donner de la tête. Ici,
-          c&apos;est Élan qui porte le volume — toi, tu fais le pas suivant, et
-          tu n&apos;es pas seul devant.
-        </p>
-      </section>
-
-      <section className="mt-9">
-        <ExplainerBody />
-      </section>
-
-      <section className="mt-10">
+      <section className="mt-7">
         <button
           onClick={() => setView("signin")}
           className="w-full rounded-xl bg-teal py-4 text-center font-display text-lg font-semibold text-white transition hover:bg-teal-ink"
@@ -80,6 +62,13 @@ export default function Welcome() {
         >
           J&apos;ai déjà un compte
         </button>
+      </section>
+
+      <section className="mt-14 border-t border-line pt-8">
+        <h2 className="mb-5 text-xs font-medium tracking-wide text-faint">
+          SI TU VEUX LE DÉTAIL
+        </h2>
+        <ExplainerBody />
       </section>
 
       <footer className="mt-auto pt-12 text-center text-xs leading-relaxed text-faint">

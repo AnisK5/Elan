@@ -112,7 +112,8 @@ export default function Session({
   async function runTurn(convo: ChatMessage[], ending = false) {
     setError("");
     setStreaming(true);
-    setMessages([...convo, { role: "assistant", content: "" }]);
+    const at = new Date().toISOString();
+    setMessages([...convo, { role: "assistant", content: "", at }]);
 
     try {
       const res = await fetch("/api/session", {
@@ -145,7 +146,7 @@ export default function Session({
         const { done, value } = await reader.read();
         if (done) break;
         acc += decoder.decode(value, { stream: true });
-        setMessages([...convo, { role: "assistant", content: acc }]);
+        setMessages([...convo, { role: "assistant", content: acc, at }]);
       }
 
       // Après un échange normal (pas l'ouverture ni la clôture), l'IA relit
@@ -191,7 +192,7 @@ export default function Session({
     if (!t || streaming) return;
     const convo: ChatMessage[] = [
       ...messages.filter((m) => m.content.trim().length > 0),
-      { role: "user", content: t },
+      { role: "user", content: t, at: new Date().toISOString() },
     ];
     setInput("");
     void runTurn(convo);
@@ -257,6 +258,11 @@ export default function Session({
                   <span className="text-xs font-medium tracking-wide text-teal">
                     Élan
                   </span>
+                  {m.at && (
+                    <span className="text-xs tabular-nums text-faint">
+                      {hhmm(m.at)}
+                    </span>
+                  )}
                 </div>
                 {m.content ? (
                   <p className="whitespace-pre-wrap text-[17px] leading-relaxed text-ink">
@@ -267,7 +273,12 @@ export default function Session({
                 )}
               </div>
             ) : (
-              <div key={i} className="flex justify-end">
+              <div key={i} className="flex items-end justify-end gap-2">
+                {m.at && (
+                  <span className="mb-1 shrink-0 text-xs tabular-nums text-faint">
+                    {hhmm(m.at)}
+                  </span>
+                )}
                 <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-teal-soft px-4 py-2.5 text-[15px] leading-relaxed text-teal-ink">
                   {m.content}
                 </p>
@@ -433,4 +444,11 @@ function fmt(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function hhmm(iso: string): string {
+  return new Date(iso).toLocaleTimeString("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
