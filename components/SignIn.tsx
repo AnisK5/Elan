@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useAuth } from "./AuthProvider";
 
-export default function SignIn() {
+export default function SignIn({ onBack }: { onBack?: () => void }) {
   const { signIn, verifyOtp, signInWithGoogle, configured } = useAuth();
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
@@ -58,10 +58,12 @@ export default function SignIn() {
       {view === "main" && (
         <div className="animate-rise">
           <h1 className="font-display text-[26px] font-semibold leading-tight text-ink">
-            Ta séance t&apos;attend.
+            Ouvre ton compte.
           </h1>
           <p className="mt-2 text-[15px] leading-relaxed text-muted">
-            Connecte-toi pour retrouver tes trucs sur tous tes appareils.
+            C&apos;est ce qui permet à Élan de se souvenir de ce que tu lui as
+            confié — d&apos;une séance à l&apos;autre, et d&apos;un appareil à
+            l&apos;autre.
           </p>
 
           <div className="mt-6 flex flex-col gap-3">
@@ -93,6 +95,15 @@ export default function SignIn() {
           )}
           {!configured && (
             <p className="mt-3 text-sm text-amber">Configuration manquante.</p>
+          )}
+
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="mt-6 text-sm text-faint underline-offset-2 hover:underline"
+            >
+              ← C&apos;est quoi Élan, déjà ?
+            </button>
           )}
         </div>
       )}

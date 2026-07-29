@@ -20,7 +20,8 @@ import QuickCapture from "@/components/QuickCapture";
 import Session from "@/components/Session";
 import ThreadRow from "@/components/ThreadRow";
 import InstallPrompt from "@/components/InstallPrompt";
-import SignIn from "@/components/SignIn";
+import Welcome from "@/components/Welcome";
+import HelpButton from "@/components/HelpButton";
 import { useAuth } from "@/components/AuthProvider";
 
 // Bump à chaque changement du prompt de reco (app/api/plan) : invalide le cache
@@ -266,7 +267,7 @@ export default function Home() {
   }
 
   if (!user) {
-    return <SignIn />;
+    return <Welcome />;
   }
 
   if (view === "session") {
@@ -281,7 +282,8 @@ export default function Home() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-xl flex-col px-5 pb-10">
+    <>
+    <main className="mx-auto flex min-h-dvh w-full max-w-xl flex-col px-5 pb-24">
       <header className="flex items-center justify-between py-6">
         <div className="flex items-center gap-2">
           <Logo />
@@ -321,13 +323,13 @@ export default function Home() {
         {isNewcomer ? (
           <>
             <h1 className="mt-1 font-display text-[28px] font-semibold leading-tight text-ink">
-              Élan, c&apos;est l&apos;inverse d&apos;une to-do list.
+              Commence par vider ta tête.
             </h1>
             <p className="mt-3 text-[15px] leading-relaxed text-muted">
-              Tu déposes une bonne fois tout ce qui traîne dans ta tête. Ensuite,
-              chaque jour, un petit rendez-vous guidé où tu ne gères rien : je
-              pioche pour toi, je te fais avancer un pas à la fois, et je garde
-              le reste au chaud. Tu n&apos;as plus jamais à parcourir ta liste.
+              Dépose tout ce qui traîne, en vrac — sans classer, sans prioriser.
+              Ensuite je te proposerai un créneau à ta taille, 15, 30 ou 50
+              minutes selon ce que tu as sur les bras et ce qui presse. Et je te
+              dirai précisément quoi y faire, en restant avec toi.
             </p>
             <div className="mt-4 flex items-start gap-2 rounded-xl bg-sink/60 px-4 py-3 text-sm text-ink">
               <span className="mt-0.5 text-teal">↓</span>
@@ -482,6 +484,9 @@ export default function Home() {
         </button>
       </footer>
     </main>
+
+    <HelpButton />
+    </>
   );
 }
 
