@@ -344,7 +344,7 @@ function usePersisted<T>(key: string, fallback: T) {
 
 export type ThreadOp =
   | { op: "done"; id: string }
-  | { op: "snooze"; id: string }
+  | { op: "snooze"; id: string; until?: string }
   | { op: "rename"; id: string; text: string }
   | { op: "note"; id: string; note: string }
   | { op: "set"; id: string; due?: string; effort?: Effort; kind?: ThreadKind }
@@ -435,6 +435,41 @@ export function restoreThreads(list: Thread[]): void {
   write(THREADS_KEY, list);
 }
 
+// Les modèles glissent parfois du balisage dans leur texte (balises de
+// citation, gras markdown, indices de source). Écrit tel quel en base, ça
+// s'affiche brut et c'est irrécupérable — on nettoie donc à l'écriture, pas
+// à l'affichage.
+export function clean(s: string | undefined): string {
+  if (!s) return "";
+  return s
+    .replace(/<\/?cite[^>]*>/gi, "")
+    .replace(/<\/?[a-z][^>]*>/gi, "")
+    .replace(/\s*\bindex\s*=\s*"[^"]*"/gi, "")
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+// Un truc mis en pause doit revenir tout seul le jour dit — sinon la promesse
+// « le truc, lui, reviendra » est fausse et il disparaît pour de bon.
+export function wakeSnoozed(): number {
+  if (typeof window === "undefined") return 0;
+  const list = read<Thread[]>(THREADS_KEY, []);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let woken = 0;
+  const next = list.map((t) => {
+    if (t.status !== "snoozed" || !t.snoozedUntil) return t;
+    const until = new Date(t.snoozedUntil);
+    until.setHours(0, 0, 0, 0);
+    if (until.getTime() > today.getTime()) return t;
+    woken++;
+    return { ...t, status: "open" as const, snoozedUntil: undefined };
+  });
+  if (woken > 0) write(THREADS_KEY, next);
+  return woken;
+}
+
 export function applyThreadOps(ops: ThreadOp[]): void {
   if (!ops.length) return;
   const now = new Date().toISOString();
@@ -451,13 +486,13 @@ export function applyThreadOps(ops: ThreadOp[]): void {
       list = [
         {
           id: newId(),
-          text: op.text.trim(),
+          text: clean(op.text),
           kind: op.kind,
           status: "open",
           createdAt: now,
           due: normalizeDue(op.due),
           effort: op.effort,
-          note: op.note?.trim() || undefined,
+          note: clean(op.note) || undefined,
         },
         ...list,
       ];
@@ -469,11 +504,18 @@ export function applyThreadOps(ops: ThreadOp[]): void {
         case "done":
           return { ...t, status: "done", touchedAt: now };
         case "snooze":
-          return { ...t, status: "snoozed", snoozedUntil: tomorrowISO() };
+          return {
+            ...t,
+            status: "snoozed",
+            // « on en reparle après jeudi » doit pouvoir se dire : sans date
+            // explicite on retombe sur demain, l'ancien comportement.
+            snoozedUntil: normalizeDue(op.until) ?? tomorrowISO(),
+            touchedAt: now,
+          };
         case "rename":
-          return { ...t, text: op.text.trim(), touchedAt: now };
+          return { ...t, text: clean(op.text) || t.text, touchedAt: now };
         case "note":
-          return { ...t, note: op.note.trim() || undefined, touchedAt: now };
+          return { ...t, note: clean(op.note) || undefined, touchedAt: now };
         case "set":
           return {
             ...t,

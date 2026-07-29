@@ -10,13 +10,13 @@ import {
   readActiveSession,
   restoreThreads,
   snapshotThreads,
+  wakeSnoozed,
   useSessions,
   useSettings,
   useThreads,
   type ActiveSession,
   type ThreadOp,
 } from "@/lib/store";
-import QuickCapture from "@/components/QuickCapture";
 import Session from "@/components/Session";
 import WeekView from "@/components/WeekView";
 import ThreadRow from "@/components/ThreadRow";
@@ -66,6 +66,11 @@ export default function Home() {
   const [pointUndo, setPointUndo] = useState<Thread[] | null>(null);
 
   useEffect(() => setDuration(settings.defaultDurationMin), [settings]);
+
+  // Les trucs mis en pause reviennent d'eux-mêmes le jour dit.
+  useEffect(() => {
+    if (ready) wakeSnoozed();
+  }, [ready]);
 
   // Reprise automatique d'une séance laissée en cours (refresh, onglet fermé…),
   // mais seulement si elle est encore fraîche — sinon on la jette.
@@ -117,11 +122,14 @@ export default function Home() {
     [threads],
   );
 
-  const { open, overdue } = useMemo(() => {
-    const od = openThreads.filter(
-      (t) => t.due && new Date(t.due).setHours(0, 0, 0, 0) < dayStart,
-    );
-    return { open: openThreads.length, overdue: od.length };
+  const { open, openActions, openSuivis } = useMemo(() => {
+    return {
+      open: openThreads.length,
+      // Séparés à l'affichage : « à faire » descend quand on avance, alors que
+      // « à suivre » dépend des autres. Un compteur unique semble figé.
+      openActions: openThreads.filter((t) => t.kind !== "suivi").length,
+      openSuivis: openThreads.filter((t) => t.kind === "suivi").length,
+    };
   }, [openThreads, dayStart]);
 
   // Avancement : trucs bouclés par jour cette semaine (colonne des victoires, sans dénominateur).
@@ -151,8 +159,9 @@ export default function Home() {
   // depuis trois semaines » — les deux appellent pourtant des séances
   // différentes.
   const planStats = useMemo(() => {
-    const now = Date.now();
-    const since = now - 7 * 86_400_000;
+    // Ancré sur dayStart plutôt que Date.now() : stable pendant le rendu, et
+    // raisonner en jours calendaires colle mieux au vécu qu'une fenêtre de 168h.
+    const since = dayStart - 6 * 86_400_000;
     const recent = sessions.filter((s) => Date.parse(s.date) >= since);
     const lastSession = sessions.reduce<number | null>((acc, s) => {
       const ts = Date.parse(s.date);
@@ -171,12 +180,12 @@ export default function Home() {
       daysSinceLastSession:
         lastSession === null
           ? null
-          : Math.floor((now - lastSession) / 86_400_000),
+          : Math.max(0, Math.round((dayStart - lastSession) / 86_400_000)),
       stale14: openThreads.filter(
-        (t) => now - Date.parse(t.createdAt) > 14 * 86_400_000,
+        (t) => Date.parse(t.createdAt) < dayStart - 14 * 86_400_000,
       ).length,
     };
-  }, [threads, openThreads, sessions]);
+  }, [threads, openThreads, sessions, dayStart]);
 
   const planSig = useMemo(
     () =>
@@ -288,6 +297,35 @@ export default function Home() {
     setView("session");
   }
 
+  // Choisir soi-même une durée doit changer le conseil : on ne veut pas lire
+  // « je te propose 15 min » alors qu'on vient de cliquer sur 50.
+  async function pickDuration(d: number) {
+    setDuration(d);
+    appliedSig.current = planSig; // le choix manuel prime sur la reco
+    if (openThreads.length === 0) return;
+    setPlanLoading(true);
+    try {
+      const res = await fetch("/api/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threads: openThreads,
+          stats: planStats,
+          chosen: d,
+          meta: { name: settings.name },
+        }),
+      });
+      if (res.ok) {
+        const j = (await res.json()) as { message?: string };
+        if (j.message) setPlan({ message: j.message, pick: String(d) });
+      }
+    } catch {
+      // on garde le conseil précédent
+    } finally {
+      setPlanLoading(false);
+    }
+  }
+
   async function sendPoint() {
     const t = pointText.trim();
     if (!t || pointBusy) return;
@@ -317,12 +355,22 @@ export default function Home() {
           setPointNote("Rien à changer de mon côté — mais bien noté.");
           window.setTimeout(() => setPointNote(""), 4000);
         }
+      } else {
+        keepAnyway(t);
       }
     } catch {
-      // silencieux
+      // Le champ sert aussi de capture : si l'IA est injoignable, ce qui vient
+      // d'être écrit ne doit surtout pas disparaître dans le vide.
+      keepAnyway(t);
     } finally {
       setPointBusy(false);
     }
+  }
+
+  function keepAnyway(text: string) {
+    add(text, "action");
+    setPointNote("Noté tel quel (je n'ai pas pu l'analyser).");
+    window.setTimeout(() => setPointNote(""), 5000);
   }
 
   if (loading) {
@@ -460,7 +508,7 @@ export default function Home() {
             )}
 
             <div className="mt-5 flex items-center gap-2">
-              <DurationPick value={duration} onChange={setDuration} />
+              <DurationPick value={duration} onChange={pickDuration} />
             </div>
 
             <button
@@ -473,66 +521,64 @@ export default function Home() {
         )}
       </section>
 
-      {/* Capture */}
+      {/* Une seule entrée : déposer, donner des nouvelles, ou les deux à la
+          fois. Séparer les deux n'avait pas de sens — c'est la même phrase
+          qu'on écrit, et /api/reconcile sait déjà créer autant que mettre
+          à jour. */}
       <section className="mt-8">
         <h2 className="mb-2 px-1 text-sm font-medium text-muted">
           {isNewcomer
             ? "Vide ta tête — dépose tout ce qui traîne."
-            : "Quelque chose en tête ? Dépose-le ici."}
+            : "Quoi de neuf ? Dépose un truc, ou donne des nouvelles."}
         </h2>
-        <QuickCapture onAdd={add} autoFocus={isNewcomer} />
-      </section>
-
-      {/* Point rapide : dire ce qu'on a fait hors séance */}
-      {!isNewcomer && (open > 0 || doneToday > 0) && (
-        <section className="mt-8">
-          <h2 className="mb-2 px-1 text-sm font-medium text-muted">
-            Déjà avancé sur des trucs ? Dis-le-moi.
-          </h2>
-          <div className="rounded-2xl border border-line bg-surface p-2 shadow-[0_2px_20px_-12px_rgba(38,35,29,0.25)]">
-            <div className="flex items-end gap-2">
-              <textarea
-                value={pointText}
-                onChange={(e) => setPointText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    sendPoint();
-                  }
-                }}
-                rows={1}
-                placeholder="ex. j'ai appelé le dentiste et posté la lettre"
-                className="max-h-40 min-h-[46px] flex-1 resize-none rounded-xl bg-transparent px-3 py-3 text-[15px] leading-snug text-ink outline-none placeholder:text-faint"
-              />
-              <button
-                onClick={sendPoint}
-                disabled={!pointText.trim() || pointBusy}
-                className="mb-0.5 shrink-0 rounded-xl bg-teal px-4 py-3 text-sm font-medium text-white transition hover:bg-teal-ink disabled:opacity-40"
-              >
-                {pointBusy ? "…" : "Mettre à jour"}
-              </button>
-            </div>
-            {pointNote && (
-              <div className="animate-rise flex items-center gap-2 px-2 pb-1.5 pt-1 text-xs text-teal-ink">
-                <span>✏️</span>
-                <span className="flex-1">{pointNote}</span>
-                {pointUndo && (
-                  <button
-                    onClick={() => {
-                      restoreThreads(pointUndo);
-                      setPointUndo(null);
-                      setPointNote("");
-                    }}
-                    className="shrink-0 rounded-md px-2 py-0.5 font-medium text-teal underline-offset-2 hover:underline"
-                  >
-                    annuler
-                  </button>
-                )}
-              </div>
-            )}
+        <div className="rounded-2xl border border-line bg-surface p-2 shadow-[0_2px_20px_-12px_rgba(38,35,29,0.25)]">
+          <div className="flex items-end gap-2">
+            <textarea
+              value={pointText}
+              autoFocus={isNewcomer}
+              onChange={(e) => setPointText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  sendPoint();
+                }
+              }}
+              rows={1}
+              placeholder={
+                isNewcomer
+                  ? "ex. relancer Paul pour le devis"
+                  : "ex. j'ai appelé le dentiste · penser à réserver le kayak"
+              }
+              className="max-h-40 min-h-[46px] flex-1 resize-none rounded-xl bg-transparent px-3 py-3 text-[15px] leading-snug text-ink outline-none placeholder:text-faint"
+            />
+            <button
+              onClick={sendPoint}
+              disabled={!pointText.trim() || pointBusy}
+              className="mb-0.5 shrink-0 rounded-xl bg-teal px-4 py-3 text-sm font-medium text-white transition hover:bg-teal-ink disabled:opacity-40"
+            >
+              {pointBusy ? "…" : "Envoyer"}
+            </button>
           </div>
-        </section>
-      )}
+          {pointNote && (
+            <div className="animate-rise flex items-center gap-2 px-2 pb-1.5 pt-1 text-xs text-teal-ink">
+              <span>✏️</span>
+              <span className="flex-1">{pointNote}</span>
+              {pointUndo && (
+                <button
+                  onClick={() => {
+                    restoreThreads(pointUndo);
+                    setPointUndo(null);
+                    setPointNote("");
+                  }}
+                  className="shrink-0 rounded-md px-2 py-0.5 font-medium text-teal underline-offset-2 hover:underline"
+                >
+                  annuler
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
 
       {/* Avancement — colonne des victoires, jamais ce qui reste */}
       {doneWeek > 0 && (
@@ -546,7 +592,12 @@ export default function Home() {
 
       {/* État, sans liste anxiogène */}
       <section className="mt-8">
-        <BacklogPeek open={open} ready={ready} />
+        <BacklogPeek
+          open={open}
+          actions={openActions}
+          suivis={openSuivis}
+          ready={ready}
+        />
       </section>
 
       <InstallPrompt />
@@ -569,7 +620,17 @@ export default function Home() {
   );
 }
 
-function BacklogPeek({ open, ready }: { open: number; ready: boolean }) {
+function BacklogPeek({
+  open,
+  actions,
+  suivis,
+  ready,
+}: {
+  open: number;
+  actions: number;
+  suivis: number;
+  ready: boolean;
+}) {
   const [show, setShow] = useState(false);
   const { threads, patch, remove } = useThreads();
 
@@ -588,8 +649,15 @@ function BacklogPeek({ open, ready }: { open: number; ready: boolean }) {
       <div className="flex items-center justify-between">
         <p className="text-sm text-ink">
           Je garde{" "}
-          <b className="font-display text-lg">{open}</b>{" "}
-          {open > 1 ? "trucs" : "truc"} pour toi.
+          <b className="font-display text-lg">{actions}</b>{" "}
+          {actions > 1 ? "trucs à faire" : "truc à faire"}
+          {suivis > 0 && (
+            <>
+              {" "}
+              · <b className="font-display text-lg">{suivis}</b> à suivre
+            </>
+          )}
+          .
         </p>
         <button
           onClick={() => setShow((s) => !s)}

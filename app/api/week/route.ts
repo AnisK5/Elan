@@ -159,10 +159,22 @@ export async function POST(req: Request) {
     return Response.json({ intro: "", slots: [] });
   }
 
-  const validIds = new Set<string>([
-    ...projects.map((p) => p.id),
-    ...threads.filter((t) => t.status === "open").map((t) => t.id),
-  ]);
+  // Résolution tolérante : le modèle renvoie souvent le NOM du projet plutôt
+  // que son id. On accepte les deux (id ou nom/texte, insensible à la casse)
+  // et on ramène toujours à l'id canonique.
+  const openThreadsList = threads.filter((t) => t.status === "open");
+  const idByAny = new Map<string, string>();
+  for (const p of projects) {
+    idByAny.set(p.id, p.id);
+    idByAny.set(p.name.trim().toLowerCase(), p.id);
+  }
+  for (const t of openThreadsList) {
+    idByAny.set(t.id, t.id);
+    idByAny.set(t.text.trim().toLowerCase(), t.id);
+  }
+  const resolveId = (raw: string): string | undefined =>
+    idByAny.get(raw) ?? idByAny.get(raw.trim().toLowerCase());
+
   const idx = todayDayIdx();
   const allowedSlots = new Set(
     DAY_KEYS.slice(idx).flatMap((d) => PARTS.map((p) => `${d}-${p}`)),
@@ -183,22 +195,28 @@ export async function POST(req: Request) {
     const parsed = safeParse(text);
     if (!parsed) return Response.json({ intro: "", slots: [] });
 
-    // On ne garde que des créneaux valides, non passés, avec un id connu.
+    // On ne garde que des créneaux valides, non passés, avec un projet connu.
+    const seen = new Set<string>(); // un seul projet par créneau
     const slots = parsed.slots
       .filter(
-        (s) =>
-          s &&
+        (s): s is typeof s =>
+          !!s &&
           typeof s.slot === "string" &&
           ALL_SLOTS.has(s.slot) &&
           allowedSlots.has(s.slot) &&
-          validIds.has(s.projectId) &&
+          typeof s.projectId === "string" &&
           typeof s.rationale === "string",
       )
       .map((s) => ({
         slot: s.slot,
-        projectId: s.projectId,
+        projectId: resolveId(s.projectId),
         rationale: s.rationale.trim(),
-      }));
+      }))
+      .filter((s): s is { slot: string; projectId: string; rationale: string } => {
+        if (!s.projectId || seen.has(s.slot)) return false;
+        seen.add(s.slot);
+        return true;
+      });
 
     return Response.json({ intro: parsed.intro.trim(), slots });
   } catch {

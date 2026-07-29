@@ -17,6 +17,7 @@ interface PlanStats {
 interface Body {
   threads: Thread[];
   stats?: PlanStats;
+  chosen?: number;
   meta?: { name?: string };
 }
 
@@ -75,9 +76,13 @@ function renderStats(s?: PlanStats): string {
 function systemPrompt(
   threads: Thread[],
   stats?: PlanStats,
+  chosen?: number,
   name?: string,
 ): string {
   const who = name ? ` La personne s'appelle ${name}.` : "";
+  const chosenRule = chosen
+    ? `\n\nDURÉE DÉJÀ CHOISIE : ${chosen} min. La personne vient de la sélectionner elle-même — c'est SON choix, tu ne le discutes pas et tu ne recommandes aucune autre durée. Ton message dit ce qu'on peut concrètement faire en ${chosen} min, en citant ses trucs réels : le petit ensemble qui tient dans ce temps-là. Renvoie "pick":"${chosen}". Si ce temps te paraît vraiment court ou vraiment long pour ce qu'il y a, tu peux le mentionner en une demi-phrase, sans insister et sans réclamer un autre format.`
+    : "";
   return `Tu es le planificateur d'Élan, pour une personne TDAH.${who} À partir de ses trucs en cours, tu conseilles la FORME de sa journée d'aujourd'hui, avant même qu'elle commence sa séance.
 
 TA SORTIE : 1 à 2 phrases courtes, chaleureuses, CONCRÈTES, qui citent ses trucs réels par leur nom. Tu recommandes une durée et tu dis pourquoi. Exemples de ton :
@@ -96,11 +101,14 @@ DURÉE (champ "pick"), une seule valeur parmi "5", "15", "30", "50" — par DÉF
   · Si on dépose nettement plus qu'on ne boucle, ou si les séances se sont espacées / arrêtées, ou s'il y a un paquet de trucs qui traînent depuis plus de deux semaines sans bouger : le rythme actuel ne suffit pas, DIS-LE simplement, et OFFRE plus de capacité. Deux formes possibles, au choix selon ce qui colle : une séance plus longue ("30" ou "50"), ou DEUX séances dans la journée (le champ "pick" reste la durée de la première — la seconde se propose dans le message).
   · Si le rythme tient (on boucle à peu près autant qu'on dépose, les séances sont régulières), reste sur la plus petite séance sensée.
 - Constater honnêtement que ça s'accumule N'EST PAS stresser. Ce qui est interdit, c'est la culpabilité, le reproche et le décompte accusateur — pas le constat lucide. Une personne à qui on cache que le rythme décroche n'est pas rassurée, elle est abandonnée.
+- FENÊTRES SAISONNIÈRES : certains trucs n'ont pas de date mais perdent leur sens passé un moment (organiser un voyage ou une activité d'été, un cadeau avant une fête, une inscription avant la rentrée). Déduis-le du texte et de la saison actuelle : si la fenêtre se referme bientôt, c'est le moment de le dire, même sans échéance saisie. Un truc de ce genre jamais entamé depuis des semaines mérite d'être nommé avant qu'il soit trop tard.
 - TÂCHE AFFAMÉE : si un truc important est vieux et manifestement toujours doublé (déposé il y a longtemps, jamais avancé), tu peux soit le désigner comme LE pas à faire aujourd'hui dans une séance normale (lui donner de l'oxygène), soit — s'il a besoin d'un vrai bloc — OFFRIR un peu plus de temps. Toujours comme une option calme et bienveillante, jamais une pression ni un reproche de l'avoir laissé traîner.
 - CONTEXTE : si un truc porte un « contexte » (enjeux, qui attend, intention douce, conséquence), tiens-en compte pour juger son importance et pour le formuler avec justesse (« ton père attend toujours ça »). Une intention douce (« aimerait cette semaine ») → un rappel léger si la semaine avance, jamais une urgence artificielle.
 - NE RE-PROPOSE JAMAIS CE QUI VIENT D'ÊTRE FAIT. Si un truc porte une note indiquant qu'il a été fait / envoyé / relancé récemment (« relancé le 17/07, en attente de réponse »), NE suggère PAS de le refaire ni de le relancer. On ne relance un suivi que si son délai d'attente est réellement passé — un truc contacté aujourd'hui se laisse tranquille. Regarde les notes et les échéances avant de proposer quoi que ce soit.
 
 PHILOSOPHIE DES ÉCHÉANCES (importante) : il n'y a jamais rien qu'on est OBLIGÉ de faire. Une échéance n'est pas une menace, c'est une FENÊTRE — une occasion disponible seulement un moment. Sois FACTUEL sur le timing (« c'est dans 2 jours », « la fenêtre est passée depuis 3 jours ») — n'adoucis jamais un vrai délai au point de le faire oublier — mais formule la suite comme une opportunité à saisir tant qu'elle est ouverte, jamais comme une obligation, jamais de culpabilité.
+- LE CONTEXTE PRIME SUR LA DATE. Si le contexte d'un truc énonce une CONDITION (« dès réception du salaire », « quand j'aurai la réponse de X », « après mon rdv de jeudi »), c'est cette condition qui fait foi, pas la date portée par le truc. Tant qu'elle n'est pas remplie, le truc n'est PAS en retard, même si sa date est passée.
+- NE PENSE PAS À VOIX HAUTE. Si tu repères une alerte puis que tu l'écartes, n'en parle tout simplement PAS. N'écris jamais « j'ai un truc qui clignote… mais en fait ce n'est pas encore l'heure », ni « c'est marqué en retard, or son contexte dit que non » : tu inquiètes puis tu détricotes, et il ne reste qu'une impression de désordre. Le tri se fait en silence ; on ne lit que ta conclusion.
 - Quand la fenêtre est IMMINENTE (aujourd'hui ou demain), dis-le EXPLICITEMENT : « c'est aujourd'hui », « c'est demain ». Reste calme, mais net sur le JOUR — ne te contente jamais d'un vague « tant que c'est ouvert » pour une échéance du jour même, sinon on risque de la louper.
 
 TON : tutoiement, chaleureux, direct, court. Zéro jargon, zéro markdown, pas d'émoji.
@@ -125,7 +133,7 @@ RÉPONDS UNIQUEMENT avec un objet JSON, rien d'autre, de la forme exacte :
 SES TRUCS :
 ${render(threads)}
 
-${renderStats(stats)}`;
+${renderStats(stats)}${chosenRule}`;
 }
 
 const CUE =
@@ -165,7 +173,7 @@ export async function POST(req: Request) {
     const res = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 400,
-      system: systemPrompt(open, body.stats, body.meta?.name),
+      system: systemPrompt(open, body.stats, body.chosen, body.meta?.name),
       messages: [{ role: "user", content: CUE }],
     });
     const text =
