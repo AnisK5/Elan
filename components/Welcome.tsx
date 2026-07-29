@@ -28,10 +28,11 @@ export default function Welcome() {
           Chaque jour, un créneau. Élan s&apos;occupe de ce qu&apos;on y met.
         </h1>
         <p className="mt-4 text-[16px] leading-relaxed text-ink">
-          Tu déposes tout ce que tu as à faire. Ensuite, au lieu d&apos;une
-          liste à trier, tu prends un rendez-vous — et c&apos;est Élan qui
-          choisit ce qui mérite ton attention aujourd&apos;hui, pour que rien
-          ne se perde et que tu gardes ton énergie pour ce qui compte.
+          Tu déposes tout ce que tu as à faire. Ensuite tu prends
+          l&apos;habitude d&apos;ouvrir un créneau avec Élan, régulièrement.
+          C&apos;est lui qui propose le temps à y consacrer et ce qu&apos;on y
+          met — pour que rien ne se perde, et que ton énergie aille à ce qui
+          compte.
         </p>
       </section>
 
@@ -40,13 +41,11 @@ export default function Welcome() {
           CE QU&apos;ÉLAN TE PROPOSE, PAR EXEMPLE
         </figcaption>
         <blockquote className="mt-2 text-[15px] leading-relaxed text-teal-ink">
-          « Tu as deux relances qui traînent, dont une avec une échéance
-          vendredi. Je te propose qu&apos;on prenne un créneau de 30 minutes ce
-          matin plutôt que 15 — on aura le temps de faire les deux. Elles vont
-          bien ensemble : même énergie, tout depuis ton bureau. On pourrait
-          commencer par l&apos;assurance, c&apos;est elle qui a la date : je te
-          prépare un brouillon de mail, tu en fais ce que tu veux. Et pour le
-          dentiste, je te note les points à ne pas oublier. »
+          « Deux relances traînent, dont une pour vendredi. Je te propose 30
+          minutes ce matin plutôt que 15 : elles vont bien ensemble, tout
+          depuis ton bureau. On commencerait par l&apos;assurance, c&apos;est
+          elle qui a la date — je te prépare un brouillon. Pour le dentiste, je
+          te note les points à ne pas oublier. »
         </blockquote>
       </figure>
 

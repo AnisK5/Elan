@@ -21,7 +21,6 @@ import {
   type ThreadOp,
 } from "@/lib/store";
 import Session from "@/components/Session";
-import WeekView from "@/components/WeekView";
 import ThreadRow from "@/components/ThreadRow";
 import InstallPrompt from "@/components/InstallPrompt";
 import Welcome from "@/components/Welcome";
@@ -44,7 +43,7 @@ export default function Home() {
   const { log, sessions } = useSessions();
   const { settings } = useSettings();
 
-  const [view, setView] = useState<"home" | "session" | "week">("home");
+  const [view, setView] = useState<"home" | "session">("home");
   const [duration, setDuration] = useState(15);
   const [today, setToday] = useState("");
   const [dayStart, setDayStart] = useState(() => {
@@ -493,10 +492,6 @@ export default function Home() {
     );
   }
 
-  if (view === "week") {
-    return <WeekView onClose={() => setView("home")} />;
-  }
-
   return (
     <>
     <main className="mx-auto flex min-h-dvh w-full max-w-xl flex-col px-5 pb-24">
@@ -507,15 +502,7 @@ export default function Home() {
             Élan
           </span>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setView("week")}
-            className="rounded-lg border border-line bg-surface px-2.5 py-1 text-xs font-medium text-muted transition hover:text-ink"
-          >
-            Ma semaine
-          </button>
-          <span className="text-sm capitalize text-muted">{today}</span>
-        </div>
+        <span className="text-sm capitalize text-muted">{today}</span>
       </header>
 
       {wrapUp && (
