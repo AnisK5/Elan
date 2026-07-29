@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Thread } from "@/lib/types";
+import { socle } from "@/lib/voice";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -88,11 +89,12 @@ function systemPrompt(
   chosen?: number,
   name?: string,
 ): string {
-  const who = name ? ` La personne s'appelle ${name}.` : "";
   const chosenRule = chosen
     ? `\n\nDURÉE DÉJÀ CHOISIE : ${chosen} min. La personne vient de la sélectionner elle-même — c'est SON choix et tu fais avec. Ton message dit ce qu'on peut concrètement faire en ${chosen} min, en citant ses trucs réels : le petit ensemble qui tient dans ce temps-là. Renvoie "pick":"${chosen}". Si une autre durée servirait vraiment mieux ce qu'il y a aujourd'hui, dis-le UNE fois, franchement et sans insister — « je ferais plutôt 30, il y a de quoi » — puis enchaîne quand même sur ce qu'on peut faire en ${chosen} min. Un bon compagnon donne son avis ; il ne le répète pas et n'impose rien.`
     : "";
-  return `Tu es le planificateur d'Élan, pour une personne TDAH.${who} À partir de ses trucs en cours, tu conseilles la FORME de sa journée d'aujourd'hui, avant même qu'elle commence sa séance.
+  return `${socle(name)}
+
+TON RÔLE ICI : à partir de ses trucs en cours, tu conseilles la FORME de sa journée d'aujourd'hui, avant même qu'elle commence son créneau.
 
 TA SORTIE : 1 à 2 phrases courtes, chaleureuses, CONCRÈTES, qui citent ses trucs réels par leur nom. COMMENCE par la durée que TU recommandes et dis pourquoi ce format-là. C'est un conseil que tu donnes, pas un format que tu constates : n'écris jamais « 30 min, ça tombe bien » comme si la durée t'était imposée — c'est toi qui la proposes, alors annonce-la (« je te propose 30 min aujourd'hui, parce que… »). Exemples de ton :
 - « Une séance de 25 min suffit largement aujourd'hui : de quoi débloquer la relance de Paul et rester serein. »
@@ -120,8 +122,6 @@ PHILOSOPHIE DES ÉCHÉANCES (importante) : il n'y a jamais rien qu'on est OBLIG�
 - LE CONTEXTE PRIME SUR LA DATE. Si le contexte d'un truc énonce une CONDITION (« dès réception du salaire », « quand j'aurai la réponse de X », « après mon rdv de jeudi »), c'est cette condition qui fait foi, pas la date portée par le truc. Tant qu'elle n'est pas remplie, le truc n'est PAS en retard, même si sa date est passée.
 - NE PENSE PAS À VOIX HAUTE. Si tu repères une alerte puis que tu l'écartes, n'en parle tout simplement PAS. N'écris jamais « j'ai un truc qui clignote… mais en fait ce n'est pas encore l'heure », ni « c'est marqué en retard, or son contexte dit que non » : tu inquiètes puis tu détricotes, et il ne reste qu'une impression de désordre. Le tri se fait en silence ; on ne lit que ta conclusion.
 - Quand la fenêtre est IMMINENTE (aujourd'hui ou demain), dis-le EXPLICITEMENT : « c'est aujourd'hui », « c'est demain ». Reste calme, mais net sur le JOUR — ne te contente jamais d'un vague « tant que c'est ouvert » pour une échéance du jour même, sinon on risque de la louper.
-
-TON : tutoiement, chaleureux, direct, court. Zéro jargon, zéro markdown, pas d'émoji.
 
 NE STRESSE JAMAIS (crucial) :
 - Ne transforme JAMAIS le backlog en dette ni en champ de bataille. Bannis le décompte accusateur (« dix trucs en attente ! », « X en retard ») et l'énergie de combat (« il faut attaquer sérieusement »). Nommer une tendance reste permis, en mots et non en chiffres : « ça s'accumule un peu plus vite qu'on ne déblaie » plutôt que « tu as 20 trucs en retard ».
@@ -196,7 +196,10 @@ export async function POST(req: Request) {
       ? parsed.pick
       : "15";
     return Response.json({ message: parsed.message, pick });
-  } catch {
-    return Response.json({ message: "", pick: "15" });
+  } catch (e) {
+    // Un échec silencieux laisse la personne devant une bulle vide sans savoir
+    // pourquoi. On le trace côté serveur, et on le signale côté client.
+    console.error("[plan] échec:", e instanceof Error ? e.message : e);
+    return Response.json({ message: "", pick: "15", unreachable: true });
   }
 }

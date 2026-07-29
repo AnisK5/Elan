@@ -58,7 +58,15 @@ export default function Home() {
     null,
   );
   const [planLoading, setPlanLoading] = useState(false);
+  const [planUnreachable, setPlanUnreachable] = useState(false);
   const appliedSig = useRef("");
+  // Deux sources écrivent le conseil : la reco automatique et le choix manuel
+  // de durée. Sans numéro de série, une réponse lente écrase une réponse
+  // récente — d'où un conseil calibré sur 15 alors qu'on vient de cliquer 30.
+  const planReq = useRef(0);
+  // Une fois qu'on a choisi soi-même pour ce backlog, la reco générique n'a
+  // plus le droit de reprendre la main.
+  const manualPickSig = useRef("");
   const [wrapUpCount, setWrapUpCount] = useState(0);
   const sessionStartRef = useRef("");
 
@@ -242,6 +250,7 @@ export default function Home() {
       const raw = localStorage.getItem("elan.plan.v1");
       const c = raw ? JSON.parse(raw) : null;
       if (c && c.v === PLAN_VERSION && c.date === dateKey && c.sig === planSig) {
+        if (manualPickSig.current === planSig) return;
         setPlan({ message: c.message, pick: c.pick });
         applyPick(c.pick, planSig);
         return;
@@ -251,6 +260,7 @@ export default function Home() {
     }
 
     let cancelled = false;
+    const reqId = ++planReq.current;
     setPlanLoading(true);
     fetch("/api/plan", {
       method: "POST",
@@ -265,8 +275,13 @@ export default function Home() {
       .then((j) => {
         if (cancelled || !j) return;
         const p = { message: j.message ?? "", pick: j.pick ?? "25" };
-        setPlan(p);
-        applyPick(p.pick, planSig);
+        if (planReq.current === reqId) setPlanUnreachable(Boolean(j.unreachable));
+        // Une réponse dépassée ne doit toucher ni le conseil ni la durée ;
+        // on la garde quand même en cache, elle reste valable pour ce backlog.
+        if (planReq.current === reqId && manualPickSig.current !== planSig) {
+          setPlan(p);
+          applyPick(p.pick, planSig);
+        }
         try {
           localStorage.setItem(
             "elan.plan.v1",
@@ -278,7 +293,7 @@ export default function Home() {
       })
       .catch(() => {})
       .finally(() => {
-        if (!cancelled) setPlanLoading(false);
+        if (!cancelled && planReq.current === reqId) setPlanLoading(false);
       });
     return () => {
       cancelled = true;
@@ -323,7 +338,9 @@ export default function Home() {
     setDuration(d);
     durationSettled.current = true;
     appliedSig.current = planSig; // le choix manuel prime sur la reco
+    manualPickSig.current = planSig;
     if (openThreads.length === 0) return;
+    const reqId = ++planReq.current;
     setPlanLoading(true);
     try {
       const res = await fetch("/api/plan", {
@@ -337,13 +354,20 @@ export default function Home() {
         }),
       });
       if (res.ok) {
-        const j = (await res.json()) as { message?: string };
-        if (j.message) setPlan({ message: j.message, pick: String(d) });
+        const j = (await res.json()) as {
+          message?: string;
+          unreachable?: boolean;
+        };
+        // Deux clics rapides : seule la réponse du dernier compte.
+        if (planReq.current === reqId) {
+          setPlanUnreachable(Boolean(j.unreachable));
+          if (j.message) setPlan({ message: j.message, pick: String(d) });
+        }
       }
     } catch {
       // on garde le conseil précédent
     } finally {
-      setPlanLoading(false);
+      if (planReq.current === reqId) setPlanLoading(false);
     }
   }
 
@@ -578,6 +602,11 @@ export default function Home() {
                 ) : plan?.message ? (
                   <p className="animate-rise text-[15px] leading-relaxed text-teal-ink">
                     {plan.message}
+                  </p>
+                ) : planUnreachable ? (
+                  <p className="text-[15px] leading-relaxed text-amber">
+                    Je n&apos;arrive pas à joindre Élan pour le moment. Tes
+                    trucs sont bien là — tu peux quand même lancer un créneau.
                   </p>
                 ) : (
                   <p className="text-[15px] leading-relaxed text-teal-ink">
