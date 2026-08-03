@@ -107,11 +107,21 @@ export function parseThreadOps(raw: unknown, knownIds: Set<string>): ThreadOp[] 
           next.kind = item.kind as ThreadKind;
           touches = true;
         }
+        // Seul un null EXPLICITE annule une intention. Une valeur qui ne se
+        // parse pas (« jeudi », « la semaine prochaine ») doit être ignorée,
+        // surtout pas retomber sur null : ça effacerait le jour déjà prévu au
+        // lieu de ne rien faire, et un truc qui devait remonter disparaîtrait.
         if ("plannedFor" in item) {
-          const planned =
-            item.plannedFor === null ? null : (date(item.plannedFor) ?? null);
-          next.plannedFor = planned;
-          touches = true;
+          if (item.plannedFor === null) {
+            next.plannedFor = null;
+            touches = true;
+          } else {
+            const planned = date(item.plannedFor);
+            if (planned) {
+              next.plannedFor = planned;
+              touches = true;
+            }
+          }
         }
 
         // Un "set" dont rien n'a survécu à la validation ne ferait que marquer

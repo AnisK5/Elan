@@ -73,6 +73,66 @@ describe("parseThreadOps — la porte d'entrée des écritures du modèle", () =
     expect(parseThreadOps([{ op: "set", id: "a", effort: "XL" }], known)).toEqual([]);
     expect(parseThreadOps([{ op: "set", id: "a", kind: "urgent" }], known)).toEqual([]);
   });
+
+  it("n'efface JAMAIS une intention à cause d'une date qu'elle ne sait pas lire", () => {
+    // Le modèle a pour consigne d'ancrer les dates en absolu, mais s'il écrit
+    // quand même « jeudi », l'ignorer est la seule issue acceptable : retomber
+    // sur null effacerait le jour déjà prévu et le truc ne remonterait plus.
+    expect(parseThreadOps([{ op: "set", id: "a", plannedFor: "jeudi" }], known)).toEqual(
+      [],
+    );
+    expect(
+      parseThreadOps([{ op: "set", id: "a", plannedFor: "0001-01-01" }], known),
+    ).toEqual([]);
+  });
+});
+
+describe("le jour de sortie posé sur tout le lot", () => {
+  const courses = new Set(["colis", "pharmacie", "banque"]);
+
+  it("garde une intention identique sur chaque truc du lot", () => {
+    const ops = parseThreadOps(
+      [
+        { op: "set", id: "colis", plannedFor: "2026-08-06" },
+        { op: "set", id: "pharmacie", plannedFor: "2026-08-06" },
+        { op: "set", id: "banque", plannedFor: "2026-08-06" },
+      ],
+      courses,
+    );
+    expect(ops).toHaveLength(3);
+    for (const op of ops) {
+      expect(new Date((op as { plannedFor: string }).plannedFor).getDate()).toBe(6);
+    }
+  });
+
+  it("laisse la note porter l'heure et le kit à côté du jour", () => {
+    const ops = parseThreadOps(
+      [
+        { op: "set", id: "colis", plannedFor: "2026-08-06" },
+        {
+          op: "note",
+          id: "colis",
+          note: "sortie calée jeudi 06/08 17h, enveloppe timbrée près de la porte",
+        },
+      ],
+      courses,
+    );
+    expect(ops).toHaveLength(2);
+    expect(ops[1]).toMatchObject({ op: "note", id: "colis" });
+    expect((ops[1] as { note: string }).note).toContain("17h");
+  });
+
+  it("ne laisse pas un gros lot manger le plafond en silence", () => {
+    // Un jour + une note par truc : au-delà de six courses, le lot dépasse les
+    // douze opérations et la fin est tronquée. Le plafond tient, mais c'est la
+    // limite réelle d'une sortie réconciliée en une passe.
+    const gros = new Set(Array.from({ length: 8 }, (_, i) => `c${i}`));
+    const raw = Array.from({ length: 8 }, (_, i) => [
+      { op: "set", id: `c${i}`, plannedFor: "2026-08-06" },
+      { op: "note", id: `c${i}`, note: "sortie jeudi 17h" },
+    ]).flat();
+    expect(parseThreadOps(raw, gros)).toHaveLength(12);
+  });
 });
 
 describe("clean — le balisage des modèles ne doit pas atteindre la base", () => {
