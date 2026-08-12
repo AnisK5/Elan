@@ -83,6 +83,7 @@ interface ThreadRow {
   energy: string | null;
   note: string | null;
   touched_at: string | null;
+  done_at: string | null;
   snoozed_until: string | null;
   planned_for: string | null;
   project_id: string | null;
@@ -111,6 +112,7 @@ function threadToRow(t: Thread, userId: string) {
     energy: t.energy ?? null,
     note: t.note ?? null,
     touched_at: t.touchedAt ?? null,
+    done_at: t.doneAt ?? null,
     snoozed_until: t.snoozedUntil ?? null,
     planned_for: t.plannedFor ?? null,
     project_id: t.projectId ?? null,
@@ -128,6 +130,7 @@ function rowToThread(r: ThreadRow): Thread {
     energy: (r.energy as Thread["energy"]) ?? undefined,
     note: r.note ?? undefined,
     touchedAt: r.touched_at ?? undefined,
+    doneAt: r.done_at ?? (r.status === "done" && r.touched_at ? r.touched_at : undefined),
     snoozedUntil: r.snoozed_until ?? undefined,
     plannedFor: r.planned_for ?? undefined,
     projectId: r.project_id ?? undefined,
@@ -512,9 +515,15 @@ export function applyThreadOps(ops: ThreadOp[]): void {
     }
     list = list.map((t) => {
       if (t.id !== op.id) return t;
+      const touch = t.status === "done" ? {} : { touchedAt: now };
       switch (op.op) {
         case "done":
-          return { ...t, status: "done", touchedAt: now };
+          return {
+            ...t,
+            status: "done",
+            touchedAt: now,
+            doneAt: t.doneAt ?? now,
+          };
         case "snooze":
           return {
             ...t,
@@ -525,9 +534,9 @@ export function applyThreadOps(ops: ThreadOp[]): void {
             touchedAt: now,
           };
         case "rename":
-          return { ...t, text: clean(op.text) || t.text, touchedAt: now };
+          return { ...t, text: clean(op.text) || t.text, ...touch };
         case "note":
-          return { ...t, note: clean(op.note) || undefined, touchedAt: now };
+          return { ...t, note: clean(op.note) || undefined, ...touch };
         case "set":
           return {
             ...t,
@@ -537,7 +546,7 @@ export function applyThreadOps(ops: ThreadOp[]): void {
             ...(op.plannedFor !== undefined
               ? { plannedFor: normalizeDue(op.plannedFor ?? undefined) }
               : {}),
-            touchedAt: now,
+            ...touch,
           };
       }
     });

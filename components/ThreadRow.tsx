@@ -21,7 +21,12 @@ export default function ThreadRow({
   const dueValue = thread.due ? thread.due.slice(0, 10) : "";
 
   function markDone() {
-    patch(thread.id, { status: "done", touchedAt: new Date().toISOString() });
+    const now = new Date().toISOString();
+    patch(thread.id, {
+      status: "done",
+      touchedAt: now,
+      doneAt: thread.doneAt ?? now,
+    });
   }
   function snooze() {
     const d = new Date();

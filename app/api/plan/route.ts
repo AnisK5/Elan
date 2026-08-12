@@ -205,6 +205,44 @@ function systemPrompt(
   return deskPlanPrompt(open, stats, chosen, name);
 }
 
+function fallbackPlan(
+  context: SessionContext,
+  threads: Thread[],
+): { message: string; pick: string } {
+  if (context === "courses") {
+    const courses = findCoursesThread(openThreads(threads));
+    if (courses?.note?.trim()) {
+      const list = courses.note.trim();
+      const preview =
+        list.length > 180 ? `${list.slice(0, 180).trim()}…` : list;
+      return {
+        message: `Ta liste : ${preview}. On part là-dessus ?`,
+        pick: "15",
+      };
+    }
+    if (courses) {
+      return {
+        message:
+          "Fil Courses ouvert mais liste vide — on la construit en séance, ou tu ajoutes ce qu'il te manque.",
+        pick: "15",
+      };
+    }
+    return {
+      message:
+        "Pas encore de fil Courses — en séance on peut créer la liste ensemble.",
+      pick: "15",
+    };
+  }
+  if (context === "sortie") {
+    return {
+      message:
+        "On regarde ce qui se fait dehors sur ton trajet — poste, pharmacie, courses…",
+      pick: "15",
+    };
+  }
+  return { message: "", pick: "15" };
+}
+
 function cue(context?: SessionContext): string {
   if (context === "courses") {
     return "[J'ai choisi une séance COURSES au super. Conseille-moi sur ma liste, et propose un arrêt en plus seulement si un truc demande clairement de sortir. JSON seulement.]";
@@ -264,13 +302,21 @@ export async function POST(req: Request) {
         ? (res.content.find((b) => b.type === "text") as { text: string }).text
         : "";
     const parsed = safeParse(text);
-    if (!parsed) return Response.json({ message: "", pick: "15" });
-    const pick = ["5", "15", "30", "50"].includes(parsed.pick)
-      ? parsed.pick
+    const plan =
+      parsed?.message.trim()
+        ? parsed
+        : fallbackPlan(context, open);
+    const pick = ["5", "15", "30", "50"].includes(plan.pick)
+      ? plan.pick
       : "15";
-    return Response.json({ message: parsed.message, pick });
+    return Response.json({ message: plan.message, pick });
   } catch (e) {
     console.error("[plan] échec:", e instanceof Error ? e.message : e);
-    return Response.json({ message: "", pick: "15", unreachable: true });
+    const plan = fallbackPlan(context, open);
+    return Response.json({
+      message: plan.message,
+      pick: plan.pick,
+      unreachable: !plan.message,
+    });
   }
 }

@@ -26,6 +26,7 @@ import Welcome from "@/components/Welcome";
 import HelpButton from "@/components/HelpButton";
 import { useAuth } from "@/components/AuthProvider";
 import { parseThreadOps } from "@/lib/ops";
+import { doneCountsThisWeek, completionAt } from "@/lib/week-stats";
 import { sessionsToday } from "@/lib/session-memory";
 
 // Bump à chaque changement du prompt de reco (app/api/plan) : invalide le cache
@@ -167,26 +168,10 @@ export default function Home() {
   }, [openThreads, dayStart]);
 
   // Avancement : trucs bouclés par jour cette semaine (colonne des victoires, sans dénominateur).
-  const { doneToday, doneWeek, days, todayIdx } = useMemo(() => {
-    const start = new Date(dayStart);
-    const monday = new Date(start);
-    monday.setDate(start.getDate() - ((start.getDay() + 6) % 7));
-    const d = Array(7).fill(0) as number[];
-    const idx = (start.getDay() + 6) % 7;
-    for (const t of threads) {
-      if (t.status !== "done" || !t.touchedAt) continue;
-      const ts = new Date(t.touchedAt);
-      ts.setHours(0, 0, 0, 0);
-      const diff = Math.round((ts.getTime() - monday.getTime()) / 86_400_000);
-      if (diff >= 0 && diff < 7) d[diff]++;
-    }
-    return {
-      days: d,
-      todayIdx: idx,
-      doneToday: d[idx],
-      doneWeek: d.reduce((a, b) => a + b, 0),
-    };
-  }, [threads, dayStart]);
+  const { doneToday, doneWeek, days, todayIdx } = useMemo(
+    () => doneCountsThisWeek(threads, dayStart),
+    [threads, dayStart],
+  );
 
   // Rythme récent. Sans ça, le planificateur ne voit qu'un volume figé et ne
   // peut pas distinguer « beaucoup de trucs mais on suit » de « ça s'accumule
@@ -207,7 +192,9 @@ export default function Home() {
         .length,
       doneLast7: threads.filter(
         (t) =>
-          t.status === "done" && t.touchedAt && Date.parse(t.touchedAt) >= since,
+          t.status === "done" &&
+          completionAt(t) &&
+          Date.parse(completionAt(t)!) >= since,
       ).length,
       sessionsLast7: recent.length,
       minutesLast7: recent.reduce((a, s) => a + (s.durationMin || 0), 0),
@@ -244,7 +231,16 @@ export default function Home() {
     setDuration(DURATIONS.includes(n) ? n : 15);
   }
 
-  // Recommandation dynamique d'Élan : durée + conseil, calculés sur les vrais trucs.
+  function planFallbackMessage(ctx: SessionContext): string {
+    if (ctx === "courses") {
+      return "On part sur les courses — ta liste t'attend en séance.";
+    }
+    if (ctx === "sortie") {
+      return "On regarde ce qui se fait dehors sur ton trajet.";
+    }
+    return "Présente-toi et je prends le pouls de tout ça avec toi, un pas à la fois.";
+  }
+
   // Mise en cache par jour + signature du backlog pour ne pas rappeler l'IA sans raison.
   useEffect(() => {
     if (!ready || view !== "home") return;
@@ -288,19 +284,32 @@ export default function Home() {
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
         if (cancelled || !j) return;
-        const p = { message: j.message ?? "", pick: j.pick ?? "25" };
         if (planReq.current === reqId) setPlanUnreachable(Boolean(j.unreachable));
-        // Une réponse dépassée ne doit toucher ni le conseil ni la durée ;
-        // on la garde quand même en cache, elle reste valable pour ce backlog.
-        if (planReq.current === reqId && manualPickSig.current !== planSig) {
-          setPlan(p);
-          applyPick(p.pick, planSig);
+        if (planReq.current === reqId) {
+          const msg = (j.message ?? "").trim();
+          if (msg) setPlan({ message: msg, pick: j.pick ?? "15" });
+        }
+        if (
+          planReq.current === reqId &&
+          manualPickSig.current !== planSig
+        ) {
+          applyPick(j.pick ?? "15", planSig);
         }
         try {
-          localStorage.setItem(
-            "elan.plan.v1",
-            JSON.stringify({ v: PLAN_VERSION, date: dateKey, sig: planSig, context, ...p }),
-          );
+          const msg = (j.message ?? "").trim();
+          if (msg) {
+            localStorage.setItem(
+              "elan.plan.v1",
+              JSON.stringify({
+                v: PLAN_VERSION,
+                date: dateKey,
+                sig: planSig,
+                context,
+                message: msg,
+                pick: j.pick ?? "15",
+              }),
+            );
+          }
         } catch {
           // ignore
         }
@@ -357,13 +366,12 @@ export default function Home() {
     await fetchPlan({ chosen: d, ctx: "desk" });
   }
 
-  async function pickContext(ctx: "sortie" | "courses") {
+  function pickContext(ctx: "sortie" | "courses") {
     setContext(ctx);
     setPlan(null);
     durationSettled.current = true;
     appliedSig.current = planSig;
-    manualPickSig.current = planSig;
-    await fetchPlan({ ctx });
+    // manualPickSig reste réservé au choix de durée bureau — ne pas bloquer le conseil courses/sortie.
   }
 
   async function fetchPlan(opts?: { chosen?: number; ctx?: SessionContext }) {
@@ -392,9 +400,10 @@ export default function Home() {
         };
         if (planReq.current === reqId) {
           setPlanUnreachable(Boolean(j.unreachable));
-          if (j.message) {
+          const msg = (j.message ?? "").trim();
+          if (msg) {
             setPlan({
-              message: j.message,
+              message: msg,
               pick: opts?.chosen ? String(opts.chosen) : (j.pick ?? "15"),
             });
           }
@@ -650,8 +659,7 @@ export default function Home() {
                   </p>
                 ) : (
                   <p className="text-[15px] leading-relaxed text-teal-ink">
-                    Présente-toi et je prends le pouls de tout ça avec toi, un
-                    pas à la fois.
+                    {planFallbackMessage(context)}
                   </p>
                 )}
               </div>

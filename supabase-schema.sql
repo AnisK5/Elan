@@ -15,6 +15,7 @@ create table if not exists public.elan_threads (
   energy        text,
   note          text,
   touched_at    timestamptz,
+  done_at       timestamptz,
   snoozed_until timestamptz,
   planned_for timestamptz,
   project_id    text                                        -- rattachement facultatif à un projet
@@ -25,6 +26,7 @@ create policy "own elan_threads" on public.elan_threads
 create index if not exists elan_threads_user_idx on public.elan_threads(user_id);
 -- Migration d'une base existante : ajoute la colonne si elle manque.
 alter table public.elan_threads add column if not exists project_id text;
+alter table public.elan_threads add column if not exists done_at timestamptz;
 
 -- ── Projets (chantiers plus gros, pour la vue semaine) ─────────────
 create table if not exists public.elan_projects (
