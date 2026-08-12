@@ -97,6 +97,10 @@ interface SessionRow {
 interface SettingsRow {
   default_duration_min: number;
   name: string | null;
+  notify_enabled?: boolean;
+  notify_time?: string | null;
+  notify_timezone?: string | null;
+  notify_last_sent?: string | null;
 }
 
 function threadToRow(t: Thread, userId: string) {
@@ -190,11 +194,20 @@ function settingsToRow(s: Settings, userId: string) {
     user_id: userId,
     default_duration_min: s.defaultDurationMin,
     name: s.name ?? null,
+    notify_enabled: s.notifyEnabled ?? false,
+    notify_time: s.notifyTime ?? "09:00",
+    notify_timezone: s.notifyTimezone ?? "Europe/Paris",
     updated_at: new Date().toISOString(),
   };
 }
 function rowToSettings(r: SettingsRow): Settings {
-  return { defaultDurationMin: r.default_duration_min, name: r.name ?? undefined };
+  return {
+    defaultDurationMin: r.default_duration_min,
+    name: r.name ?? undefined,
+    notifyEnabled: r.notify_enabled ?? false,
+    notifyTime: r.notify_time ?? "09:00",
+    notifyTimezone: r.notify_timezone ?? "Europe/Paris",
+  };
 }
 
 // ── Poussée vers Supabase (upsert de tout le lot + suppression du diff) ──
@@ -644,6 +657,8 @@ export function useSessions() {
 export function useSettings() {
   const { value, update, ready } = usePersisted<Settings>(SETTINGS_KEY, {
     defaultDurationMin: 15,
+    notifyTime: "09:00",
+    notifyTimezone: "Europe/Paris",
   });
   return { settings: value, update, ready };
 }

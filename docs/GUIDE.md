@@ -11,6 +11,8 @@ Ouvre l'app **à côté de ce fichier** ([elan-roan.vercel.app](https://elan-roa
 | **Au clic / envoi** | Fonction → route API (si applicable) |
 | **Données** | localStorage / Supabase ([stockage](#stockage)) |
 
+Install + rappel matin (conseil dans la notif) : voir composant `RitualNotify.tsx` · logique `lib/notifications.ts`.
+
 ---
 
 ## Écran 1 — Avant connexion

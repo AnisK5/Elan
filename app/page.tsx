@@ -20,6 +20,9 @@ import {
 } from "@/lib/store";
 import Session from "@/components/Session";
 import InstallPrompt from "@/components/InstallPrompt";
+import RitualNotify from "@/components/RitualNotify";
+import { useRitualReminder } from "@/components/useRitualReminder";
+import { isNotifyPromptDismissed } from "@/lib/notifications";
 import Welcome from "@/components/Welcome";
 import HelpButton from "@/components/HelpButton";
 import BacklogPeek from "@/components/home/BacklogPeek";
@@ -221,6 +224,25 @@ export default function Home() {
 
   // Premier lancement : jamais rien déposé ET jamais fait de séance.
   const isNewcomer = ready && threads.length === 0 && sessions.length === 0;
+
+  const showNotifyPrompt =
+    ready &&
+    !isNewcomer &&
+    sessions.length > 0 &&
+    !settings.notifyEnabled &&
+    !isNotifyPromptDismissed();
+
+  useRitualReminder({
+    enabled: Boolean(settings.notifyEnabled),
+    notifyTime: settings.notifyTime,
+    notifyTimezone: settings.notifyTimezone,
+    ready,
+    view,
+    threads,
+    sessions,
+    planStats,
+    name: settings.name,
+  });
 
   function applyPick(pick: string, sig: string) {
     if (appliedSig.current === sig || context !== "desk") return;
@@ -811,6 +833,12 @@ export default function Home() {
       </section>
 
       <InstallPrompt />
+
+      <RitualNotify
+        visible={showNotifyPrompt || wrapUp}
+        threads={threads}
+        planStats={planStats}
+      />
 
       <ImportData />
 

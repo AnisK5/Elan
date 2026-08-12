@@ -62,4 +62,9 @@ export interface SessionLog {
 export interface Settings {
   defaultDurationMin: number;
   name?: string;
+  notifyEnabled?: boolean;
+  /** Heure du rappel matin, format 24h « HH:MM » */
+  notifyTime?: string;
+  /** IANA, ex. Europe/Paris — pour le cron Web Push */
+  notifyTimezone?: string;
 }

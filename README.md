@@ -50,7 +50,7 @@ npm run dev
 | `ANTHROPIC_API_KEY` | Oui | API Claude |
 | `NEXT_PUBLIC_SUPABASE_*` | Non | Compte + sync |
 
-Sans Supabase : **localStorage** uniquement. SQL optionnel : [docs/supabase-schema.sql](./docs/supabase-schema.sql).
+Sans Supabase : **localStorage** uniquement. SQL + Web Push : [docs/supabase-schema.sql](./docs/supabase-schema.sql) · variables : [.env.local.example](./.env.local.example).
 
 ---
 

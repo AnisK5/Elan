@@ -67,3 +67,24 @@ create table if not exists public.elan_settings (
 alter table public.elan_settings enable row level security;
 create policy "own elan_settings" on public.elan_settings
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+alter table public.elan_settings add column if not exists notify_enabled boolean not null default false;
+alter table public.elan_settings add column if not exists notify_time text not null default '09:00';
+alter table public.elan_settings add column if not exists notify_timezone text not null default 'Europe/Paris';
+alter table public.elan_settings add column if not exists notify_last_sent date;
+
+-- ── Web Push (notifs rituel, app fermée) ───────────────────────────
+create table if not exists public.elan_push_subscriptions (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  endpoint   text not null,
+  p256dh     text not null,
+  auth       text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, endpoint)
+);
+alter table public.elan_push_subscriptions enable row level security;
+create policy "own elan_push_subscriptions" on public.elan_push_subscriptions
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create index if not exists elan_push_subscriptions_user_idx
+  on public.elan_push_subscriptions(user_id);
