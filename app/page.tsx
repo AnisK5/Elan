@@ -5,7 +5,6 @@ import type { ChatMessage, SessionContext, Thread } from "@/lib/types";
 import {
   applyThreadOps,
   clearActiveSession,
-  importData,
   newId,
   readActiveSession,
   restoreThreads,
@@ -20,26 +19,26 @@ import {
   type ActiveSession,
 } from "@/lib/store";
 import Session from "@/components/Session";
-import ThreadRow from "@/components/ThreadRow";
 import InstallPrompt from "@/components/InstallPrompt";
 import Welcome from "@/components/Welcome";
 import HelpButton from "@/components/HelpButton";
+import BacklogPeek from "@/components/home/BacklogPeek";
+import ImportData from "@/components/home/ImportData";
+import SessionPick from "@/components/home/SessionPick";
+import WeekMomentum from "@/components/home/WeekMomentum";
+import { Dot, greeting, Logo } from "@/components/home/Branding";
 import { useAuth } from "@/components/AuthProvider";
 import { parseThreadOps } from "@/lib/ops";
 import { doneCountsThisWeek, completionAt } from "@/lib/week-stats";
 import { sessionsToday } from "@/lib/session-memory";
+import {
+  normalizeDuration,
+  OUTDOOR_DURATION,
+  PLAN_VERSION,
+  RESUME_MAX_AGE_MS,
+} from "@/lib/constants";
 
-// Bump à chaque changement du prompt de reco (app/api/plan) : invalide le cache
-// des reco existantes pour que la nouvelle logique s'applique immédiatement.
-const PLAN_VERSION = 12;
-const DURATIONS = [5, 15, 30, 50];
-// Durée nominale pour les séances dehors (timer masqué, sert au log).
-const OUTDOOR_DURATION = 30;
-// Au-delà de ce délai depuis son démarrage, une séance laissée en plan est
-// considérée ratée : on ne rallume pas le minuteur de la veille, on rouvre
-// sur l'accueil. Assez large pour couvrir une vraie interruption (appel,
-// pause), assez court pour qu'une séance oubliée ne survive pas à la nuit.
-const RESUME_MAX_AGE_MS = 2 * 60 * 60 * 1000;
+// Écran d'accueil — orchestration UI. Doc : docs/GUIDE.md
 
 export default function Home() {
   const { user, loading, signOut } = useAuth();
@@ -228,7 +227,7 @@ export default function Home() {
     appliedSig.current = sig;
     durationSettled.current = true;
     const n = Number(pick);
-    setDuration(DURATIONS.includes(n) ? n : 15);
+    setDuration(normalizeDuration(n));
   }
 
   function planFallbackMessage(ctx: SessionContext): string {
@@ -828,272 +827,5 @@ export default function Home() {
 
     <HelpButton />
     </>
-  );
-}
-
-function BacklogPeek({
-  open,
-  actions,
-  suivis,
-  ready,
-}: {
-  open: number;
-  actions: number;
-  suivis: number;
-  ready: boolean;
-}) {
-  const [show, setShow] = useState(false);
-  const { threads, patch, remove } = useThreads();
-
-  if (!ready) return null;
-
-  if (open === 0) {
-    return (
-      <div className="rounded-2xl border border-dashed border-line px-4 py-5 text-center text-sm text-muted">
-        Rien en attente. Tête légère — ou dépose ce qui traîne.
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-2xl border border-line bg-sink/40 px-4 py-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-ink">
-          Je garde{" "}
-          <b className="font-display text-lg">{actions}</b>{" "}
-          {actions > 1 ? "trucs à faire" : "truc à faire"}
-          {suivis > 0 && (
-            <>
-              {" "}
-              · <b className="font-display text-lg">{suivis}</b> à suivre
-            </>
-          )}
-          .
-        </p>
-        <button
-          onClick={() => setShow((s) => !s)}
-          className="text-xs text-muted underline-offset-2 hover:underline"
-        >
-          {show ? "masquer" : "y jeter un œil"}
-        </button>
-      </div>
-      <p className="mt-1 text-xs text-muted">
-        Tu n&apos;as pas à les gérer, ni même à les regarder. Je m&apos;en occupe
-        avec toi pendant la séance, un morceau à la fois.
-      </p>
-
-      {show && (
-        <div className="mt-3 flex flex-col gap-0.5 border-t border-line pt-3">
-          {threads
-            .filter((t) => t.status === "open")
-            .map((t) => (
-              <ThreadRow
-                key={t.id}
-                thread={t}
-                patch={patch}
-                remove={remove}
-              />
-            ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function WeekMomentum({
-  days,
-  todayIdx,
-  doneToday,
-  doneWeek,
-}: {
-  days: number[];
-  todayIdx: number;
-  doneToday: number;
-  doneWeek: number;
-}) {
-  const max = Math.max(1, ...days);
-  const labels = ["L", "M", "M", "J", "V", "S", "D"];
-  return (
-    <div className="mt-6 rounded-2xl border border-line bg-surface px-4 py-3">
-      <div className="mb-2.5 flex items-baseline justify-between">
-        <span className="text-sm text-ink">
-          <span className="text-teal">✓</span>{" "}
-          <b>{doneToday}</b>{" "}
-          {`${doneToday > 1 ? "réglés" : "réglé"} aujourd'hui`}
-        </span>
-        <span className="text-xs text-muted">{doneWeek} cette semaine</span>
-      </div>
-      <div className="flex h-12 items-end gap-1.5">
-        {days.map((c, i) => (
-          <div key={i} className="flex flex-1 flex-col items-center gap-1">
-            <div
-              className={`w-full rounded-md transition-all ${
-                i === todayIdx
-                  ? "bg-teal"
-                  : c > 0
-                    ? "bg-teal-soft"
-                    : "bg-sink"
-              }`}
-              style={{ height: `${6 + (c / max) * 32}px` }}
-              title={`${c} réglé${c > 1 ? "s" : ""}`}
-            />
-            <span
-              className={`text-[9px] ${
-                i === todayIdx ? "font-semibold text-teal" : "text-faint"
-              }`}
-            >
-              {labels[i]}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ImportData() {
-  const [open, setOpen] = useState(false);
-  const [text, setText] = useState("");
-  const [msg, setMsg] = useState("");
-
-  function run() {
-    try {
-      const data = JSON.parse(text);
-      const { added } = importData(data);
-      setMsg(
-        added > 0
-          ? `${added} truc${added > 1 ? "s" : ""} importé${added > 1 ? "s" : ""} ✓ — synchronisé sur ton compte.`
-          : "Rien de nouveau à importer (déjà présent ?).",
-      );
-      setText("");
-    } catch {
-      setMsg("Format invalide — colle bien le JSON copié depuis la console.");
-    }
-  }
-
-  if (!open) {
-    return (
-      <div className="mt-8 text-center">
-        <button
-          onClick={() => setOpen(true)}
-          className="text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
-        >
-          Importer d&apos;anciennes données
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="mt-8 rounded-2xl border border-line bg-surface p-4">
-      <p className="text-sm font-medium text-ink">
-        Importer d&apos;anciennes données
-      </p>
-      <p className="mt-1 text-xs leading-relaxed text-muted">
-        Colle ici le JSON exporté depuis ton ancien appareil/adresse. Tes trucs
-        seront fusionnés dans ton compte (sans doublon) et synchronisés.
-      </p>
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        rows={3}
-        placeholder='{"threads":[...],"sessions":[...],"settings":...}'
-        className="mt-2 w-full resize-none rounded-xl border border-line bg-paper px-3 py-2 text-xs text-ink outline-none focus:border-teal"
-      />
-      <div className="mt-2 flex items-center gap-2">
-        <button
-          onClick={run}
-          disabled={!text.trim()}
-          className="rounded-lg bg-teal px-3 py-1.5 text-sm font-medium text-white transition hover:bg-teal-ink disabled:opacity-40"
-        >
-          Importer
-        </button>
-        <button
-          onClick={() => {
-            setOpen(false);
-            setMsg("");
-          }}
-          className="rounded-lg px-2 py-1.5 text-sm text-muted hover:text-ink"
-        >
-          Fermer
-        </button>
-        {msg && <span className="text-xs text-teal-ink">{msg}</span>}
-      </div>
-    </div>
-  );
-}
-
-function SessionPick({
-  duration,
-  context,
-  onPickDuration,
-  onPickContext,
-}: {
-  duration: number;
-  context: SessionContext;
-  onPickDuration: (d: number) => void;
-  onPickContext: (c: "sortie" | "courses") => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="inline-flex rounded-xl bg-sink p-1">
-        {DURATIONS.map((d) => (
-          <button
-            key={d}
-            onClick={() => onPickDuration(d)}
-            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${
-              context === "desk" && duration === d
-                ? "bg-surface text-ink shadow-sm"
-                : "text-muted hover:text-ink"
-            }`}
-          >
-            {d} min
-          </button>
-        ))}
-      </div>
-      <span className="text-xs text-faint">·</span>
-      <div className="inline-flex rounded-xl bg-sink p-1">
-        {(
-          [
-            { id: "sortie" as const, label: "Sortie" },
-            { id: "courses" as const, label: "Courses" },
-          ] as const
-        ).map(({ id, label }) => (
-          <button
-            key={id}
-            onClick={() => onPickContext(id)}
-            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${
-              context === id
-                ? "bg-surface text-ink shadow-sm"
-                : "text-muted hover:text-ink"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function greeting(): string {
-  const h = new Date().getHours();
-  if (h < 6) return "Nuit calme.";
-  if (h < 12) return "Bonjour.";
-  if (h < 18) return "Bel après-midi.";
-  return "Bonsoir.";
-}
-
-function Dot() {
-  return (
-    <span className="h-1.5 w-1.5 animate-breathe rounded-full bg-teal/50" />
-  );
-}
-
-function Logo() {
-  return (
-    <span className="grid h-7 w-7 place-items-center rounded-lg bg-teal">
-      <span className="h-2.5 w-2.5 animate-breathe rounded-full bg-white" />
-    </span>
   );
 }
