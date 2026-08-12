@@ -26,10 +26,11 @@ import Welcome from "@/components/Welcome";
 import HelpButton from "@/components/HelpButton";
 import { useAuth } from "@/components/AuthProvider";
 import { parseThreadOps } from "@/lib/ops";
+import { sessionsToday } from "@/lib/session-memory";
 
 // Bump à chaque changement du prompt de reco (app/api/plan) : invalide le cache
 // des reco existantes pour que la nouvelle logique s'applique immédiatement.
-const PLAN_VERSION = 11;
+const PLAN_VERSION = 12;
 const DURATIONS = [5, 15, 30, 50];
 // Durée nominale pour les séances dehors (timer masqué, sert au log).
 const OUTDOOR_DURATION = 30;
@@ -527,6 +528,7 @@ export default function Home() {
         context={context}
         name={settings.name}
         initial={resume}
+        priorSessionsToday={sessionsToday(sessions)}
         onEnd={endSession}
       />
     );

@@ -1,6 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ChatMessage, SessionContext, Thread } from "@/lib/types";
-import { socle } from "@/lib/voice";
+import type { ChatMessage, SessionContext, SessionLog, Thread } from "@/lib/types";
+import {
+  renderOpenThreads,
+  renderSessionContinuity,
+} from "@/lib/session-memory";
+import { socleSession } from "@/lib/voice";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +17,7 @@ interface Meta {
   name?: string;
   ending?: boolean;
   context?: SessionContext;
+  priorSessionsToday?: SessionLog[];
 }
 
 interface Body {
@@ -22,7 +27,7 @@ interface Body {
 }
 
 const OPENING_DESK =
-  "[La séance commence. Accueille-moi chaleureusement et brièvement, prends le pouls (comment j'arrive, mon énergie). Puis propose un PROGRAMME réaliste pour le temps qu'on a. Applique la règle de taille : si un truc OUVERT est en jeu, il EST le programme à lui seul, et tu t'arrêtes là — aucun repli du type « et si l'énergie est là, on fera aussi… ». Sinon, un mini-ensemble de 1 à 3 trucs bornés (ex. « en 10 min, on pourrait faire un petit tri et checker si tu as eu des réponses à tes mails d'hier »). Reste léger : c'est une intention d'ensemble, pas une liste écrasante. Termine en proposant par quoi on commence — UN seul premier pas concret.]";
+  "[La séance commence. Accueille brièvement, prends le pouls. Puis COMPOSE un programme pour ce créneau : 1 à 3 trucs cohérents qui font avancer le backlog — conséquences, stagnation, fenêtres, pas une lane « élu / reste ». Lis la CONTINUITÉ si elle est là. Applique la règle de taille pour les trucs ouverts. Termine par UN premier pas concret.]";
 
 const OPENING_SORTIE =
   "[La séance SORTIE commence. La personne est (ou va être) dehors — pas assise. Regarde TOUS ses trucs ouverts et repère ceux qui demandent de se déplacer (poste, pharmacie, banque, rdv sur place…) — ignore le bureau (voyage, kayak, mails, docs). Accueille brièvement, demande une fois si elle peut sortir là. Regroupe par trajet. Si un fil \"Courses\" a une liste, propose d'en profiter pour le super. UN arrêt à la fois.]";
@@ -39,68 +44,14 @@ function openingCue(context?: SessionContext): string {
 const CLOSING_CUE =
   "[Le temps de la séance est écoulé. Clôture en douceur, en un seul message court. D'abord un DÉBRIEF CONCRET : nomme précisément ce qui a bougé pendant CETTE séance — les trucs faits, avancés ou relancés, par leur nom réel — pour que la personne voie noir sur blanc ce qu'elle a accompli (reste bref, une ou deux phrases, pas une liste à puces). Puis RASSURE : ce qui n'est pas fini reste noté et tu le represente à la prochaine séance, donc on peut lâcher sans crainte d'oublier. Donne la permission de s'arrêter là et invite à revenir demain. Si vraiment rien de concret n'a bougé, aucune culpabilité : valorise simplement le fait d'être venu poser les choses. Ne lance AUCUN nouveau front, ne pose pas de question qui relance le travail. Ne promets pas de te souvenir du détail de où on en est dans un truc — promets seulement que le truc, lui, reviendra.]";
 
-function dayDiff(iso: string): number {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const d = new Date(iso);
-  d.setHours(0, 0, 0, 0);
-  return Math.round((d.getTime() - today.getTime()) / 86_400_000);
-}
-
-function dueLabel(iso?: string): string {
-  if (!iso) return "";
-  const n = dayDiff(iso);
-  if (n < 0) return ` · échéance EN RETARD de ${-n}j`;
-  if (n === 0) return " · échéance aujourd'hui";
-  if (n === 1) return " · échéance demain";
-  return ` · échéance dans ${n}j`;
-}
-
-function ageDays(iso: string): number {
-  return Math.max(0, -dayDiff(iso));
-}
-
-function ageLabel(iso: string, verb: string): string {
-  const n = ageDays(iso);
-  if (n === 0) return ` · ${verb} aujourd'hui`;
-  if (n === 1) return ` · ${verb} hier`;
-  return ` · ${verb} il y a ${n}j`;
-}
-
-function renderThreads(threads: Thread[]): string {
-  const open = threads.filter((t) => t.status === "open");
-  if (open.length === 0)
-    return "AUCUN truc ouvert : la personne est à jour. Ne fabrique surtout pas de travail. Dis-lui simplement, avec chaleur, qu'on est bons et qu'il n'y a rien qui presse. Tu peux, sans insister, proposer une pause ou un vide-tête si elle a quelque chose en tête — mais si elle n'a rien, c'est très bien, félicite-la et laisse-la partir légère.";
-
-  const overdue = open.filter((t) => t.due && dayDiff(t.due) < 0).length;
-  const lines = open.map((t) => {
-    const kind = t.kind === "suivi" ? "À SUIVRE" : "ACTION";
-    const effort = t.effort ? ` · effort ${t.effort}` : "";
-    const energy = t.energy ? ` · énergie ${t.energy}` : "";
-    const age = ageLabel(t.createdAt, "déposé");
-    const seen = t.touchedAt ? ageLabel(t.touchedAt, "revu") : " · jamais entamé";
-    const note = t.note ? `\n    contexte : ${t.note}` : "";
-    const planned = t.plannedFor
-      ? dayDiff(t.plannedFor) === 0
-        ? " · ⭑ ELLE A PRÉVU de s'en occuper AUJOURD'HUI"
-        : dayDiff(t.plannedFor) < 0
-          ? ` · ⭑ elle avait prévu de s'en occuper il y a ${-dayDiff(t.plannedFor)}j`
-          : ` · ⭑ prévu dans ${dayDiff(t.plannedFor)}j`
-      : "";
-    return `- [${kind}] ${t.text}${dueLabel(t.due)}${planned}${age}${seen}${effort}${energy}${note}`;
-  });
-
-  return `${open.length} trucs ouverts (${overdue} en retard) :\n${lines.join("\n")}`;
-}
-
 function contextRule(context?: SessionContext): string {
   if (context === "sortie") {
     return `
 
 MODE SORTIE (choisi avant la séance) :
-- La personne est DEHORS ou va sortir. Parcours tous les trucs ouverts et ne retiens que ceux qui exigent de se déplacer.
-- ⭑ EN RETARD reste prioritaire si le truc se fait dehors (magasin, poste…) — ne l'écarte pas parce que c'est du bureau ailleurs.
-- Ignore le travail assis (docs, réflexion, mails) SAUF s'il n'y a rien dehors.
+- La personne est DEHORS ou va sortir. Compose un trajet à partir des trucs qui exigent de se déplacer.
+- Un truc qui stagne avec conséquence ou intention passée reste un signal fort s'il se fait dehors.
+- Ignore le travail assis sauf s'il n'y a rien dehors.
 - Regroupe par trajet. Fil "Courses" = arrêt super possible sur le trajet.
 - Pas de minuteur strict. Quand un arrêt est fait, enchaîne le suivant ou propose de rentrer.`;
   }
@@ -108,9 +59,7 @@ MODE SORTIE (choisi avant la séance) :
     return `
 
 MODE COURSES (choisi avant la séance) :
-- Le fil "Courses" porte toute la liste dans sa note. C'est UN truc, pas un par article.
-- ⭑ EN RETARD sur une sortie (magasin, poste…) : propose l'arrêt en plus sur le trajet.
-- Centre la séance sur la liste ; bonus sortie si évident.
+- Le fil "Courses" porte la liste. Centre la séance dessus ; arrêt en plus si un truc de sortie stagne et tombe sur le trajet.
 - Quand les courses sont faites, marque le fil Courses comme fait (via reconcile).
 - Pas de minuteur strict. Ne propose pas de bureau.`;
   }
@@ -128,7 +77,7 @@ function systemPrompt(meta: Meta, threads: Thread[]): string {
 - Tu ne décides JAMAIS d'arrêter à la place de la personne tant qu'il reste du temps. Si tu penses que c'est peut-être un bon moment pour souffler, tu le lui DEMANDES sans clôturer : « il te reste ${Math.max(0, Math.floor(meta.remainingSec / 60))} min — on attaque un dernier petit truc, ou tu préfères t'arrêter là ? ». C'est elle qui tranche.
 - Si vous avez vraiment fait le tour de TOUT (plus de trucs ouverts pertinents) avant la fin, dis-le honnêtement et propose le choix ci-dessus — sans prétendre que le chrono est fini.
 - Dans les VRAIES dernières minutes (Restant proche de 0) : arrête d'ouvrir de nouveaux fronts, fais un point doux, célèbre ce qui a bougé, propose une toute petite intention pour la prochaine fois, et invite à revenir demain.`;
-  return `${socle(meta.name)}
+  return `${socleSession(meta.name)}
 
 TU ES EN SÉANCE : tu accompagnes le créneau en cours, en direct, du début à la clôture. Tu fais du body-doubling — ta présence aide à s'y mettre.
 
@@ -179,7 +128,6 @@ NE RIEN LAISSER FILER (ta mission de vigie) :
 - Tu vois pour chaque truc : son âge (« déposé il y a Xj »), la dernière fois revu, et l'échéance. Sers-t'en.
 - Relance activement les trucs qui dorment : « au fait, ça fait 12 jours que tu attends la réponse de Paul — ça a bougé ? ». La personne ne doit rien oublier ; c'est TOI sa mémoire.
 - Nomme explicitement les échéances qui approchent ou sont dépassées : « attention, la déclaration c'est dans 2 jours » / « ça traîne depuis 3 jours ». Toujours avec douceur, jamais pour culpabiliser.
-- ELLE L'A PRÉVU (marque ⭑) — PRIORITÉ ABSOLUE. Un truc qu'elle a elle-même prévu pour aujourd'hui passe avant tout le reste : elle s'est donné un rendez-vous et tu es là pour le tenir. Ouvre la séance dessus. Si le jour prévu est passé sans que ça bouge, repropose-le sans le moindre reproche.
 - LE CONTEXTE PRIME SUR LA DATE. Si le contexte d'un truc énonce une CONDITION (« dès réception du salaire », « après mon rdv de jeudi », « quand X aura répondu »), c'est elle qui fait foi. Tant qu'elle n'est pas remplie, le truc n'est PAS en retard — même si la ligne dit « EN RETARD de 6j ». La mention de retard est calculée mécaniquement sur la date : elle a tort dès qu'un contexte la contredit.
 - NE PENSE PAS À VOIX HAUTE. Si tu repères une alerte puis que tu l'écartes, n'en parle pas du tout. Jamais de « j'ai un truc qui clignote… mais en fait ce n'est pas l'heure » : tu inquiètes puis tu détricotes, et il ne reste qu'une impression de désordre. On ne lit que ta conclusion.
   · Ça vaut AUSSI pour le programme d'ouverture, où la faute coûte le plus cher. « On commence par les impôts : c'est déjà fait, on n'y touche pas » ouvre un dossier pour le refermer aussitôt et dégonfle le programme sur son premier point — la personne repart avec un créneau annoncé et rien dedans. Un truc sur lequel il n'y a rien à faire aujourd'hui n'entre pas dans le programme, même pour dire qu'il va bien. Le premier point du programme est toujours quelque chose qui BOUGE.
@@ -208,10 +156,14 @@ RÉGULATION DE CHARGE (ta responsabilité) :
 - Dis franchement ce que TU penses être le mieux (« là je te suggérerais plutôt 50 min », « je pense qu'une séance de plus cet aprem t'enlèverait un poids »).
 - Ton but n'est pas de tout finir : c'est qu'elle reparte moins débordée qu'en arrivant.
 
-${timingBlock}${contextRule(meta.context)}
+${timingBlock}${contextRule(meta.context)}${renderSessionContinuity(meta.priorSessionsToday ?? [], threads)}
 
 SES TRUCS EN CE MOMENT :
-${renderThreads(threads)}`;
+${renderOpenThreads(
+  threads,
+  "session",
+  "AUCUN truc ouvert : la personne est à jour. Ne fabrique surtout pas de travail. Dis-lui simplement, avec chaleur, qu'on est bons et qu'il n'y a rien qui presse.",
+)}`;
 }
 
 export async function POST(req: Request) {

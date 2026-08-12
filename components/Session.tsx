@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ChatMessage, SessionContext, Thread } from "@/lib/types";
+import type { ChatMessage, SessionContext, SessionLog, Thread } from "@/lib/types";
 import { parseThreadOps } from "@/lib/ops";
 import {
   applyThreadOps,
@@ -134,6 +134,7 @@ export default function Session({
             remainingSec: totalSec - elapsedRef.current,
             name,
             ending,
+            priorSessionsToday,
           },
         }),
       });

@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { SessionContext, Thread } from "@/lib/types";
+import { ageLabel, dayDiff, dueLabel, intentionLabel } from "@/lib/thread-labels";
 import { identity, socle, today, TON, VOIX } from "@/lib/voice";
 
 export const runtime = "nodejs";
@@ -23,50 +24,19 @@ interface Body {
   meta?: { name?: string };
 }
 
-function dayDiff(iso: string): number {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const d = new Date(iso);
-  d.setHours(0, 0, 0, 0);
-  return Math.round((d.getTime() - today.getTime()) / 86_400_000);
-}
-
-function dueLabel(iso?: string): string {
-  if (!iso) return "";
-  const n = dayDiff(iso);
-  if (n < 0) return ` · fenêtre dépassée depuis ${-n}j`;
-  if (n === 0) return " · fenêtre se ferme aujourd'hui";
-  if (n === 1) return " · fenêtre se ferme demain";
-  return ` · fenêtre ouverte encore ${n}j`;
-}
-
-function ageLabel(iso: string): string {
-  const n = Math.max(0, -dayDiff(iso));
-  if (n === 0) return " · déposé aujourd'hui";
-  if (n === 1) return " · déposé hier";
-  return ` · déposé il y a ${n}j`;
-}
-
-function plannedLabel(iso?: string): string {
-  if (!iso) return "";
-  const n = dayDiff(iso);
-  if (n < 0) return ` · ⭑ ELLE AVAIT PRÉVU de s'en occuper il y a ${-n}j`;
-  if (n === 0) return " · ⭑ ELLE A PRÉVU de s'en occuper AUJOURD'HUI";
-  if (n === 1) return " · ⭑ elle prévoit de s'en occuper demain";
-  return ` · ⭑ elle prévoit de s'en occuper dans ${n}j`;
-}
-
 function renderLines(threads: Thread[]): string {
   const open = threads.filter((t) => t.status === "open");
   if (open.length === 0) return "(rien de pertinent en ce moment)";
-  return open
+  const overdue = open.filter((t) => t.due && dayDiff(t.due) < 0).length;
+  const lines = open
     .map((t) => {
       const kind = t.kind === "suivi" ? "À SUIVRE" : "ACTION";
       const effort = t.effort ? ` · effort ${t.effort}` : "";
       const note = t.note ? ` · liste/contexte: ${t.note}` : "";
-      return `- [${kind}] ${t.text}${dueLabel(t.due)}${plannedLabel(t.plannedFor)}${ageLabel(t.createdAt)}${effort}${note}`;
+      return `- [${kind}] ${t.text}${dueLabel(t.due, "plan")}${intentionLabel(t.plannedFor)}${ageLabel(t.createdAt, "déposé")}${effort}${note}`;
     })
     .join("\n");
+  return `${open.length} trucs ouverts (${overdue} dont la fenêtre est passée) :\n${lines}`;
 }
 
 function findCoursesThread(threads: Thread[]): Thread | undefined {
@@ -118,7 +88,7 @@ function coursesPlanPrompt(threads: Thread[], name?: string): string {
 
 LA PERSONNE VIENT DE CLIQUER « COURSES ». Elle va au supermarché — ce n'est PAS une séance bureau.
 
-RÈGLE ABSOLUE : le CENTRE, c'est la liste de courses (fil "Courses"). IGNORE le travail de bureau (organiser un voyage, réfléchir assis, mails, docs, kayak…) — même ⭑ ou urgent.
+RÈGLE ABSOLUE : le CENTRE, c'est la liste de courses (fil "Courses"). IGNORE le travail de bureau (organiser un voyage, réfléchir assis, mails, docs, kayak…).
 
 MAIS : si un autre truc ouvert demande clairement de SORTIR (poste, pharmacie, banque, rdv sur place), tu PEUX proposer d'en profiter sur le même trajet (« tant qu'on y est, on passe à la poste ? »). C'est un bonus, pas le sujet principal.
 
@@ -141,7 +111,7 @@ function sortiePlanPrompt(threads: Thread[], name?: string): string {
 
 LA PERSONNE VIENT DE CLIQUER « SORTIE ». Elle sort de chez elle — ce n'est PAS une séance bureau.
 
-RÈGLE ABSOLUE : tu ne parles QUE des trucs qui exigent de SE DÉPLACER. Déduis-le du texte ET du contexte de chaque truc (poste, pharmacie, banque, rdv sur place, dépôt, magasin, courses…). IGNORE le travail assis (organiser un voyage, choix kayak/Asie, mails, docs, réflexion…) — même ⭑ ou urgent.
+RÈGLE ABSOLUE : tu ne parles QUE des trucs qui exigent de SE DÉPLACER. Déduis-le du texte ET du contexte de chaque truc. IGNORE le travail assis (organiser un voyage, choix kayak/Asie, mails, docs, réflexion…).
 
 TON RÔLE : 1 à 2 phrases courtes, chaleureuses.
 - Regroupe ce qui se fait sur le même trajet.
@@ -165,15 +135,7 @@ function deskPlanPrompt(
   const chosenRule = chosen
     ? `\n\nDURÉE DÉJÀ CHOISIE : ${chosen} min. La personne vient de la sélectionner elle-même — c'est SON choix et tu fais avec. Ton message dit ce qu'on peut concrètement faire en ${chosen} min, en citant ses trucs réels : le petit ensemble qui tient dans ce temps-là. Renvoie "pick":"${chosen}". Si une autre durée servirait vraiment mieux ce qu'il y a aujourd'hui, dis-le UNE fois, franchement et sans insister — « je ferais plutôt 30, il y a de quoi » — puis enchaîne quand même sur ce qu'on peut faire en ${chosen} min. Un bon compagnon donne son avis ; il ne le répète pas et n'impose rien.`
     : "";
-  const open = threads.filter((t) => t.status === "open");
-  const overdue = open.filter((t) => t.due && dayDiff(t.due) < 0).length;
-  const lines = open.map((t) => {
-    const kind = t.kind === "suivi" ? "À SUIVRE" : "ACTION";
-    const effort = t.effort ? ` · effort ${t.effort}` : "";
-    const note = t.note ? ` · contexte: ${t.note}` : "";
-    return `- [${kind}] ${t.text}${dueLabel(t.due)}${plannedLabel(t.plannedFor)}${ageLabel(t.createdAt)}${effort}${note}`;
-  });
-  const render = `${open.length} trucs ouverts (${overdue} dont la fenêtre est passée) :\n${lines.join("\n")}`;
+  const render = renderLines(threads);
 
   return `${socle(name)}
 
@@ -195,7 +157,7 @@ DURÉE (champ "pick"), une seule valeur parmi "5", "15", "30", "50" — par DÉF
   · Si on dépose nettement plus qu'on ne boucle, ou si les séances se sont espacées / arrêtées, ou s'il y a un paquet de trucs qui traînent depuis plus de deux semaines sans bouger : le rythme actuel ne suffit pas, DIS-LE simplement, et OFFRE plus de capacité. Deux formes possibles, au choix selon ce qui colle : une séance plus longue ("30" ou "50"), ou DEUX séances dans la journée (le champ "pick" reste la durée de la première — la seconde se propose dans le message).
   · Si le rythme tient (on boucle à peu près autant qu'on dépose, les séances sont régulières), reste sur la plus petite séance sensée.
 - Constater honnêtement que ça s'accumule N'EST PAS stresser. Ce qui est interdit, c'est la culpabilité, le reproche et le décompte accusateur — pas le constat lucide. Une personne à qui on cache que le rythme décroche n'est pas rassurée, elle est abandonnée.
-- ELLE L'A PRÉVU (marque ⭑) — PRIORITÉ ABSOLUE. Un truc qu'elle a elle-même prévu pour AUJOURD'HUI passe avant tout le reste : elle s'est donné un rendez-vous, ton travail est de le tenir. Nomme-le, et bâtis la séance autour. Si le jour prévu est déjà passé sans que ça bouge, repropose-le simplement, sans le moindre reproche.
+- INTENTION DE JOUR : un truc marqué « intention : prévu aujourd'hui » (ou passé) est un signal à peser avec le reste — conséquences, stagnation, fenêtre — pas une priorité absolue qui écrase tout. Si elle s'était donné un rendez-vous avec elle-même et que ça stagne, nomme-le et propose-le dans la composition du jour, sans reproche.
 - FENÊTRES SAISONNIÈRES : certains trucs n'ont pas de date mais perdent leur sens passé un moment (organiser un voyage ou une activité d'été, un cadeau avant une fête, une inscription avant la rentrée). Déduis-le du texte et de la saison actuelle : si la fenêtre se referme bientôt, c'est le moment de le dire, même sans échéance saisie. Un truc de ce genre jamais entamé depuis des semaines mérite d'être nommé avant qu'il soit trop tard.
 - TÂCHE AFFAMÉE : si un truc important est vieux et manifestement toujours doublé (déposé il y a longtemps, jamais avancé), tu peux soit le désigner comme LE pas à faire aujourd'hui dans une séance normale (lui donner de l'oxygène), soit — s'il a besoin d'un vrai bloc — OFFRIR un peu plus de temps. Toujours comme une option calme et bienveillante, jamais une pression ni un reproche de l'avoir laissé traîner.
 - CONTEXTE : si un truc porte un « contexte » (enjeux, qui attend, intention douce, conséquence), tiens-en compte pour juger son importance et pour le formuler avec justesse (« ton père attend toujours ça »). Une intention douce (« aimerait cette semaine ») → un rappel léger si la semaine avance, jamais une urgence artificielle.

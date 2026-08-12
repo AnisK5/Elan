@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ChatMessage, Thread } from "@/lib/types";
+import { ageLabel, dueLabel, intentionLabel } from "@/lib/thread-labels";
 import { socle } from "@/lib/voice";
 
 export const runtime = "nodejs";
@@ -12,43 +13,14 @@ interface Body {
   meta?: { name?: string };
 }
 
-function dayDiff(iso: string): number {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const d = new Date(iso);
-  d.setHours(0, 0, 0, 0);
-  return Math.round((d.getTime() - today.getTime()) / 86_400_000);
-}
-
-function dueLabel(iso?: string): string {
-  if (!iso) return "";
-  const n = dayDiff(iso);
-  if (n < 0) return ` · date passée depuis ${-n}j`;
-  if (n === 0) return " · c'est aujourd'hui";
-  if (n === 1) return " · c'est demain";
-  return ` · dans ${n}j`;
-}
-
 function renderThreads(threads: Thread[]): string {
   const open = threads.filter((t) => t.status === "open");
   if (open.length === 0) return "Aucun truc ouvert en ce moment.";
   const lines = open.map((t) => {
     const kind = t.kind === "suivi" ? "À SUIVRE" : "ACTION";
-    const age = Math.max(0, -dayDiff(t.createdAt));
     const seen = t.touchedAt ? "" : " · jamais entamé";
     const note = t.note ? `\n    contexte : ${t.note}` : "";
-    const p = t.plannedFor ? dayDiff(t.plannedFor) : null;
-    const planned =
-      p === null
-        ? ""
-        : p === 0
-          ? " · ⭑ elle a prévu de s'en occuper AUJOURD'HUI"
-          : p === 1
-            ? " · ⭑ prévu demain"
-            : p < 0
-              ? ` · ⭑ était prévu il y a ${-p}j`
-              : ` · ⭑ prévu dans ${p}j`;
-    return `- [${kind}] ${t.text}${dueLabel(t.due)}${planned} · déposé il y a ${age}j${seen}${note}`;
+    return `- [${kind}] ${t.text}${dueLabel(t.due)}${intentionLabel(t.plannedFor)}${ageLabel(t.createdAt, "déposé")}${seen}${note}`;
   });
   return `${open.length} trucs ouverts :\n${lines.join("\n")}`;
 }
