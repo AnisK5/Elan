@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ChatMessage, Thread } from "@/lib/types";
+import type { ChatMessage, SessionContext, Thread } from "@/lib/types";
 import { parseThreadOps } from "@/lib/ops";
 import {
   applyThreadOps,
@@ -17,13 +17,17 @@ import ThreadRow from "./ThreadRow";
 
 export default function Session({
   durationMin,
+  context = "desk",
   name,
   initial,
+  priorSessionsToday = [],
   onEnd,
 }: {
   durationMin: number;
+  context?: SessionContext;
   name?: string;
   initial?: ActiveSession | null;
+  priorSessionsToday?: SessionLog[];
   onEnd: (transcript: ChatMessage[]) => void;
 }) {
   const { threads, add, patch, remove, ready } = useThreads();
@@ -47,9 +51,10 @@ export default function Session({
   const started = useRef(false);
   const closed = useRef(false);
 
+  const outdoor = context === "sortie" || context === "courses";
   const totalSec = durationMin * 60;
   const remaining = totalSec - elapsed;
-  const overtime = remaining < 0;
+  const overtime = !outdoor && remaining < 0;
 
   // Minuteur
   useEffect(() => {
@@ -81,12 +86,13 @@ export default function Session({
   useEffect(() => {
     writeActiveSession({
       durationMin,
+      context,
       elapsedSec: elapsedRef.current,
       messages,
       startedAt: startedAtRef.current,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, elapsed]);
+  }, [messages, elapsed, context]);
 
   // Auto-défilement
   useEffect(() => {
@@ -96,10 +102,9 @@ export default function Session({
     });
   }, [messages, streaming]);
 
-  // Clôture automatique quand le temps est écoulé : le guide reprend la parole
-  // tout seul pour rassurer et donner la permission de s'arrêter.
+  // Clôture automatique quand le temps est écoulé (séances bureau uniquement).
   useEffect(() => {
-    if (closed.current || streaming) return;
+    if (outdoor || closed.current || streaming) return;
     if (remaining > 0) return;
     const convo = messages.filter((m) => m.content.trim().length > 0);
     if (convo.length === 0) return;
@@ -124,6 +129,7 @@ export default function Session({
           threads: threadsRef.current,
           meta: {
             durationMin,
+            context,
             elapsedSec: elapsedRef.current,
             remainingSec: totalSec - elapsedRef.current,
             name,
@@ -206,36 +212,50 @@ export default function Session({
       {/* Barre du haut : minuteur + contrôles */}
       <header className="border-b border-line bg-paper/80 backdrop-blur">
         <div className="mx-auto flex w-full max-w-2xl items-center gap-4 px-5 py-3">
-          <div className="flex items-baseline gap-2">
-            <span
-              className={`font-display text-2xl font-semibold tabular-nums ${
-                overtime ? "text-amber" : "text-ink"
-              }`}
-            >
-              {fmt(Math.abs(remaining))}
-            </span>
-            <span className="text-xs text-muted">
-              {overtime ? "au-delà" : `sur ${durationMin} min`}
-            </span>
-          </div>
-          <div className="flex-1">
-            <div className="h-1.5 overflow-hidden rounded-full bg-sink">
-              <div
-                className={`h-full rounded-full transition-all duration-1000 ${
-                  overtime ? "bg-amber" : "bg-teal"
-                }`}
-                style={{
-                  width: `${Math.min(100, (elapsed / totalSec) * 100)}%`,
-                }}
-              />
-            </div>
-          </div>
-          <button
-            onClick={() => setRunning((r) => !r)}
-            className="rounded-lg px-2 py-1 text-sm text-muted transition hover:text-ink"
-          >
-            {running ? "Pause" : "Reprendre"}
-          </button>
+          {outdoor ? (
+            <>
+              <div className="flex items-baseline gap-2">
+                <span className="font-display text-lg font-semibold text-ink">
+                  {context === "courses" ? "Courses" : "Sortie"}
+                </span>
+                <span className="text-xs text-muted">pas de chrono</span>
+              </div>
+              <div className="flex-1" />
+            </>
+          ) : (
+            <>
+              <div className="flex items-baseline gap-2">
+                <span
+                  className={`font-display text-2xl font-semibold tabular-nums ${
+                    overtime ? "text-amber" : "text-ink"
+                  }`}
+                >
+                  {fmt(Math.abs(remaining))}
+                </span>
+                <span className="text-xs text-muted">
+                  {overtime ? "au-delà" : `sur ${durationMin} min`}
+                </span>
+              </div>
+              <div className="flex-1">
+                <div className="h-1.5 overflow-hidden rounded-full bg-sink">
+                  <div
+                    className={`h-full rounded-full transition-all duration-1000 ${
+                      overtime ? "bg-amber" : "bg-teal"
+                    }`}
+                    style={{
+                      width: `${Math.min(100, (elapsed / totalSec) * 100)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+              <button
+                onClick={() => setRunning((r) => !r)}
+                className="rounded-lg px-2 py-1 text-sm text-muted transition hover:text-ink"
+              >
+                {running ? "Pause" : "Reprendre"}
+              </button>
+            </>
+          )}
           <button
             onClick={() => {
               clearActiveSession();

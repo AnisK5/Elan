@@ -6,6 +6,7 @@ import type {
   Effort,
   Project,
   ProjectStatus,
+  SessionContext,
   Settings,
   SessionLog,
   Thread,
@@ -645,6 +646,7 @@ export interface ActiveSession {
   elapsedSec: number;
   messages: ChatMessage[];
   startedAt: string;
+  context?: SessionContext;
 }
 
 export function readActiveSession(): ActiveSession | null {

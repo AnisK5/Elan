@@ -1,6 +1,10 @@
 // Le "fil" : une chose qui traîne dans ta tête. Capturé sans friction,
 // enrichi seulement si tu en as l'envie. L'IA se débrouille avec le reste.
 
+// Contexte de séance choisi sur l'accueil : bureau (durée en min), sortie
+// (errands dehors), ou courses (liste supermarché regroupée).
+export type SessionContext = "desk" | "sortie" | "courses";
+
 export type ThreadKind = "action" | "suivi"; // à faire soi-même | à surveiller/relancer
 export type Effort = "S" | "M" | "L"; // petite / moyenne / grosse bouchée
 export type Energy = "basse" | "moyenne" | "haute";

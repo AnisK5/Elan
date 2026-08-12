@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { Thread } from "@/lib/types";
-import { socle } from "@/lib/voice";
+import type { SessionContext, Thread } from "@/lib/types";
+import { identity, socle, today, TON, VOIX } from "@/lib/voice";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +19,7 @@ interface Body {
   threads: Thread[];
   stats?: PlanStats;
   chosen?: number;
+  context?: SessionContext;
   meta?: { name?: string };
 }
 
@@ -55,16 +56,27 @@ function plannedLabel(iso?: string): string {
   return ` · ⭑ elle prévoit de s'en occuper dans ${n}j`;
 }
 
-function render(threads: Thread[]): string {
+function renderLines(threads: Thread[]): string {
   const open = threads.filter((t) => t.status === "open");
-  const overdue = open.filter((t) => t.due && dayDiff(t.due) < 0).length;
-  const lines = open.map((t) => {
-    const kind = t.kind === "suivi" ? "À SUIVRE" : "ACTION";
-    const effort = t.effort ? ` · effort ${t.effort}` : "";
-    const note = t.note ? ` · contexte: ${t.note}` : "";
-    return `- [${kind}] ${t.text}${dueLabel(t.due)}${plannedLabel(t.plannedFor)}${ageLabel(t.createdAt)}${effort}${note}`;
-  });
-  return `${open.length} trucs ouverts (${overdue} dont la fenêtre est passée) :\n${lines.join("\n")}`;
+  if (open.length === 0) return "(rien de pertinent en ce moment)";
+  return open
+    .map((t) => {
+      const kind = t.kind === "suivi" ? "À SUIVRE" : "ACTION";
+      const effort = t.effort ? ` · effort ${t.effort}` : "";
+      const note = t.note ? ` · liste/contexte: ${t.note}` : "";
+      return `- [${kind}] ${t.text}${dueLabel(t.due)}${plannedLabel(t.plannedFor)}${ageLabel(t.createdAt)}${effort}${note}`;
+    })
+    .join("\n");
+}
+
+function findCoursesThread(threads: Thread[]): Thread | undefined {
+  return threads.find(
+    (t) => t.status === "open" && t.text.trim().toLowerCase() === "courses",
+  );
+}
+
+function openThreads(threads: Thread[]): Thread[] {
+  return threads.filter((t) => t.status === "open");
 }
 
 function renderStats(s?: PlanStats): string {
@@ -83,7 +95,68 @@ function renderStats(s?: PlanStats): string {
 - trucs ouverts déposés il y a plus de 14j : ${s.stale14}`;
 }
 
-function systemPrompt(
+function outdoorSocle(name?: string): string {
+  return [identity(name), today(), VOIX, TON].join("\n\n");
+}
+
+function coursesPlanPrompt(threads: Thread[], name?: string): string {
+  const open = openThreads(threads);
+  const courses = findCoursesThread(open);
+  const listBlock = courses
+    ? courses.note?.trim()
+      ? `Fil "Courses" — liste actuelle :\n${courses.note.trim()}`
+      : `Fil "Courses" présent mais liste vide.`
+    : `Aucun fil "Courses" — pas de liste pour l'instant.`;
+
+  const others = open.filter((t) => t !== courses);
+  const othersBlock =
+    others.length > 0
+      ? `\n\nAUTRES TRUCS OUVERTS (tu peux proposer un arrêt en plus si ça se fait sur le trajet — poste, pharmacie… — mais le centre reste les courses) :\n${renderLines(others)}`
+      : "";
+
+  return `${outdoorSocle(name)}
+
+LA PERSONNE VIENT DE CLIQUER « COURSES ». Elle va au supermarché — ce n'est PAS une séance bureau.
+
+RÈGLE ABSOLUE : le CENTRE, c'est la liste de courses (fil "Courses"). IGNORE le travail de bureau (organiser un voyage, réfléchir assis, mails, docs, kayak…) — même ⭑ ou urgent.
+
+MAIS : si un autre truc ouvert demande clairement de SORTIR (poste, pharmacie, banque, rdv sur place), tu PEUX proposer d'en profiter sur le même trajet (« tant qu'on y est, on passe à la poste ? »). C'est un bonus, pas le sujet principal.
+
+TON RÔLE : 1 à 2 phrases courtes, chaleureuses.
+- Si une liste existe : cite-la en partie, propose d'y aller.
+- Si pas de liste : propose de la construire en séance.
+- Arrêt en plus sur le trajet : une demi-phrase max, seulement si c'est évident dans les trucs ci-dessous.
+- Pas de durée en minutes. Pas de créneau bureau.
+
+RÉPONDS UNIQUEMENT avec : {"message": "...", "pick": "15"}
+
+${listBlock}${othersBlock}`;
+}
+
+function sortiePlanPrompt(threads: Thread[], name?: string): string {
+  const open = openThreads(threads);
+  const block = renderLines(open);
+
+  return `${outdoorSocle(name)}
+
+LA PERSONNE VIENT DE CLIQUER « SORTIE ». Elle sort de chez elle — ce n'est PAS une séance bureau.
+
+RÈGLE ABSOLUE : tu ne parles QUE des trucs qui exigent de SE DÉPLACER. Déduis-le du texte ET du contexte de chaque truc (poste, pharmacie, banque, rdv sur place, dépôt, magasin, courses…). IGNORE le travail assis (organiser un voyage, choix kayak/Asie, mails, docs, réflexion…) — même ⭑ ou urgent.
+
+TON RÔLE : 1 à 2 phrases courtes, chaleureuses.
+- Regroupe ce qui se fait sur le même trajet.
+- Vérifie ce qui est prêt (enveloppe, ordonnance…).
+- Si un fil "Courses" a une liste, propose d'en profiter pour le super — une sortie, plusieurs arrêts.
+- Si aucun truc ne demande vraiment de sortir : dis-le honnêtement.
+- Pas de durée en minutes. Pas de créneau bureau.
+
+RÉPONDS UNIQUEMENT avec : {"message": "...", "pick": "15"}
+
+TOUS SES TRUCS OUVERTS (tu filtres toi-même ce qui est dehors) :
+${block}`;
+}
+
+function deskPlanPrompt(
   threads: Thread[],
   stats?: PlanStats,
   chosen?: number,
@@ -92,6 +165,16 @@ function systemPrompt(
   const chosenRule = chosen
     ? `\n\nDURÉE DÉJÀ CHOISIE : ${chosen} min. La personne vient de la sélectionner elle-même — c'est SON choix et tu fais avec. Ton message dit ce qu'on peut concrètement faire en ${chosen} min, en citant ses trucs réels : le petit ensemble qui tient dans ce temps-là. Renvoie "pick":"${chosen}". Si une autre durée servirait vraiment mieux ce qu'il y a aujourd'hui, dis-le UNE fois, franchement et sans insister — « je ferais plutôt 30, il y a de quoi » — puis enchaîne quand même sur ce qu'on peut faire en ${chosen} min. Un bon compagnon donne son avis ; il ne le répète pas et n'impose rien.`
     : "";
+  const open = threads.filter((t) => t.status === "open");
+  const overdue = open.filter((t) => t.due && dayDiff(t.due) < 0).length;
+  const lines = open.map((t) => {
+    const kind = t.kind === "suivi" ? "À SUIVRE" : "ACTION";
+    const effort = t.effort ? ` · effort ${t.effort}` : "";
+    const note = t.note ? ` · contexte: ${t.note}` : "";
+    return `- [${kind}] ${t.text}${dueLabel(t.due)}${plannedLabel(t.plannedFor)}${ageLabel(t.createdAt)}${effort}${note}`;
+  });
+  const render = `${open.length} trucs ouverts (${overdue} dont la fenêtre est passée) :\n${lines.join("\n")}`;
+
   return `${socle(name)}
 
 TON RÔLE ICI : à partir de ses trucs en cours, tu conseilles la FORME de sa journée d'aujourd'hui, avant même qu'elle commence son créneau.
@@ -141,13 +224,34 @@ RÉPONDS UNIQUEMENT avec un objet JSON, rien d'autre, de la forme exacte :
 {"message": "...", "pick": "15"}
 
 SES TRUCS :
-${render(threads)}
+${render}
 
 ${renderStats(stats)}${chosenRule}`;
 }
 
-const CUE =
-  "[Regarde mes trucs et conseille-moi la forme de ma journée. Réponds seulement avec le JSON demandé.]";
+function systemPrompt(
+  allThreads: Thread[],
+  stats?: PlanStats,
+  chosen?: number,
+  name?: string,
+  context?: SessionContext,
+): string {
+  const ctx = context ?? "desk";
+  const open = openThreads(allThreads);
+  if (ctx === "courses") return coursesPlanPrompt(open, name);
+  if (ctx === "sortie") return sortiePlanPrompt(open, name);
+  return deskPlanPrompt(open, stats, chosen, name);
+}
+
+function cue(context?: SessionContext): string {
+  if (context === "courses") {
+    return "[J'ai choisi une séance COURSES au super. Conseille-moi sur ma liste, et propose un arrêt en plus seulement si un truc demande clairement de sortir. JSON seulement.]";
+  }
+  if (context === "sortie") {
+    return "[J'ai choisi une séance SORTIE dehors. Regarde tous mes trucs, dis-moi ce qui se fait dehors — ignore le bureau. Tu peux inclure les courses si le fil existe. JSON seulement.]";
+  }
+  return "[Regarde mes trucs et conseille-moi la forme de ma journée. Réponds seulement avec le JSON demandé.]";
+}
 
 function safeParse(text: string): { message: string; pick: string } | null {
   const cleaned = text
@@ -175,6 +279,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "bad-request" }, { status: 400 });
   }
 
+  const context = body.context ?? "desk";
   const open = (body.threads ?? []).filter((t) => t.status === "open");
   if (open.length === 0) return Response.json({ message: "", pick: "15" });
 
@@ -183,8 +288,14 @@ export async function POST(req: Request) {
     const res = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 400,
-      system: systemPrompt(open, body.stats, body.chosen, body.meta?.name),
-      messages: [{ role: "user", content: CUE }],
+      system: systemPrompt(
+        open,
+        body.stats,
+        body.chosen,
+        body.meta?.name,
+        context,
+      ),
+      messages: [{ role: "user", content: cue(context) }],
     });
     const text =
       res.content.find((b) => b.type === "text")?.type === "text"
@@ -197,8 +308,6 @@ export async function POST(req: Request) {
       : "15";
     return Response.json({ message: parsed.message, pick });
   } catch (e) {
-    // Un échec silencieux laisse la personne devant une bulle vide sans savoir
-    // pourquoi. On le trace côté serveur, et on le signale côté client.
     console.error("[plan] échec:", e instanceof Error ? e.message : e);
     return Response.json({ message: "", pick: "15", unreachable: true });
   }

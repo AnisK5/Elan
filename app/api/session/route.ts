@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ChatMessage, Thread } from "@/lib/types";
+import type { ChatMessage, SessionContext, Thread } from "@/lib/types";
 import { socle } from "@/lib/voice";
 
 export const runtime = "nodejs";
@@ -12,6 +12,7 @@ interface Meta {
   remainingSec: number;
   name?: string;
   ending?: boolean;
+  context?: SessionContext;
 }
 
 interface Body {
@@ -20,8 +21,20 @@ interface Body {
   meta: Meta;
 }
 
-const OPENING_CUE =
+const OPENING_DESK =
   "[La séance commence. Accueille-moi chaleureusement et brièvement, prends le pouls (comment j'arrive, mon énergie). Puis propose un PROGRAMME réaliste pour le temps qu'on a. Applique la règle de taille : si un truc OUVERT est en jeu, il EST le programme à lui seul, et tu t'arrêtes là — aucun repli du type « et si l'énergie est là, on fera aussi… ». Sinon, un mini-ensemble de 1 à 3 trucs bornés (ex. « en 10 min, on pourrait faire un petit tri et checker si tu as eu des réponses à tes mails d'hier »). Reste léger : c'est une intention d'ensemble, pas une liste écrasante. Termine en proposant par quoi on commence — UN seul premier pas concret.]";
+
+const OPENING_SORTIE =
+  "[La séance SORTIE commence. La personne est (ou va être) dehors — pas assise. Regarde TOUS ses trucs ouverts et repère ceux qui demandent de se déplacer (poste, pharmacie, banque, rdv sur place…) — ignore le bureau (voyage, kayak, mails, docs). Accueille brièvement, demande une fois si elle peut sortir là. Regroupe par trajet. Si un fil \"Courses\" a une liste, propose d'en profiter pour le super. UN arrêt à la fois.]";
+
+const OPENING_COURSES =
+  "[La séance COURSES commence. La personne va au super. Le fil \"Courses\" porte LA liste dans sa note. Présente-la, demande s'il manque quelque chose. Regarde aussi ses autres trucs : si un arrêt se fait sur le trajet (poste, pharmacie…), propose-le en bonus (« tant qu'on y est… »). Ignore le bureau. Quand c'est fait, un seul \"done\" sur Courses.]";
+
+function openingCue(context?: SessionContext): string {
+  if (context === "sortie") return OPENING_SORTIE;
+  if (context === "courses") return OPENING_COURSES;
+  return OPENING_DESK;
+}
 
 const CLOSING_CUE =
   "[Le temps de la séance est écoulé. Clôture en douceur, en un seul message court. D'abord un DÉBRIEF CONCRET : nomme précisément ce qui a bougé pendant CETTE séance — les trucs faits, avancés ou relancés, par leur nom réel — pour que la personne voie noir sur blanc ce qu'elle a accompli (reste bref, une ou deux phrases, pas une liste à puces). Puis RASSURE : ce qui n'est pas fini reste noté et tu le represente à la prochaine séance, donc on peut lâcher sans crainte d'oublier. Donne la permission de s'arrêter là et invite à revenir demain. Si vraiment rien de concret n'a bougé, aucune culpabilité : valorise simplement le fait d'être venu poser les choses. Ne lance AUCUN nouveau front, ne pose pas de question qui relance le travail. Ne promets pas de te souvenir du détail de où on en est dans un truc — promets seulement que le truc, lui, reviendra.]";
@@ -80,7 +93,41 @@ function renderThreads(threads: Thread[]): string {
   return `${open.length} trucs ouverts (${overdue} en retard) :\n${lines.join("\n")}`;
 }
 
+function contextRule(context?: SessionContext): string {
+  if (context === "sortie") {
+    return `
+
+MODE SORTIE (choisi avant la séance) :
+- La personne est DEHORS ou va sortir. Parcours tous les trucs ouverts et ne retiens que ceux qui exigent de se déplacer.
+- ⭑ EN RETARD reste prioritaire si le truc se fait dehors (magasin, poste…) — ne l'écarte pas parce que c'est du bureau ailleurs.
+- Ignore le travail assis (docs, réflexion, mails) SAUF s'il n'y a rien dehors.
+- Regroupe par trajet. Fil "Courses" = arrêt super possible sur le trajet.
+- Pas de minuteur strict. Quand un arrêt est fait, enchaîne le suivant ou propose de rentrer.`;
+  }
+  if (context === "courses") {
+    return `
+
+MODE COURSES (choisi avant la séance) :
+- Le fil "Courses" porte toute la liste dans sa note. C'est UN truc, pas un par article.
+- ⭑ EN RETARD sur une sortie (magasin, poste…) : propose l'arrêt en plus sur le trajet.
+- Centre la séance sur la liste ; bonus sortie si évident.
+- Quand les courses sont faites, marque le fil Courses comme fait (via reconcile).
+- Pas de minuteur strict. Ne propose pas de bureau.`;
+  }
+  return "";
+}
+
 function systemPrompt(meta: Meta, threads: Thread[]): string {
+  const outdoor = meta.context === "sortie" || meta.context === "courses";
+  const timingBlock = outdoor
+    ? `DURÉE : séance ${meta.context === "courses" ? "courses" : "sortie"} — pas de contrainte de minuteur. Ne mentionne pas le temps écoulé ni restant.`
+    : `DURÉE : séance de ${meta.durationMin} min. Écoulé : ${Math.floor(meta.elapsedSec / 60)} min. Restant : ${Math.max(0, Math.floor(meta.remainingSec / 60))} min.
+- Ce temps restant FAIT FOI. Ne l'invente jamais, ne le contredis jamais.
+- UNE TÂCHE FAITE ≠ SÉANCE FINIE. C'est l'erreur à ne PAS commettre. Après avoir bouclé un truc, s'il reste du temps utile (plus de ~1-2 min) ET des trucs ouverts, ta réaction PAR DÉFAUT est d'enchaîner : félicite en une phrase, puis propose le PROCHAIN petit pas. Tu ne clôtures pas.
+- N'emploie PAS le langage de clôture (« belle séance », « on se refait ça demain », « va profiter de ta journée », récap final) tant qu'il reste du temps utile. Ce langage est réservé à la VRAIE fin (Restant proche de 0), qui te sera signalée explicitement.
+- Tu ne décides JAMAIS d'arrêter à la place de la personne tant qu'il reste du temps. Si tu penses que c'est peut-être un bon moment pour souffler, tu le lui DEMANDES sans clôturer : « il te reste ${Math.max(0, Math.floor(meta.remainingSec / 60))} min — on attaque un dernier petit truc, ou tu préfères t'arrêter là ? ». C'est elle qui tranche.
+- Si vous avez vraiment fait le tour de TOUT (plus de trucs ouverts pertinents) avant la fin, dis-le honnêtement et propose le choix ci-dessus — sans prétendre que le chrono est fini.
+- Dans les VRAIES dernières minutes (Restant proche de 0) : arrête d'ouvrir de nouveaux fronts, fais un point doux, célèbre ce qui a bougé, propose une toute petite intention pour la prochaine fois, et invite à revenir demain.`;
   return `${socle(meta.name)}
 
 TU ES EN SÉANCE : tu accompagnes le créneau en cours, en direct, du début à la clôture. Tu fais du body-doubling — ta présence aide à s'y mettre.
@@ -161,13 +208,7 @@ RÉGULATION DE CHARGE (ta responsabilité) :
 - Dis franchement ce que TU penses être le mieux (« là je te suggérerais plutôt 50 min », « je pense qu'une séance de plus cet aprem t'enlèverait un poids »).
 - Ton but n'est pas de tout finir : c'est qu'elle reparte moins débordée qu'en arrivant.
 
-DURÉE : séance de ${meta.durationMin} min. Écoulé : ${Math.floor(meta.elapsedSec / 60)} min. Restant : ${Math.max(0, Math.floor(meta.remainingSec / 60))} min.
-- Ce temps restant FAIT FOI. Ne l'invente jamais, ne le contredis jamais.
-- UNE TÂCHE FAITE ≠ SÉANCE FINIE. C'est l'erreur à ne PAS commettre. Après avoir bouclé un truc, s'il reste du temps utile (plus de ~1-2 min) ET des trucs ouverts, ta réaction PAR DÉFAUT est d'enchaîner : félicite en une phrase, puis propose le PROCHAIN petit pas. Tu ne clôtures pas.
-- N'emploie PAS le langage de clôture (« belle séance », « on se refait ça demain », « va profiter de ta journée », récap final) tant qu'il reste du temps utile. Ce langage est réservé à la VRAIE fin (Restant proche de 0), qui te sera signalée explicitement.
-- Tu ne décides JAMAIS d'arrêter à la place de la personne tant qu'il reste du temps. Si tu penses que c'est peut-être un bon moment pour souffler, tu le lui DEMANDES sans clôturer : « il te reste ${Math.max(0, Math.floor(meta.remainingSec / 60))} min — on attaque un dernier petit truc, ou tu préfères t'arrêter là ? ». C'est elle qui tranche.
-- Si vous avez vraiment fait le tour de TOUT (plus de trucs ouverts pertinents) avant la fin, dis-le honnêtement et propose le choix ci-dessus — sans prétendre que le chrono est fini.
-- Dans les VRAIES dernières minutes (Restant proche de 0) : arrête d'ouvrir de nouveaux fronts, fais un point doux, célèbre ce qui a bougé, propose une toute petite intention pour la prochaine fois, et invite à revenir demain.
+${timingBlock}${contextRule(meta.context)}
 
 SES TRUCS EN CE MOMENT :
 ${renderThreads(threads)}`;
@@ -195,7 +236,7 @@ export async function POST(req: Request) {
   const { messages = [], threads = [], meta } = body;
 
   const apiMessages: { role: "user" | "assistant"; content: string }[] = [
-    { role: "user", content: OPENING_CUE },
+    { role: "user", content: openingCue(meta?.context) },
     ...messages.map((m) => ({ role: m.role, content: m.content })),
   ];
 

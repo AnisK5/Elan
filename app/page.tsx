@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ChatMessage, Thread } from "@/lib/types";
+import type { ChatMessage, SessionContext, Thread } from "@/lib/types";
 import {
   applyThreadOps,
   clearActiveSession,
@@ -29,8 +29,10 @@ import { parseThreadOps } from "@/lib/ops";
 
 // Bump à chaque changement du prompt de reco (app/api/plan) : invalide le cache
 // des reco existantes pour que la nouvelle logique s'applique immédiatement.
-const PLAN_VERSION = 8;
+const PLAN_VERSION = 11;
 const DURATIONS = [5, 15, 30, 50];
+// Durée nominale pour les séances dehors (timer masqué, sert au log).
+const OUTDOOR_DURATION = 30;
 // Au-delà de ce délai depuis son démarrage, une séance laissée en plan est
 // considérée ratée : on ne rallume pas le minuteur de la veille, on rouvre
 // sur l'accueil. Assez large pour couvrir une vraie interruption (appel,
@@ -45,6 +47,7 @@ export default function Home() {
 
   const [view, setView] = useState<"home" | "session">("home");
   const [duration, setDuration] = useState(15);
+  const [context, setContext] = useState<SessionContext>("desk");
   const [today, setToday] = useState("");
   const [dayStart, setDayStart] = useState(() => {
     const d = new Date();
@@ -116,6 +119,7 @@ export default function Home() {
     }
     setResume(a);
     setDuration(a.durationMin);
+    setContext(a.context ?? "desk");
     sessionStartRef.current = a.startedAt;
     setView("session");
   }, []);
@@ -232,7 +236,7 @@ export default function Home() {
   const isNewcomer = ready && threads.length === 0 && sessions.length === 0;
 
   function applyPick(pick: string, sig: string) {
-    if (appliedSig.current === sig) return; // ne pas écraser un choix manuel sur le même backlog
+    if (appliedSig.current === sig || context !== "desk") return;
     appliedSig.current = sig;
     durationSettled.current = true;
     const n = Number(pick);
@@ -251,7 +255,13 @@ export default function Home() {
     try {
       const raw = localStorage.getItem("elan.plan.v1");
       const c = raw ? JSON.parse(raw) : null;
-      if (c && c.v === PLAN_VERSION && c.date === dateKey && c.sig === planSig) {
+      if (
+        c &&
+        c.v === PLAN_VERSION &&
+        c.date === dateKey &&
+        c.sig === planSig &&
+        c.context === context
+      ) {
         if (manualPickSig.current === planSig) return;
         setPlan({ message: c.message, pick: c.pick });
         applyPick(c.pick, planSig);
@@ -270,6 +280,7 @@ export default function Home() {
       body: JSON.stringify({
         threads: openThreads,
         stats: planStats,
+        context,
         meta: { name: settings.name },
       }),
     })
@@ -287,7 +298,7 @@ export default function Home() {
         try {
           localStorage.setItem(
             "elan.plan.v1",
-            JSON.stringify({ v: PLAN_VERSION, date: dateKey, sig: planSig, ...p }),
+            JSON.stringify({ v: PLAN_VERSION, date: dateKey, sig: planSig, context, ...p }),
           );
         } catch {
           // ignore
@@ -301,7 +312,7 @@ export default function Home() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, view, planSig]);
+  }, [ready, view, planSig, context]);
 
   function endSession(transcript: ChatMessage[]) {
     if (transcript.length > 1) {
@@ -337,13 +348,29 @@ export default function Home() {
   // Choisir soi-même une durée doit changer le conseil : on ne veut pas lire
   // « je te propose 15 min » alors qu'on vient de cliquer sur 50.
   async function pickDuration(d: number) {
+    setContext("desk");
     setDuration(d);
     durationSettled.current = true;
-    appliedSig.current = planSig; // le choix manuel prime sur la reco
+    appliedSig.current = planSig;
     manualPickSig.current = planSig;
+    await fetchPlan({ chosen: d, ctx: "desk" });
+  }
+
+  async function pickContext(ctx: "sortie" | "courses") {
+    setContext(ctx);
+    setPlan(null);
+    durationSettled.current = true;
+    appliedSig.current = planSig;
+    manualPickSig.current = planSig;
+    await fetchPlan({ ctx });
+  }
+
+  async function fetchPlan(opts?: { chosen?: number; ctx?: SessionContext }) {
+    const ctx = opts?.ctx ?? context;
     if (openThreads.length === 0) return;
     const reqId = ++planReq.current;
     setPlanLoading(true);
+    if (ctx !== "desk") setPlan(null);
     try {
       const res = await fetch("/api/plan", {
         method: "POST",
@@ -351,19 +378,25 @@ export default function Home() {
         body: JSON.stringify({
           threads: openThreads,
           stats: planStats,
-          chosen: d,
+          chosen: opts?.chosen,
+          context: ctx,
           meta: { name: settings.name },
         }),
       });
       if (res.ok) {
         const j = (await res.json()) as {
           message?: string;
+          pick?: string;
           unreachable?: boolean;
         };
-        // Deux clics rapides : seule la réponse du dernier compte.
         if (planReq.current === reqId) {
           setPlanUnreachable(Boolean(j.unreachable));
-          if (j.message) setPlan({ message: j.message, pick: String(d) });
+          if (j.message) {
+            setPlan({
+              message: j.message,
+              pick: opts?.chosen ? String(opts.chosen) : (j.pick ?? "15"),
+            });
+          }
         }
       }
     } catch {
@@ -490,7 +523,8 @@ export default function Home() {
   if (view === "session") {
     return (
       <Session
-        durationMin={duration}
+        durationMin={context === "desk" ? duration : OUTDOOR_DURATION}
+        context={context}
         name={settings.name}
         initial={resume}
         onEnd={endSession}
@@ -569,7 +603,12 @@ export default function Home() {
             {/* La durée est au-dessus du conseil : c'est elle qui le
                 détermine, la lire après serait lire l'effet avant la cause. */}
             <div className="mt-4 flex items-center gap-2">
-              <DurationPick value={duration} onChange={pickDuration} />
+              <SessionPick
+                duration={duration}
+                context={context}
+                onPickDuration={pickDuration}
+                onPickContext={pickContext}
+              />
             </div>
 
             {open > 0 ? (
@@ -580,8 +619,14 @@ export default function Home() {
                   />
                   <span className="text-xs font-medium tracking-wide text-teal">
                     {planLoading
-                      ? "Élan réfléchit à ce format…"
-                      : "Élan te conseille pour aujourd'hui"}
+                      ? context === "desk"
+                        ? "Élan réfléchit à ce format…"
+                        : "Élan regarde ce qu'il y a dehors…"
+                      : context === "desk"
+                        ? "Élan te conseille pour aujourd'hui"
+                        : context === "sortie"
+                          ? "Élan pour ta sortie"
+                          : "Élan pour tes courses"}
                   </span>
                 </div>
                 {/* Pendant le recalcul on masque l'ancien conseil : le laisser
@@ -968,28 +1013,55 @@ function ImportData() {
   );
 }
 
-function DurationPick({
-  value,
-  onChange,
+function SessionPick({
+  duration,
+  context,
+  onPickDuration,
+  onPickContext,
 }: {
-  value: number;
-  onChange: (v: number) => void;
+  duration: number;
+  context: SessionContext;
+  onPickDuration: (d: number) => void;
+  onPickContext: (c: "sortie" | "courses") => void;
 }) {
   return (
-    <div className="inline-flex rounded-xl bg-sink p-1">
-      {DURATIONS.map((d) => (
-        <button
-          key={d}
-          onClick={() => onChange(d)}
-          className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${
-            value === d
-              ? "bg-surface text-ink shadow-sm"
-              : "text-muted hover:text-ink"
-          }`}
-        >
-          {d} min
-        </button>
-      ))}
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="inline-flex rounded-xl bg-sink p-1">
+        {DURATIONS.map((d) => (
+          <button
+            key={d}
+            onClick={() => onPickDuration(d)}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${
+              context === "desk" && duration === d
+                ? "bg-surface text-ink shadow-sm"
+                : "text-muted hover:text-ink"
+            }`}
+          >
+            {d} min
+          </button>
+        ))}
+      </div>
+      <span className="text-xs text-faint">·</span>
+      <div className="inline-flex rounded-xl bg-sink p-1">
+        {(
+          [
+            { id: "sortie" as const, label: "Sortie" },
+            { id: "courses" as const, label: "Courses" },
+          ] as const
+        ).map(({ id, label }) => (
+          <button
+            key={id}
+            onClick={() => onPickContext(id)}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${
+              context === id
+                ? "bg-surface text-ink shadow-sm"
+                : "text-muted hover:text-ink"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
