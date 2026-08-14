@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-/** Vercel Cron — toutes les heures, envoie les rappels matin (Web Push). */
+/** Appelé par pg_cron Supabase (toutes les heures) — rappels matin Web Push. ?force=1 pour test. */
 export async function GET(req: Request) {
   if (!verifyCronSecret(req)) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
@@ -17,8 +17,9 @@ export async function GET(req: Request) {
   }
 
   try {
-    const result = await runRitualPushCron();
-    return Response.json(result);
+    const force = new URL(req.url).searchParams.get("force") === "1";
+    const result = await runRitualPushCron({ force });
+    return Response.json({ ...result, force });
   } catch (e) {
     console.error("[cron/ritual]", e);
     return Response.json(

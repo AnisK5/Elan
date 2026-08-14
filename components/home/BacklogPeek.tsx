@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { isContainerThread } from "@/lib/entretiens";
 import { useThreads } from "@/lib/store";
 import ThreadRow from "@/components/ThreadRow";
 
@@ -60,7 +61,7 @@ export default function BacklogPeek({
       {show && (
         <div className="mt-3 flex flex-col gap-0.5 border-t border-line pt-3">
           {threads
-            .filter((t) => t.status === "open")
+            .filter((t) => t.status === "open" && !isContainerThread(t))
             .map((t) => (
               <ThreadRow
                 key={t.id}

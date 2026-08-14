@@ -21,6 +21,7 @@ export default function Session({
   name,
   initial,
   priorSessionsToday = [],
+  ritualBrief,
   onEnd,
 }: {
   durationMin: number;
@@ -28,6 +29,7 @@ export default function Session({
   name?: string;
   initial?: ActiveSession | null;
   priorSessionsToday?: SessionLog[];
+  ritualBrief?: { message: string } | null;
   onEnd: (transcript: ChatMessage[]) => void;
 }) {
   const { threads, add, patch, remove, ready } = useThreads();
@@ -135,6 +137,7 @@ export default function Session({
             name,
             ending,
             priorSessionsToday,
+            ritualBrief: ritualBrief ?? undefined,
           },
         }),
       });
@@ -234,6 +237,7 @@ export default function Session({
                   {fmt(Math.abs(remaining))}
                 </span>
                 <span className="text-xs text-muted">
+                  {context === "entretien" ? "entretien · " : ""}
                   {overtime ? "au-delà" : `sur ${durationMin} min`}
                 </span>
               </div>

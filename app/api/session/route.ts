@@ -18,6 +18,8 @@ interface Meta {
   ending?: boolean;
   context?: SessionContext;
   priorSessionsToday?: SessionLog[];
+  /** Accroche notif matin — garder le même fil en ouverture de séance. */
+  ritualBrief?: { message: string };
 }
 
 interface Body {
@@ -27,7 +29,7 @@ interface Body {
 }
 
 const OPENING_DESK =
-  "[La séance commence. Accueille brièvement, prends le pouls. Puis COMPOSE un programme pour ce créneau : 1 à 3 trucs cohérents qui font avancer le backlog — conséquences, stagnation, fenêtres, pas une lane « élu / reste ». Lis la CONTINUITÉ si elle est là. Applique la règle de taille pour les trucs ouverts. Termine par UN premier pas concret.]";
+  "[La séance commence. Accueille en une phrase chaleureuse. Puis UN SEUL truc pour ce créneau — pas de programme à plusieurs items au démarrage, pas de liste. Si un BRIEF RITUEL est fourni ci-dessous, accroche-toi au même sujet : ne proposes pas autre chose tant qu'elle n'a pas dit. Séance BUREAU = assis, sous la main uniquement — rien qui exige de sortir (poste, pharmacie, courses…). Termine par UN premier pas minuscule, une seule action.]";
 
 const OPENING_SORTIE =
   "[La séance SORTIE commence. La personne est (ou va être) dehors — pas assise. Regarde TOUS ses trucs ouverts et repère ceux qui demandent de se déplacer (poste, pharmacie, banque, rdv sur place…) — ignore le bureau (voyage, kayak, mails, docs). Accueille brièvement, demande une fois si elle peut sortir là. Regroupe par trajet. Si un fil \"Courses\" a une liste, propose d'en profiter pour le super. UN arrêt à la fois.]";
@@ -35,9 +37,13 @@ const OPENING_SORTIE =
 const OPENING_COURSES =
   "[La séance COURSES commence. La personne va au super. Le fil \"Courses\" porte LA liste dans sa note. Présente-la, demande s'il manque quelque chose. Regarde aussi ses autres trucs : si un arrêt se fait sur le trajet (poste, pharmacie…), propose-le en bonus (« tant qu'on y est… »). Ignore le bureau. Quand c'est fait, un seul \"done\" sur Courses.]";
 
+const OPENING_ENTRETIEN =
+  "[La séance ENTRETIEN commence. Le fil \"Entretiens\" porte les rythmes que la personne a CHOISI de retenir — jamais imposés. Regarde quelles fenêtres sont ouvertes (mûres). Accueille en une phrase, propose UN entretien — le plus mûr ou le plus léger si rien ne presse. UN pas concret à la fois. Quand c'est fait, la date de la ligne est mise à jour via reconcile — ne marque pas le fil conteneur \"done\". Pas de streak, pas de culpabilité.]";
+
 function openingCue(context?: SessionContext): string {
   if (context === "sortie") return OPENING_SORTIE;
   if (context === "courses") return OPENING_COURSES;
+  if (context === "entretien") return OPENING_ENTRETIEN;
   return OPENING_DESK;
 }
 
@@ -63,6 +69,16 @@ MODE COURSES (choisi avant la séance) :
 - Quand les courses sont faites, marque le fil Courses comme fait (via reconcile).
 - Pas de minuteur strict. Ne propose pas de bureau.`;
   }
+  if (context === "entretien") {
+    return `
+
+MODE ENTRETIEN (choisi avant la séance) :
+- Le fil "Entretiens" porte les rythmes retenus par la personne — un entretien par ligne dans la note.
+- Priorise les fenêtres ouvertes (mûres). Formule « ça fait X semaines » — jamais « en retard ».
+- UN entretien à la fois. Quand c'est fait : mets à jour la date du jour sur la ligne (via reconcile), ne marque pas le fil conteneur "done".
+- Beaucoup d'entretiens se font chez soi en quelques minutes — calibré sur le créneau bureau.
+- Pas de checklist imposée : si elle veut en sauter un ou en ajouter un, tu suis.`;
+  }
   return "";
 }
 
@@ -80,14 +96,16 @@ function systemPrompt(meta: Meta, threads: Thread[]): string {
   const deskProgramBlock = outdoor
     ? ""
     : `
-LE PROGRAMME DE LA SÉANCE (adapté au temps) :
-- Au début, propose un petit ensemble réaliste de trucs à viser aujourd'hui, calibré sur la durée de la séance :
-  · ~5 min → 1 seul micro-pas : débloquer un début, poser un truc, faire le point, cocher un truc éclair.
-  · ~15 min → 1 ou 2 trucs légers : un petit tri, relancer/vérifier des mails, un pas concret.
-  · ~30 min → 2 ou 3 trucs : un ou deux vrais pas + une vérification (« est-ce qu'une réponse est arrivée ? »).
-  · ~50 min → un gros truc à faire avancer sérieusement + 1 ou 2 petits autour.
-- Ces nombres valent pour des trucs BORNÉS. Dès qu'un truc OUVERT est en jeu (voir plus haut), il prend le créneau à lui seul quelle qu'en soit la durée, et le programme se résume à lui.
-- C'est une intention d'ensemble pour rassurer sur le périmètre (« voilà ce qu'on peut viser »), pas une liste écrasante. Reste flexible : si l'énergie n'est pas là, réduis le programme sans culpabiliser.
+LE PROGRAMME DE LA SÉANCE (adapté au temps — TDAH = un truc à la fois) :
+- Au début, annonce UN SEUL truc pour tout le créneau. Pas de menu, pas de « on pourrait aussi… » en ouverture.
+- Calibrage strict sur la durée :
+  · ~5 min → 1 micro-pas unique (faire le point, un appel, une ligne).
+  · ~15 min → 1 SEUL truc léger sous la main — jamais deux, jamais une sortie.
+  · ~30 min → 1 truc principal ; un 2e seulement si le premier est fini avant la fin.
+  · ~50 min → 2 trucs max, enchaînés un par un — jamais proposés ensemble au départ.
+- Dès qu'un truc OUVERT (gros bloc) est en jeu, il prend le créneau à lui seul.
+- Séance bureau : EXCLURE tout ce qui exige de sortir. Proposer de préparer (enveloppe près de la porte) ou un créneau Sortie plus tard — ne pas le mettre dans les 15 min assis.
+- Enchaîne UN par UN après chaque pas réussi — ne recharge pas la personne avec plusieurs fronts d'un coup.
 `;
   return `${socleSession(meta.name)}
 
@@ -159,7 +177,16 @@ RÉGULATION DE CHARGE (ta responsabilité) :
 - Dis franchement ce que TU penses être le mieux (« là je te suggérerais plutôt 50 min », « je pense qu'une séance de plus cet aprem t'enlèverait un poids »).
 - Ton but n'est pas de tout finir : c'est qu'elle reparte moins débordée qu'en arrivant.
 
-${timingBlock}${contextRule(meta.context)}${renderSessionContinuity(meta.priorSessionsToday ?? [], threads)}
+${timingBlock}${contextRule(meta.context)}${renderSessionContinuity(meta.priorSessionsToday ?? [], threads)}${
+    meta.ritualBrief?.message?.trim()
+      ? `
+
+BRIEF RITUEL (notif matin — la personne vient d'ouvrir depuis là) :
+« ${meta.ritualBrief.message.trim()} »
+Durée déjà choisie : ${meta.durationMin} min — ne la remets pas en question.
+Ouvre sur CE sujet. Ne proposes pas autre chose au démarrage.`
+      : ""
+  }
 
 SES TRUCS EN CE MOMENT :
 ${renderOpenThreads(

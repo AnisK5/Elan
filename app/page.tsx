@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChatMessage, SessionContext, Thread } from "@/lib/types";
 import {
   applyThreadOps,
@@ -21,6 +21,7 @@ import {
 import Session from "@/components/Session";
 import InstallPrompt from "@/components/InstallPrompt";
 import RitualNotify from "@/components/RitualNotify";
+import RitualNotifySettings from "@/components/RitualNotifySettings";
 import { useRitualReminder } from "@/components/useRitualReminder";
 import { isNotifyPromptDismissed } from "@/lib/notifications";
 import Welcome from "@/components/Welcome";
@@ -40,6 +41,16 @@ import {
   PLAN_VERSION,
   RESUME_MAX_AGE_MS,
 } from "@/lib/constants";
+import {
+  backlogCounts,
+  hasEntretiensContainer,
+} from "@/lib/entretiens";
+import {
+  readRitualLaunch,
+  RITUAL_SW_MESSAGE,
+  stashRitualLaunch,
+  type RitualLaunch,
+} from "@/lib/ritual-pending";
 
 // Écran d'accueil — orchestration UI. Doc : docs/GUIDE.md
 
@@ -75,6 +86,11 @@ export default function Home() {
   const manualPickSig = useRef("");
   const [wrapUpCount, setWrapUpCount] = useState(0);
   const sessionStartRef = useRef("");
+  const [ritualBrief, setRitualBrief] = useState<{ message: string } | null>(
+    null,
+  );
+  /** Bloque le plan auto tant que l'ouverture vient de la notif matin. */
+  const ritualLockRef = useRef(false);
 
   // Discussion libre hors séance : déposer, donner des nouvelles, réfléchir
   // à un truc, demander comment s'organiser demain.
@@ -159,15 +175,13 @@ export default function Home() {
     [threads],
   );
 
-  const { open, openActions, openSuivis } = useMemo(() => {
-    return {
-      open: openThreads.length,
-      // Séparés à l'affichage : « à faire » descend quand on avance, alors que
-      // « à suivre » dépend des autres. Un compteur unique semble figé.
-      openActions: openThreads.filter((t) => t.kind !== "suivi").length,
-      openSuivis: openThreads.filter((t) => t.kind === "suivi").length,
-    };
-  }, [openThreads, dayStart]);
+  const { open, openActions, openSuivis } = useMemo(
+    () => backlogCounts(openThreads, new Date(dayStart)),
+    [openThreads, dayStart],
+  );
+
+  const showPlanBlock =
+    open > 0 || context !== "desk" || hasEntretiensContainer(openThreads);
 
   // Avancement : trucs bouclés par jour cette semaine (colonne des victoires, sans dénominateur).
   const { doneToday, doneWeek, days, todayIdx } = useMemo(
@@ -229,8 +243,7 @@ export default function Home() {
     ready &&
     !isNewcomer &&
     sessions.length > 0 &&
-    !settings.notifyEnabled &&
-    !isNotifyPromptDismissed();
+    (!isNotifyPromptDismissed() || Boolean(settings.notifyEnabled));
 
   useRitualReminder({
     enabled: Boolean(settings.notifyEnabled),
@@ -259,13 +272,16 @@ export default function Home() {
     if (ctx === "sortie") {
       return "On regarde ce qui se fait dehors sur ton trajet.";
     }
+    if (ctx === "entretien") {
+      return "On regarde tes entretiens retenus — un pas à la fois.";
+    }
     return "Présente-toi et je prends le pouls de tout ça avec toi, un pas à la fois.";
   }
 
   // Mise en cache par jour + signature du backlog pour ne pas rappeler l'IA sans raison.
   useEffect(() => {
-    if (!ready || view !== "home") return;
-    if (openThreads.length === 0) {
+    if (!ready || view !== "home" || ritualLockRef.current) return;
+    if (openThreads.length === 0 && context === "desk") {
       setPlan(null);
       return;
     }
@@ -364,6 +380,8 @@ export default function Home() {
     clearActiveSession();
     setResume(null);
     setView("home");
+    setRitualBrief(null);
+    ritualLockRef.current = false;
     setWrapUpCount(count);
     setWrapUp(true);
     setTimeout(() => setWrapUp(false), 6000);
@@ -379,6 +397,8 @@ export default function Home() {
   // Choisir soi-même une durée doit changer le conseil : on ne veut pas lire
   // « je te propose 15 min » alors qu'on vient de cliquer sur 50.
   async function pickDuration(d: number) {
+    ritualLockRef.current = false;
+    setRitualBrief(null);
     setContext("desk");
     setDuration(d);
     durationSettled.current = true;
@@ -387,17 +407,20 @@ export default function Home() {
     await fetchPlan({ chosen: d, ctx: "desk" });
   }
 
-  function pickContext(ctx: "sortie" | "courses") {
+  function pickContext(ctx: "sortie" | "courses" | "entretien") {
     setContext(ctx);
     setPlan(null);
     durationSettled.current = true;
     appliedSig.current = planSig;
-    // manualPickSig reste réservé au choix de durée bureau — ne pas bloquer le conseil courses/sortie.
+    if (ctx === "entretien") {
+      setDuration(15);
+    }
+    // manualPickSig reste réservé au choix de durée bureau — ne pas bloquer le conseil courses/sortie/entretien.
   }
 
   async function fetchPlan(opts?: { chosen?: number; ctx?: SessionContext }) {
     const ctx = opts?.ctx ?? context;
-    if (openThreads.length === 0) return;
+    if (openThreads.length === 0 && ctx === "desk") return;
     const reqId = ++planReq.current;
     setPlanLoading(true);
     if (ctx !== "desk") setPlan(null);
@@ -436,6 +459,72 @@ export default function Home() {
       if (planReq.current === reqId) setPlanLoading(false);
     }
   }
+
+  function applyRitualLaunch(launch: RitualLaunch) {
+    const d = normalizeDuration(launch.pick);
+    ritualLockRef.current = true;
+    stashRitualLaunch(launch);
+    setContext("desk");
+    setDuration(d);
+    durationSettled.current = true;
+    appliedSig.current = planSig;
+    manualPickSig.current = planSig;
+    const msg = launch.message.trim();
+    setPlan({
+      message: msg || `Ton créneau de ${d} min est prêt.`,
+      pick: String(d),
+    });
+    if (msg) setRitualBrief({ message: msg });
+    try {
+      localStorage.setItem(
+        "elan.plan.v1",
+        JSON.stringify({
+          v: PLAN_VERSION,
+          date: new Date().toDateString(),
+          sig: planSig,
+          context: "desk",
+          message: msg || `Ton créneau de ${d} min est prêt.`,
+          pick: String(d),
+        }),
+      );
+    } catch {
+      // ignore
+    }
+  }
+
+  // Clic notif : appliquer AVANT le plan auto (useLayoutEffect).
+  useLayoutEffect(() => {
+    if (!ready || typeof window === "undefined") return;
+    const launch = readRitualLaunch(window.location.search);
+    if (!launch) return;
+    applyRitualLaunch(launch);
+    window.history.replaceState({}, "", window.location.pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  // App déjà ouverte (postMessage SW, surtout iOS).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    function onSwMessage(ev: MessageEvent) {
+      const data = ev.data as {
+        type?: string;
+        pick?: string;
+        planMessage?: string;
+      };
+      if (data?.type !== RITUAL_SW_MESSAGE) return;
+      const pick = Number(data.pick ?? 15);
+      if (!Number.isFinite(pick)) return;
+      applyRitualLaunch({
+        pick,
+        message: (data.planMessage ?? "").trim(),
+      });
+    }
+    navigator.serviceWorker?.addEventListener("message", onSwMessage);
+    return () => {
+      navigator.serviceWorker?.removeEventListener("message", onSwMessage);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function sendPoint() {
     const t = pointText.trim();
@@ -559,6 +648,7 @@ export default function Home() {
         name={settings.name}
         initial={resume}
         priorSessionsToday={sessionsToday(sessions)}
+        ritualBrief={ritualBrief}
         onEnd={endSession}
       />
     );
@@ -643,7 +733,7 @@ export default function Home() {
               />
             </div>
 
-            {open > 0 ? (
+            {showPlanBlock ? (
               <div className="mt-3 rounded-xl border border-teal-soft bg-teal-soft/50 px-4 py-3">
                 <div className="mb-1.5 flex items-center gap-2">
                   <span
@@ -653,11 +743,15 @@ export default function Home() {
                     {planLoading
                       ? context === "desk"
                         ? "Élan réfléchit à ce format…"
+                        : context === "entretien"
+                          ? "Élan regarde tes entretiens…"
                         : "Élan regarde ce qu'il y a dehors…"
                       : context === "desk"
                         ? "Élan te conseille pour aujourd'hui"
                         : context === "sortie"
                           ? "Élan pour ta sortie"
+                          : context === "entretien"
+                            ? "Élan pour ton entretien"
                           : "Élan pour tes courses"}
                   </span>
                 </div>
@@ -839,6 +933,8 @@ export default function Home() {
         threads={threads}
         planStats={planStats}
       />
+
+      <RitualNotifySettings threads={threads} planStats={planStats} />
 
       <ImportData />
 

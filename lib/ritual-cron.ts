@@ -1,10 +1,11 @@
 import {
   buildRitualNotification,
+  buildOfflinePlanHint,
   dateKeyInTimezone,
   isNotifyTimeNow,
   type PlanStatsForNotify,
 } from "./notifications";
-import { generatePlanViaApi } from "./plan-fetch";
+import { generateNotifyCopyViaApi, generatePlanViaApi } from "./plan-fetch";
 import { computePlanStats } from "./plan-stats";
 import {
   isPushSubscriptionGone,
@@ -98,11 +99,15 @@ function hadSessionToday(
   );
 }
 
-export async function runRitualPushCron(): Promise<{
+export async function runRitualPushCron(options?: {
+  /** Ignore hour, session today, and notify_last_sent — for manual test only. */
+  force?: boolean;
+}): Promise<{
   sent: number;
   skipped: number;
   errors: number;
 }> {
+  const force = options?.force === true;
   const admin = getSupabaseAdmin();
   if (!admin) throw new Error("supabase-admin-not-configured");
 
@@ -124,13 +129,13 @@ export async function runRitualPushCron(): Promise<{
     const tz = raw.notify_timezone || "Europe/Paris";
     const time = raw.notify_time || "09:00";
 
-    if (!isNotifyTimeNow(time, tz, now)) {
+    if (!force && !isNotifyTimeNow(time, tz, now)) {
       skipped++;
       continue;
     }
 
     const todayKey = dateKeyInTimezone(tz, now);
-    if (raw.notify_last_sent === todayKey) {
+    if (!force && raw.notify_last_sent === todayKey) {
       skipped++;
       continue;
     }
@@ -166,7 +171,7 @@ export async function runRitualPushCron(): Promise<{
       continue;
     }
 
-    if (hadSessionToday(sessions, tz, now)) {
+    if (!force && hadSessionToday(sessions, tz, now)) {
       skipped++;
       continue;
     }
@@ -176,17 +181,26 @@ export async function runRitualPushCron(): Promise<{
       sessions,
       dayStartMsInTimezone(tz, now),
     );
-    const plan = await generatePlanViaApi({
-      threads,
-      stats,
-      meta: { name: raw.name ?? undefined },
-    });
+    const plan =
+      (await generatePlanViaApi({
+        threads,
+        stats,
+        meta: { name: raw.name ?? undefined },
+      })) ?? buildOfflinePlanHint(threads);
 
     const open = threads.filter((t) => t.status === "open");
     const minutes = plan?.pick ? Number(plan.pick) : 15;
+    const mins = Number.isFinite(minutes) && minutes > 0 ? minutes : 15;
+    const notifyCopy =
+      (await generateNotifyCopyViaApi({
+        threads,
+        stats,
+        chosen: mins,
+        meta: { name: raw.name ?? undefined },
+      })) ?? null;
     const payload = buildRitualNotification({
-      minutes: Number.isFinite(minutes) && minutes > 0 ? minutes : 15,
-      planMessage: plan?.message ?? "",
+      minutes: mins,
+      planMessage: notifyCopy?.message ?? plan.message ?? "",
       openCount: open.length,
     });
 

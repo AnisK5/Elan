@@ -50,7 +50,9 @@ npm run dev
 | `ANTHROPIC_API_KEY` | Oui | API Claude |
 | `NEXT_PUBLIC_SUPABASE_*` | Non | Compte + sync |
 
-Sans Supabase : **localStorage** uniquement. SQL + Web Push : [docs/supabase-schema.sql](./docs/supabase-schema.sql) · variables : [.env.local.example](./.env.local.example).
+Sans Supabase : **localStorage** uniquement. SQL (tables + cron push) : [docs/supabase-schema.sql](./docs/supabase-schema.sql).
+
+**Web Push (rappel matin, app fermée)** — variables Vercel : `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_CONTACT_EMAIL`, `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`. Puis activer le cron Supabase (section finale du SQL).
 
 ---
 

@@ -88,3 +88,29 @@ create policy "own elan_push_subscriptions" on public.elan_push_subscriptions
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create index if not exists elan_push_subscriptions_user_idx
   on public.elan_push_subscriptions(user_id);
+
+-- ── Cron rappel rituel (Supabase pg_cron → API Vercel) ───────────────
+-- Même modèle qu'en-suspens : le timing est côté Supabase, pas Vercel
+-- (plan Hobby Vercel = max 1 cron/jour).
+--
+-- Prérequis :
+--   1. Vercel : CRON_SECRET, VAPID_*, SUPABASE_SERVICE_ROLE_KEY
+--   2. Supabase → Database → Extensions : activer pg_cron + pg_net
+--   3. Remplacer APP_URL et CRON_SECRET ci-dessous, puis Run (une fois).
+--
+-- Test manuel immédiat (app fermée) :
+--   curl -H "Authorization: Bearer CRON_SECRET" \
+--     "https://elan-roan.vercel.app/api/cron/ritual?force=1"
+
+-- select cron.unschedule('elan-ritual-push');  -- décommenter si tu relances
+
+select cron.schedule(
+  'elan-ritual-push',
+  '0 * * * *',
+  $$
+  select net.http_get(
+    url := 'https://elan-roan.vercel.app/api/cron/ritual',
+    headers := '{"Authorization": "Bearer REMPLACE_PAR_TON_CRON_SECRET"}'::jsonb
+  ) as request_id;
+  $$
+);

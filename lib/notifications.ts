@@ -1,17 +1,33 @@
-import type { SessionContext, Thread } from "./types";
+import type { SessionContext, Settings, Thread } from "./types";
+import { getSupabase, isSupabaseConfigured } from "./supabase";
 
 export const DEFAULT_NOTIFY_TIME = "09:00";
 export const NOTIFY_FIRED_KEY = "elan.notify.fired.v1";
 export const NOTIFY_PROMPT_DISMISS_KEY = "elan.notify.promptDismissed.v1";
 
 const RITUAL_TAG = "elan-ritual-morning";
-const ADJUST_SUFFIX = " Tap pour lancer — ou ouvrir pour ajuster.";
-const MAX_BODY = 200;
+const ADJUST_SUFFIX = " Ouvre quand tu veux.";
+const MAX_BODY = 178;
+const NOTIFY_MESSAGE_MAX = 95;
+
+/** Retire la durée du corps si elle est déjà dans le titre. */
+export function polishNotifyMessage(text: string): string {
+  let m = text.replace(/\s+/g, " ").trim();
+  m = m.replace(
+    /^je te propose \d+\s*min(?:utes?)?(?: aujourd'?hui)?(?:\s*[—,-]\s*)?/i,
+    "",
+  );
+  m = m.replace(/^\d+\s*min(?:utes?)?(?:\s*[—,-]\s*)?/i, "");
+  return m.trim();
+}
 
 export interface RitualNotificationPayload {
   title: string;
   body: string;
   tag: string;
+  pick: string;
+  /** Corps notif sans suffixe — pour cohérence séance. */
+  planMessage: string;
 }
 
 export interface PlanForNotify {
@@ -38,6 +54,38 @@ export function compressPlanLine(text: string, maxLen: number): string {
   return (atWord.length > maxLen * 0.5 ? atWord : slice.trim()) + "…";
 }
 
+/** Conseil minimal sans LLM — concret, sans compter le backlog. */
+export function buildOfflinePlanHint(
+  threads: Thread[],
+  minutes = 15,
+): { message: string; pick: string } {
+  const open = threads.filter((t) => t.status === "open");
+  if (open.length === 0) {
+    return {
+      message: "Rien qui presse. Un petit point quand tu veux ?",
+      pick: "5",
+    };
+  }
+
+  const now = Date.now();
+  const best = [...open].sort((a, b) => {
+    const score = (t: Thread) => {
+      let s = 0;
+      if (t.plannedFor && Date.parse(t.plannedFor) < now) s += 3;
+      if (t.due && Date.parse(t.due) < now) s += 1;
+      if (now - Date.parse(t.createdAt) > 14 * 86_400_000) s += 1;
+      return s;
+    };
+    return score(b) - score(a);
+  })[0];
+
+  const label = compressPlanLine(best.text, 55);
+  return {
+    message: `${label} — on s'y met ?`,
+    pick: String(minutes > 0 ? minutes : 15),
+  };
+}
+
 /** Titre + corps notif : durée, contenu du plan, invitation à ajuster. */
 export function buildRitualNotification(opts: {
   minutes: number;
@@ -49,18 +97,24 @@ export function buildRitualNotification(opts: {
 
   let core: string;
   if (opts.openCount === 0) {
-    core =
-      "Rien qui presse. Un créneau pour faire le point — je te propose quoi en mettre.";
+    core = "Rien qui presse. Un petit point quand tu veux ?";
   } else if (opts.planMessage.trim()) {
-    core = compressPlanLine(opts.planMessage, room);
+    core = compressPlanLine(
+      polishNotifyMessage(opts.planMessage),
+      Math.min(room, NOTIFY_MESSAGE_MAX),
+    );
   } else {
-    core = `${opts.openCount} truc${opts.openCount > 1 ? "s" : ""} en attente — je te propose par quoi commencer.`;
+    core = "Ton créneau est prêt — j'ai une idée pour toi.";
   }
 
   return {
     title,
     body: core + ADJUST_SUFFIX,
     tag: RITUAL_TAG,
+    pick: String(opts.minutes),
+    planMessage: opts.planMessage.trim()
+      ? polishNotifyMessage(opts.planMessage)
+      : core,
   };
 }
 
@@ -171,6 +225,60 @@ export async function subscribeWebPush(
   return { ok: true };
 }
 
+/** Enregistre heure / fuseau (settings + push serveur si compte). */
+export async function persistNotifySchedule(opts: {
+  settings: Settings;
+  update: (s: Settings) => void;
+  notifyTime: string;
+  notifyEnabled?: boolean;
+}): Promise<{ ok: boolean; error?: string }> {
+  const notifyTime = opts.notifyTime.trim() || DEFAULT_NOTIFY_TIME;
+  if (!parseNotifyTime(notifyTime)) {
+    return { ok: false, error: "invalid-time" };
+  }
+  const tz = getDeviceTimezone();
+  const enabled = opts.notifyEnabled ?? opts.settings.notifyEnabled ?? false;
+  const next: Settings = {
+    ...opts.settings,
+    notifyEnabled: enabled,
+    notifyTime,
+    notifyTimezone: tz,
+  };
+  opts.update(next);
+
+  if (
+    !enabled ||
+    !isWebPushClientConfigured() ||
+    !isSupabaseConfigured()
+  ) {
+    return { ok: true };
+  }
+
+  const sb = getSupabase();
+  if (!sb) return { ok: true };
+  const {
+    data: { session },
+  } = await sb.auth.getSession();
+  if (!session?.access_token) {
+    return { ok: true };
+  }
+
+  const push = await subscribeWebPush(session.access_token, {
+    notifyTime,
+    timezone: tz,
+  });
+  if (!push.ok) {
+    return {
+      ok: false,
+      error:
+        push.error === "push-not-configured"
+          ? "push-not-configured"
+          : "subscribe-failed",
+    };
+  }
+  return { ok: true };
+}
+
 export function todayDateKey(at = new Date()): string {
   return at.toDateString();
 }
@@ -254,19 +362,38 @@ export async function fetchPlanForNotification(
     return { message: "", pick: "15" };
   }
   try {
-    const res = await fetch("/api/plan", {
+    const deskRes = await fetch("/api/plan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ threads: open, stats, context, meta }),
     });
-    if (!res.ok) return null;
-    const j = (await res.json()) as {
+    if (!deskRes.ok) return null;
+    const desk = (await deskRes.json()) as {
       message?: string;
       pick?: string;
     };
+    const pick = desk.pick ?? "15";
+    const chosen = Number(pick);
+    const notifyRes = await fetch("/api/plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        threads: open,
+        stats,
+        context: "desk",
+        meta,
+        forNotify: true,
+        chosen: Number.isFinite(chosen) ? chosen : 15,
+      }),
+    });
+    if (notifyRes.ok) {
+      const n = (await notifyRes.json()) as { message?: string; pick?: string };
+      const msg = (n.message ?? "").trim();
+      if (msg) return { message: msg, pick };
+    }
     return {
-      message: (j.message ?? "").trim(),
-      pick: j.pick ?? "15",
+      message: (desk.message ?? "").trim(),
+      pick,
     };
   } catch {
     return null;
@@ -288,16 +415,17 @@ export async function fireRitualNotification(
   if (!preview && wasNotifyFiredToday()) return false;
 
   const open = opts.threads.filter((t) => t.status === "open");
-  const plan = await fetchPlanForNotification(
-    opts.threads,
-    opts.stats,
-    { name: opts.name },
-    "desk",
-  );
+  const plan =
+    (await fetchPlanForNotification(
+      opts.threads,
+      opts.stats,
+      { name: opts.name },
+      "desk",
+    )) ?? buildOfflinePlanHint(opts.threads);
   const minutes = plan?.pick ? Number(plan.pick) : 15;
   const payload = buildRitualNotification({
     minutes: Number.isFinite(minutes) && minutes > 0 ? minutes : 15,
-    planMessage: plan?.message ?? "",
+    planMessage: plan.message ?? "",
     openCount: open.length,
   });
   await showRitualNotification(payload);

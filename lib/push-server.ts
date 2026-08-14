@@ -1,5 +1,6 @@
 import webpush from "web-push";
 import type { RitualNotificationPayload } from "./notifications";
+import { buildRitualLaunchUrl } from "./ritual-pending";
 
 const MAILTO = process.env.VAPID_CONTACT_EMAIL ?? "mailto:hello@elan.app";
 
@@ -38,8 +39,10 @@ export async function sendWebPush(
     JSON.stringify({
       title: payload.title,
       body: payload.body,
-      url: "/?ritual=1",
+      url: buildRitualLaunchUrl(payload.pick, payload.planMessage),
       tag: payload.tag,
+      pick: payload.pick,
+      planMessage: payload.planMessage,
     }),
   );
 }
