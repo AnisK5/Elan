@@ -98,9 +98,21 @@ describe("buildOfflinePlanHint", () => {
 });
 
 describe("isNotifyTimeNow", () => {
-  it("matche l'heure exacte", () => {
+  it("matche l'heure exacte (repli local)", () => {
     const at = new Date(2026, 7, 12, 9, 0, 30);
     expect(isNotifyTimeNow("09:00", "Europe/Paris", at)).toBe(true);
     expect(isNotifyTimeNow("09:01", "Europe/Paris", at)).toBe(false);
+  });
+});
+
+describe("isNotifyTimeDue", () => {
+  it("matche dès que l'heure choisie est passée (cron)", async () => {
+    const { isNotifyTimeDue } = await import("./notifications");
+    const at915 = new Date(2026, 7, 12, 9, 15, 0);
+    const at920 = new Date(2026, 7, 12, 9, 20, 0);
+    const at900 = new Date(2026, 7, 12, 9, 0, 0);
+    expect(isNotifyTimeDue("09:15", "Europe/Paris", at915)).toBe(true);
+    expect(isNotifyTimeDue("09:15", "Europe/Paris", at920)).toBe(true);
+    expect(isNotifyTimeDue("09:15", "Europe/Paris", at900)).toBe(false);
   });
 });

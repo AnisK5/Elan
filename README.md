@@ -52,7 +52,9 @@ npm run dev
 
 Sans Supabase : **localStorage** uniquement. SQL (tables + cron push) : [docs/supabase-schema.sql](./docs/supabase-schema.sql).
 
-**Web Push (rappel matin, app fermée)** — variables Vercel : `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_CONTACT_EMAIL`, `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`. Puis activer le cron Supabase (section finale du SQL).
+**Web Push (rappel matin, app fermée)** — Vercel : `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_CONTACT_EMAIL`, `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`. Puis activer le cron Supabase (section finale du SQL, toutes les 5 min).
+
+**Mail matin (option)** — `RESEND_API_KEY`, `RITUAL_EMAIL_FROM` (ex. `Élan <rappel@ton-domaine.fr>`). Case à cocher dans les réglages du rappel.
 
 ---
 

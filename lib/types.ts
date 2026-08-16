@@ -67,4 +67,6 @@ export interface Settings {
   notifyTime?: string;
   /** IANA, ex. Europe/Paris — pour le cron Web Push */
   notifyTimezone?: string;
+  /** Rappel matin par mail (conseil complet du jour). */
+  notifyEmailEnabled?: boolean;
 }

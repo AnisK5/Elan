@@ -134,6 +134,15 @@ export function isNotifyTimeNow(
 ): boolean {
   const p = parseNotifyTime(notifyTime);
   if (!p) return false;
+  const { h, m } = clockInTimezone(timezone, at);
+  return h === p.h && m === p.m;
+}
+
+/** Heure:minute courantes dans le fuseau (pour le cron serveur). */
+export function clockInTimezone(
+  timezone: string | undefined,
+  at = new Date(),
+): { h: number; m: number } {
   const tz =
     timezone ||
     (typeof Intl !== "undefined"
@@ -145,9 +154,28 @@ export function isNotifyTimeNow(
     minute: "numeric",
     hour12: false,
   }).formatToParts(at);
-  const h = Number(parts.find((x) => x.type === "hour")?.value);
-  const m = Number(parts.find((x) => x.type === "minute")?.value);
-  return h === p.h && m === p.m;
+  return {
+    h: Number(parts.find((x) => x.type === "hour")?.value),
+    m: Number(parts.find((x) => x.type === "minute")?.value),
+  };
+}
+
+/**
+ * Fenêtre « c'est l'heure » pour le cron (toutes les 5–60 min).
+ * Vrai dès que l'heure choisie est passée aujourd'hui — pas besoin de tomber
+ * à la minute près (contrairement au repli local qui tick chaque minute).
+ */
+export function isNotifyTimeDue(
+  notifyTime: string,
+  timezone: string | undefined,
+  at = new Date(),
+): boolean {
+  const p = parseNotifyTime(notifyTime);
+  if (!p) return false;
+  const { h, m } = clockInTimezone(timezone, at);
+  const nowMin = h * 60 + m;
+  const targetMin = p.h * 60 + p.m;
+  return nowMin >= targetMin;
 }
 
 /** YYYY-MM-DD dans le fuseau de la personne. */
@@ -180,7 +208,7 @@ export function isWebPushClientConfigured(): boolean {
 /** Enregistre l'abonnement Web Push (compte Supabase requis). */
 export async function subscribeWebPush(
   accessToken: string,
-  opts: { notifyTime: string; timezone: string },
+  opts: { notifyTime: string; timezone: string; notifyEmailEnabled?: boolean },
 ): Promise<{ ok: boolean; error?: string }> {
   const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   if (!vapid) return { ok: false, error: "push-not-configured" };
@@ -215,6 +243,7 @@ export async function subscribeWebPush(
       },
       notifyTime: opts.notifyTime,
       timezone: opts.timezone,
+      notifyEmailEnabled: opts.notifyEmailEnabled ?? false,
     }),
   });
 
@@ -231,6 +260,7 @@ export async function persistNotifySchedule(opts: {
   update: (s: Settings) => void;
   notifyTime: string;
   notifyEnabled?: boolean;
+  notifyEmailEnabled?: boolean;
 }): Promise<{ ok: boolean; error?: string }> {
   const notifyTime = opts.notifyTime.trim() || DEFAULT_NOTIFY_TIME;
   if (!parseNotifyTime(notifyTime)) {
@@ -243,6 +273,8 @@ export async function persistNotifySchedule(opts: {
     notifyEnabled: enabled,
     notifyTime,
     notifyTimezone: tz,
+    notifyEmailEnabled:
+      opts.notifyEmailEnabled ?? opts.settings.notifyEmailEnabled ?? false,
   };
   opts.update(next);
 
@@ -266,6 +298,7 @@ export async function persistNotifySchedule(opts: {
   const push = await subscribeWebPush(session.access_token, {
     notifyTime,
     timezone: tz,
+    notifyEmailEnabled: next.notifyEmailEnabled,
   });
   if (!push.ok) {
     return {

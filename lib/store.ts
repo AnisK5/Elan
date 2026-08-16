@@ -101,6 +101,7 @@ interface SettingsRow {
   notify_time?: string | null;
   notify_timezone?: string | null;
   notify_last_sent?: string | null;
+  notify_email_enabled?: boolean;
 }
 
 function threadToRow(t: Thread, userId: string) {
@@ -197,6 +198,7 @@ function settingsToRow(s: Settings, userId: string) {
     notify_enabled: s.notifyEnabled ?? false,
     notify_time: s.notifyTime ?? "09:00",
     notify_timezone: s.notifyTimezone ?? "Europe/Paris",
+    notify_email_enabled: s.notifyEmailEnabled ?? false,
     updated_at: new Date().toISOString(),
   };
 }
@@ -207,6 +209,7 @@ function rowToSettings(r: SettingsRow): Settings {
     notifyEnabled: r.notify_enabled ?? false,
     notifyTime: r.notify_time ?? "09:00",
     notifyTimezone: r.notify_timezone ?? "Europe/Paris",
+    notifyEmailEnabled: r.notify_email_enabled ?? false,
   };
 }
 

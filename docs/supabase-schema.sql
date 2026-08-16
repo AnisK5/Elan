@@ -71,6 +71,7 @@ alter table public.elan_settings add column if not exists notify_enabled boolean
 alter table public.elan_settings add column if not exists notify_time text not null default '09:00';
 alter table public.elan_settings add column if not exists notify_timezone text not null default 'Europe/Paris';
 alter table public.elan_settings add column if not exists notify_last_sent date;
+alter table public.elan_settings add column if not exists notify_email_enabled boolean not null default false;
 
 -- ── Web Push (notifs rituel, app fermée) ───────────────────────────
 create table if not exists public.elan_push_subscriptions (
@@ -95,18 +96,18 @@ create index if not exists elan_push_subscriptions_user_idx
 --
 -- Prérequis :
 --   1. Vercel : CRON_SECRET, VAPID_*, SUPABASE_SERVICE_ROLE_KEY
+--      Option mail : RESEND_API_KEY, RITUAL_EMAIL_FROM (ex. "Élan <rappel@ton-domaine.fr>")
 --   2. Supabase → Database → Extensions : activer pg_cron + pg_net
---   3. Remplacer APP_URL et CRON_SECRET ci-dessous, puis Run (une fois).
+--   3. Remplacer CRON_SECRET ci-dessous, puis Run (une fois).
 --
--- Test manuel immédiat (app fermée) :
---   curl -H "Authorization: Bearer CRON_SECRET" \
---     "https://elan-roan.vercel.app/api/cron/ritual?force=1"
+-- Le cron tourne toutes les 5 min ; l'heure choisie est une fenêtre (ex. 9h15
+-- → envoi entre 9h15 et 9h20), pas une minute exacte.
 
--- select cron.unschedule('elan-ritual-push');  -- décommenter si tu relances
+-- select cron.unschedule('elan-ritual-push');
 
 select cron.schedule(
   'elan-ritual-push',
-  '0 * * * *',
+  '*/5 * * * *',
   $$
   select net.http_get(
     url := 'https://elan-roan.vercel.app/api/cron/ritual',

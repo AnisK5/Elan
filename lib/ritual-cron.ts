@@ -2,7 +2,7 @@ import {
   buildRitualNotification,
   buildOfflinePlanHint,
   dateKeyInTimezone,
-  isNotifyTimeNow,
+  isNotifyTimeDue,
   type PlanStatsForNotify,
 } from "./notifications";
 import { generateNotifyCopyViaApi, generatePlanViaApi } from "./plan-fetch";
@@ -12,6 +12,7 @@ import {
   sendWebPush,
   type PushSubscriptionRow,
 } from "./push-server";
+import { isRitualEmailConfigured, sendRitualEmail } from "./ritual-email";
 import { getSupabaseAdmin } from "./supabase-admin";
 import type { Effort, SessionLog, Thread, ThreadKind } from "./types";
 
@@ -21,6 +22,7 @@ interface SettingsCronRow {
   notify_time: string;
   notify_timezone: string | null;
   notify_last_sent: string | null;
+  notify_email_enabled: boolean | null;
 }
 
 interface ThreadRow {
@@ -115,7 +117,7 @@ export async function runRitualPushCron(options?: {
   const { data: settingsRows, error } = await admin
     .from("elan_settings")
     .select(
-      "user_id, name, notify_time, notify_timezone, notify_last_sent",
+      "user_id, name, notify_time, notify_timezone, notify_last_sent, notify_email_enabled",
     )
     .eq("notify_enabled", true);
 
@@ -129,7 +131,7 @@ export async function runRitualPushCron(options?: {
     const tz = raw.notify_timezone || "Europe/Paris";
     const time = raw.notify_time || "09:00";
 
-    if (!force && !isNotifyTimeNow(time, tz, now)) {
+    if (!force && !isNotifyTimeDue(time, tz, now)) {
       skipped++;
       continue;
     }
@@ -166,7 +168,7 @@ export async function runRitualPushCron(options?: {
       id: string;
     })[];
 
-    if (subs.length === 0) {
+    if (subs.length === 0 && !raw.notify_email_enabled) {
       skipped++;
       continue;
     }
@@ -205,20 +207,41 @@ export async function runRitualPushCron(options?: {
     });
 
     let delivered = false;
-    for (const sub of subs) {
-      try {
-        await sendWebPush(sub, payload);
-        delivered = true;
-      } catch (e) {
-        if (isPushSubscriptionGone(e)) {
-          await admin
-            .from("elan_push_subscriptions")
-            .delete()
-            .eq("id", sub.id);
-        } else {
-          console.error("[cron/ritual] push failed:", e);
-          errors++;
+
+    if (subs.length > 0) {
+      for (const sub of subs) {
+        try {
+          await sendWebPush(sub, payload);
+          delivered = true;
+        } catch (e) {
+          if (isPushSubscriptionGone(e)) {
+            await admin
+              .from("elan_push_subscriptions")
+              .delete()
+              .eq("id", sub.id);
+          } else {
+            console.error("[cron/ritual] push failed:", e);
+            errors++;
+          }
         }
+      }
+    }
+
+    if (
+      raw.notify_email_enabled &&
+      isRitualEmailConfigured()
+    ) {
+      const { data: authUser } = await admin.auth.admin.getUserById(uid);
+      const email = authUser?.user?.email;
+      if (email) {
+        const ok = await sendRitualEmail({
+          to: email,
+          name: raw.name ?? undefined,
+          minutes: mins,
+          planMessage: plan.message ?? "",
+        });
+        if (ok) delivered = true;
+        else errors++;
       }
     }
 

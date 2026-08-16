@@ -12,6 +12,7 @@ interface Body {
   };
   notifyTime?: string;
   timezone?: string;
+  notifyEmailEnabled?: boolean;
 }
 
 export async function POST(req: Request) {
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "bad-request" }, { status: 400 });
   }
 
-  const { subscription, notifyTime, timezone } = body;
+  const { subscription, notifyTime, timezone, notifyEmailEnabled } = body;
   if (!subscription?.endpoint || !subscription.keys?.p256dh || !subscription.keys?.auth) {
     return Response.json({ error: "bad-subscription" }, { status: 400 });
   }
@@ -63,6 +64,7 @@ export async function POST(req: Request) {
       notify_enabled: true,
       notify_time: notifyTime ?? "09:00",
       notify_timezone: timezone ?? "Europe/Paris",
+      notify_email_enabled: notifyEmailEnabled ?? false,
       updated_at: new Date().toISOString(),
     })
     .eq("user_id", user.id);
