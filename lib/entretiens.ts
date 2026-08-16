@@ -1,39 +1,55 @@
 import type { Thread } from "@/lib/types";
 
-/** Fil conteneur — comme Courses, un seul élément pour tous les entretiens. */
-export const ENTRETIENS_THREAD_TEXT = "Entretiens";
+/** Fil conteneur — loyer, URSSAF, draps, tout ce qui revient. */
+export const REGULIERS_THREAD_TEXT = "Réguliers";
 
-export interface EntretienItem {
+export interface RegulierItem {
   label: string;
   cadence: string;
   lastDone: string;
   note?: string;
 }
 
-const CONTAINER_TEXTS = new Set([
-  ENTRETIENS_THREAD_TEXT.toLowerCase(),
-  "courses",
+/** @deprecated alias */
+export type EntretienItem = RegulierItem;
+
+const REGULIERS_CONTAINER_NAMES = new Set([
+  "réguliers",
+  "reguliers",
+  "rythmes",
+  "entretiens",
 ]);
+
+const CONTAINER_TEXTS = new Set([...REGULIERS_CONTAINER_NAMES, "courses"]);
 
 /** Ligne : libellé · ~cadence · YYYY-MM-DD · note optionnelle */
 const LINE_RE =
   /^(.+?) · (~\d+(?:sem|mois|j)) · (\d{4}-\d{2}-\d{2})(?: · (.+))?$/;
 
+export function isReguliersContainerThread(t: Thread): boolean {
+  return REGULIERS_CONTAINER_NAMES.has(t.text.trim().toLowerCase());
+}
+
+/** @deprecated alias */
+export const isRythmesContainerThread = isReguliersContainerThread;
+
 export function isContainerThread(t: Thread): boolean {
   return CONTAINER_TEXTS.has(t.text.trim().toLowerCase());
 }
 
-export function findEntretiensThread(threads: Thread[]): Thread | undefined {
+export function findReguliersThread(threads: Thread[]): Thread | undefined {
   return threads.find(
-    (t) =>
-      t.status === "open" &&
-      t.text.trim().toLowerCase() === ENTRETIENS_THREAD_TEXT.toLowerCase(),
+    (t) => t.status === "open" && isReguliersContainerThread(t),
   );
 }
 
-export function parseEntretiens(note?: string): EntretienItem[] {
+/** @deprecated aliases */
+export const findRythmesThread = findReguliersThread;
+export const findEntretiensThread = findReguliersThread;
+
+export function parseReguliers(note?: string): RegulierItem[] {
   if (!note?.trim()) return [];
-  const items: EntretienItem[] = [];
+  const items: RegulierItem[] = [];
   for (const line of note.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -49,7 +65,10 @@ export function parseEntretiens(note?: string): EntretienItem[] {
   return items;
 }
 
-export function serializeEntretiens(items: EntretienItem[]): string {
+/** @deprecated alias */
+export const parseEntretiens = parseReguliers;
+
+export function serializeReguliers(items: RegulierItem[]): string {
   return items
     .map((it) => {
       const base = `${it.label} · ${it.cadence} · ${it.lastDone}`;
@@ -57,6 +76,9 @@ export function serializeEntretiens(items: EntretienItem[]): string {
     })
     .join("\n");
 }
+
+/** @deprecated alias */
+export const serializeEntretiens = serializeReguliers;
 
 export function cadenceToDays(cadence: string): number | null {
   const m = /^~(\d+)(sem|mois|j)$/.exec(cadence.trim());
@@ -76,71 +98,84 @@ export function daysSince(isoDate: string, at = new Date()): number {
   return Math.max(0, Math.round((t.getTime() - d.getTime()) / 86_400_000));
 }
 
-export function isEntretienDue(item: EntretienItem, at = new Date()): boolean {
+export function isRegulierDue(item: RegulierItem, at = new Date()): boolean {
   const period = cadenceToDays(item.cadence);
   if (!period) return false;
   return daysSince(item.lastDone, at) >= period;
 }
 
-export function dueEntretiens(
-  items: EntretienItem[],
+/** @deprecated alias */
+export const isEntretienDue = isRegulierDue;
+
+export function dueReguliers(
+  items: RegulierItem[],
   at = new Date(),
-): EntretienItem[] {
-  return items.filter((it) => isEntretienDue(it, at));
+): RegulierItem[] {
+  return items.filter((it) => isRegulierDue(it, at));
 }
 
-export function entretiensDueFromThreads(
+/** @deprecated alias */
+export const dueEntretiens = dueReguliers;
+
+export function reguliersDueFromThreads(
   threads: Thread[],
   at = new Date(),
-): EntretienItem[] {
-  const container = findEntretiensThread(threads);
+): RegulierItem[] {
+  const container = findReguliersThread(threads);
   if (!container) return [];
-  return dueEntretiens(parseEntretiens(container.note), at);
+  return dueReguliers(parseReguliers(container.note), at);
 }
 
-export function hasEntretiensContainer(threads: Thread[]): boolean {
-  return Boolean(findEntretiensThread(threads));
+/** @deprecated aliases */
+export const rythmesDueFromThreads = reguliersDueFromThreads;
+export const entretiensDueFromThreads = reguliersDueFromThreads;
+
+export function hasReguliersContainer(threads: Thread[]): boolean {
+  return Boolean(findReguliersThread(threads));
 }
 
-/** Compte le fil Entretiens une fois si au moins un entretien est mûr ; sinon 0. */
-export function entretiensBacklogWeight(
+/** @deprecated aliases */
+export const hasRythmesContainer = hasReguliersContainer;
+export const hasEntretiensContainer = hasReguliersContainer;
+
+export function reguliersBacklogWeight(
   threads: Thread[],
   at = new Date(),
 ): number {
-  return entretiensDueFromThreads(threads, at).length > 0 ? 1 : 0;
+  return reguliersDueFromThreads(threads, at).length > 0 ? 1 : 0;
 }
+
+/** @deprecated aliases */
+export const rythmesBacklogWeight = reguliersBacklogWeight;
+export const entretiensBacklogWeight = reguliersBacklogWeight;
 
 export function backlogCounts(threads: Thread[], at = new Date()) {
   const open = threads.filter((t) => t.status === "open");
-  const entretiens = findEntretiensThread(open);
-  const entretiensWeight = entretiensBacklogWeight(open, at);
-  const regular = open.filter(
-    (t) =>
-      t.text.trim().toLowerCase() !== ENTRETIENS_THREAD_TEXT.toLowerCase(),
-  );
-  const total = regular.length + entretiensWeight;
+  const reguliersWeight = reguliersBacklogWeight(open, at);
+  const regular = open.filter((t) => !isReguliersContainerThread(t));
+  const total = regular.length + reguliersWeight;
   return {
     open: total,
     openActions:
-      regular.filter((t) => t.kind !== "suivi").length + entretiensWeight,
+      regular.filter((t) => t.kind !== "suivi").length + reguliersWeight,
     openSuivis: regular.filter((t) => t.kind === "suivi").length,
   };
 }
 
-export function renderEntretiensForPlan(
+export function renderReguliersForPlan(
   threads: Thread[],
   at = new Date(),
 ): string {
-  const container = findEntretiensThread(threads);
-  if (!container) return "Aucun entretien retenu.";
-  const items = parseEntretiens(container.note);
+  const container = findReguliersThread(threads);
+  if (!container) return "Aucun régulier retenu.";
+  const items = parseReguliers(container.note);
   if (items.length === 0) {
-    return 'Fil "Entretiens" présent mais liste vide.';
+    return `Fil "${container.text}" présent mais liste vide.`;
   }
   const lines = items.map((it) => {
     const period = cadenceToDays(it.cadence);
     const since = daysSince(it.lastDone, at);
-    const due = isEntretienDue(it, at);
+    const due = isRegulierDue(it, at);
     const ctx = it.note ? ` · ${it.note}` : "";
     const status = due
       ? ` · fenêtre ouverte (dernière fois il y a ${since}j, ~${it.cadence})`
@@ -149,22 +184,39 @@ export function renderEntretiensForPlan(
         : ` · dernière fois il y a ${since}j`;
     return `- ${it.label}${status}${ctx}`;
   });
-  const due = dueEntretiens(items, at);
+  const due = dueReguliers(items, at);
   const header =
     due.length > 0
-      ? `${items.length} entretien(s) retenu(s), ${due.length} fenêtre(s) ouverte(s) :`
-      : `${items.length} entretien(s) retenu(s), rien de mûr pour l'instant :`;
+      ? `${items.length} régulier(s) retenu(s), ${due.length} fenêtre(s) ouverte(s) :`
+      : `${items.length} régulier(s) retenu(s), rien de mûr pour l'instant :`;
   return `${header}\n${lines.join("\n")}`;
 }
 
-/** Threads ouverts pour les prompts — exclut Entretiens si rien de mûr. */
+/** @deprecated alias */
+export const renderEntretiensForPlan = renderReguliersForPlan;
+
+export function isReguliersListEmpty(threads: Thread[]): boolean {
+  const container = findReguliersThread(threads);
+  if (!container) return true;
+  return parseReguliers(container.note).length === 0;
+}
+
+/** Threads ouverts pour les prompts bureau — exclut Réguliers si rien de mûr. */
 export function threadsForPlanPrompt(threads: Thread[], at = new Date()): Thread[] {
   const open = threads.filter((t) => t.status === "open");
-  if (entretiensBacklogWeight(open, at) === 0) {
-    return open.filter(
-      (t) =>
-        t.text.trim().toLowerCase() !== ENTRETIENS_THREAD_TEXT.toLowerCase(),
-    );
+  if (reguliersBacklogWeight(open, at) === 0) {
+    return open.filter((t) => !isReguliersContainerThread(t));
   }
   return open;
 }
+
+/** Bloc prompt quand la liste est vide — découverte douce, jamais imposée. */
+export const REGULIERS_DISCOVERY_PROMPT = `LISTE VIDE — DÉCOUVERTE DOUCE :
+- La personne a cliqué « Régulier » sans rien avoir retenu encore.
+- Pose UNE question ouverte : est-ce qu'il y a des trucs qui reviennent et qu'elle oublie parfois ?
+- Exemples possibles (2-3 max, jamais une checklist) : loyer ou prélèvement, URSSAF / déclaration, abonnement, entretien maison (draps, frigo), appeler quelqu'un régulièrement.
+- Dis qu'on peut en retenir un ou deux ensemble en séance — seulement ce qu'ELLE choisit.
+- IGNORE tous les autres trucs ouverts (mails, commissariat, échéances ponctuelles…).`;
+
+/** Bloc prompt quand la liste a du contenu. */
+export const REGULIERS_FOCUS_PROMPT = `RÈGLE ABSOLUE : tu ne parles QUE des réguliers ci-dessus (fil "Réguliers" ou noms legacy). IGNORE tous les autres trucs — échéances ponctuelles, commissariat, mails, relances, même urgents.`;

@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ChatMessage, SessionContext, SessionLog, Thread } from "@/lib/types";
+import { renderReguliersForPlan, REGULIERS_DISCOVERY_PROMPT, REGULIERS_FOCUS_PROMPT } from "@/lib/entretiens";
 import {
   renderOpenThreads,
   renderSessionContinuity,
@@ -37,13 +38,13 @@ const OPENING_SORTIE =
 const OPENING_COURSES =
   "[La séance COURSES commence. La personne va au super. Le fil \"Courses\" porte LA liste dans sa note. Présente-la, demande s'il manque quelque chose. Regarde aussi ses autres trucs : si un arrêt se fait sur le trajet (poste, pharmacie…), propose-le en bonus (« tant qu'on y est… »). Ignore le bureau. Quand c'est fait, un seul \"done\" sur Courses.]";
 
-const OPENING_ENTRETIEN =
-  "[La séance ENTRETIEN commence. Le fil \"Entretiens\" porte les rythmes que la personne a CHOISI de retenir — jamais imposés. Regarde quelles fenêtres sont ouvertes (mûres). Accueille en une phrase, propose UN entretien — le plus mûr ou le plus léger si rien ne presse. UN pas concret à la fois. Quand c'est fait, la date de la ligne est mise à jour via reconcile — ne marque pas le fil conteneur \"done\". Pas de streak, pas de culpabilité.]";
+const OPENING_REGULIER =
+  "[La séance RÉGULIER commence. UNIQUEMENT le fil \"Réguliers\" (ou legacy Rythmes/Entretiens) compte — ignore tout le reste. Si la liste est vide : une question douce pour repérer ce qui revient (loyer, URSSAF, draps…) — jamais une checklist imposée. Sinon : UN régulier mûr ou léger, UN pas concret. Quand c'est fait, mets à jour la date de la ligne via reconcile.]";
 
 function openingCue(context?: SessionContext): string {
   if (context === "sortie") return OPENING_SORTIE;
   if (context === "courses") return OPENING_COURSES;
-  if (context === "entretien") return OPENING_ENTRETIEN;
+  if (context === "regulier") return OPENING_REGULIER;
   return OPENING_DESK;
 }
 
@@ -69,15 +70,15 @@ MODE COURSES (choisi avant la séance) :
 - Quand les courses sont faites, marque le fil Courses comme fait (via reconcile).
 - Pas de minuteur strict. Ne propose pas de bureau.`;
   }
-  if (context === "entretien") {
+  if (context === "regulier") {
     return `
 
-MODE ENTRETIEN (choisi avant la séance) :
-- Le fil "Entretiens" porte les rythmes retenus par la personne — un entretien par ligne dans la note.
-- Priorise les fenêtres ouvertes (mûres). Formule « ça fait X semaines » — jamais « en retard ».
-- UN entretien à la fois. Quand c'est fait : mets à jour la date du jour sur la ligne (via reconcile), ne marque pas le fil conteneur "done".
-- Beaucoup d'entretiens se font chez soi en quelques minutes — calibré sur le créneau bureau.
-- Pas de checklist imposée : si elle veut en sauter un ou en ajouter un, tu suis.`;
+MODE RÉGULIER (choisi avant la séance) :
+${REGULIERS_FOCUS_PROMPT}
+- Loyer, URSSAF, prélèvements, entretien maison, appels réguliers — tout ce qui REVIENT.
+- Priorise les fenêtres ouvertes. Formule « ça fait X semaines » — jamais « en retard ».
+- UN régulier à la fois. Quand c'est fait : mets à jour la date sur la ligne (via reconcile).
+- LISTE VIDE : ${REGULIERS_DISCOVERY_PROMPT}`;
   }
   return "";
 }
@@ -189,11 +190,15 @@ Ouvre sur CE sujet. Ne proposes pas autre chose au démarrage.`
   }
 
 SES TRUCS EN CE MOMENT :
-${renderOpenThreads(
-  threads,
-  "session",
-  "AUCUN truc ouvert : la personne est à jour. Ne fabrique surtout pas de travail. Dis-lui simplement, avec chaleur, qu'on est bons et qu'il n'y a rien qui presse.",
-)}`;
+${
+  meta.context === "regulier"
+    ? `RÉGULIERS RETENUS (seule source pour cette séance) :\n${renderReguliersForPlan(threads)}`
+    : renderOpenThreads(
+        threads,
+        "session",
+        "AUCUN truc ouvert : la personne est à jour. Ne fabrique surtout pas de travail. Dis-lui simplement, avec chaleur, qu'on est bons et qu'il n'y a rien qui presse.",
+      )
+}`;
 }
 
 export async function POST(req: Request) {

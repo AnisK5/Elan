@@ -43,7 +43,7 @@ import {
 } from "@/lib/constants";
 import {
   backlogCounts,
-  hasEntretiensContainer,
+  hasReguliersContainer,
 } from "@/lib/entretiens";
 import {
   readRitualLaunch,
@@ -181,7 +181,7 @@ export default function Home() {
   );
 
   const showPlanBlock =
-    open > 0 || context !== "desk" || hasEntretiensContainer(openThreads);
+    open > 0 || context !== "desk" || hasReguliersContainer(openThreads);
 
   // Avancement : trucs bouclés par jour cette semaine (colonne des victoires, sans dénominateur).
   const { doneToday, doneWeek, days, todayIdx } = useMemo(
@@ -272,8 +272,8 @@ export default function Home() {
     if (ctx === "sortie") {
       return "On regarde ce qui se fait dehors sur ton trajet.";
     }
-    if (ctx === "entretien") {
-      return "On regarde tes entretiens retenus — un pas à la fois.";
+    if (ctx === "regulier") {
+      return "Loyer, URSSAF, draps… on regarde ce qui revient — un pas à la fois.";
     }
     return "Présente-toi et je prends le pouls de tout ça avec toi, un pas à la fois.";
   }
@@ -407,15 +407,15 @@ export default function Home() {
     await fetchPlan({ chosen: d, ctx: "desk" });
   }
 
-  function pickContext(ctx: "sortie" | "courses" | "entretien") {
+  function pickContext(ctx: "sortie" | "courses" | "regulier") {
     setContext(ctx);
     setPlan(null);
     durationSettled.current = true;
     appliedSig.current = planSig;
-    if (ctx === "entretien") {
+    if (ctx === "regulier") {
       setDuration(15);
     }
-    // manualPickSig reste réservé au choix de durée bureau — ne pas bloquer le conseil courses/sortie/entretien.
+    void fetchPlan({ ctx });
   }
 
   async function fetchPlan(opts?: { chosen?: number; ctx?: SessionContext }) {
@@ -743,15 +743,15 @@ export default function Home() {
                     {planLoading
                       ? context === "desk"
                         ? "Élan réfléchit à ce format…"
-                        : context === "entretien"
-                          ? "Élan regarde tes entretiens…"
+                        : context === "regulier"
+                          ? "Élan regarde tes réguliers…"
                         : "Élan regarde ce qu'il y a dehors…"
                       : context === "desk"
                         ? "Élan te conseille pour aujourd'hui"
                         : context === "sortie"
                           ? "Élan pour ta sortie"
-                          : context === "entretien"
-                            ? "Élan pour ton entretien"
+                          : context === "regulier"
+                            ? "Élan pour ton régulier"
                           : "Élan pour tes courses"}
                   </span>
                 </div>

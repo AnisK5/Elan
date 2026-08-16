@@ -12,7 +12,7 @@ export default function SessionPick({
   duration: number;
   context: SessionContext;
   onPickDuration: (d: number) => void;
-  onPickContext: (c: "sortie" | "courses" | "entretien") => void;
+  onPickContext: (c: "sortie" | "courses" | "regulier") => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -37,7 +37,7 @@ export default function SessionPick({
           [
             { id: "sortie" as const, label: "Sortie" },
             { id: "courses" as const, label: "Courses" },
-            { id: "entretien" as const, label: "Entretien" },
+            { id: "regulier" as const, label: "Régulier" },
           ] as const
         ).map(({ id, label }) => (
           <button

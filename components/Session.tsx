@@ -237,7 +237,7 @@ export default function Session({
                   {fmt(Math.abs(remaining))}
                 </span>
                 <span className="text-xs text-muted">
-                  {context === "entretien" ? "entretien · " : ""}
+                  {context === "regulier" ? "régulier · " : ""}
                   {overtime ? "au-delà" : `sur ${durationMin} min`}
                 </span>
               </div>

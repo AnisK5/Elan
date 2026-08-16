@@ -2,10 +2,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { SessionContext, Thread } from "@/lib/types";
 import {
   isContainerThread,
-  renderEntretiensForPlan,
-  findEntretiensThread,
-  entretiensDueFromThreads,
-  parseEntretiens,
+  renderReguliersForPlan,
+  findReguliersThread,
+  reguliersDueFromThreads,
+  parseReguliers,
+  isReguliersListEmpty,
+  REGULIERS_DISCOVERY_PROMPT,
+  REGULIERS_FOCUS_PROMPT,
 } from "@/lib/entretiens";
 import { ageLabel, dayDiff, dueLabel, intentionLabel } from "@/lib/thread-labels";
 import { identity, socle, today, TON, VOIX } from "@/lib/voice";
@@ -194,10 +197,10 @@ NATURE DES TRUCS — CE QU'ILS EXIGENT (crucial pour ne pas proposer l'absurde) 
   · GROS BLOC / FOCUS : besoin d'ordi, de concentration, d'un vrai temps → un moment posé, pas entre deux.
 - Ne bourre jamais une séance avec une course qui oblige à sortir : c'est incohérent et ça se voit tout de suite. Pour la séance, propose du SOUS LA MAIN. Les courses, garde-les à part.
 
-ENTRETIENS (fil conteneur — trucs récurrents que LA PERSONNE a choisi de retenir, jamais imposés) :
-- Un entretien dont la fenêtre est ouverte peut entrer dans la composition du jour comme n'importe quel truc — pèse-le avec conséquences, stagnation, fit créneau. Pas de lane VIP.
-- Formule « ça fait X semaines / un mois » — jamais « en retard », jamais streak ni culpabilité.
-- Si aucun entretien n'est mûr, n'en parle pas dans le message.
+RÉGULIERS (fil conteneur — loyer, URSSAF, draps, tout ce qui REVIENT et que LA PERSONNE a choisi de retenir, jamais imposé) :
+- Un régulier dont la fenêtre est ouverte peut entrer dans la composition du jour — pèse-le avec conséquences, stagnation, fit créneau. Pas de lane VIP.
+- Formule « ça fait X semaines / un mois » — jamais « en retard ».
+- Si aucun régulier n'est mûr, n'en parle pas dans le message.
 
 RÉPONDS UNIQUEMENT avec un objet JSON, rien d'autre, de la forme exacte :
 {"message": "...", "pick": "15"}
@@ -205,29 +208,31 @@ RÉPONDS UNIQUEMENT avec un objet JSON, rien d'autre, de la forme exacte :
 SES TRUCS :
 ${render}
 
-ENTRETIENS RETENUS :
-${renderEntretiensForPlan(allThreads)}
+RÉGULIERS RETENUS :
+${renderReguliersForPlan(allThreads)}
 
 ${renderStats(stats)}${chosenRule}`;
 }
 
-function entretienPlanPrompt(threads: Thread[], name?: string): string {
-  const block = renderEntretiensForPlan(threads);
-  const others = renderLines(threads);
+function regulierPlanPrompt(threads: Thread[], name?: string): string {
+  const block = renderReguliersForPlan(threads);
+  const empty = isReguliersListEmpty(threads);
+  const modeBlock = empty
+    ? REGULIERS_DISCOVERY_PROMPT
+    : `${REGULIERS_FOCUS_PROMPT}
+- Priorise les fenêtres ouvertes (mûres). S'il n'y en a pas de mûr, propose un régulier léger au choix — sans insister.
+- UN régulier nommé dans le message ; pas de liste.`;
 
   return `${socle(name)}
 
-LA PERSONNE VIENT DE CLIQUER « ENTRETIEN ». Créneau volontaire pour les entretiens qu'ELLE a choisi de retenir — pas une checklist imposée.
+LA PERSONNE VIENT DE CLIQUER « RÉGULIER ». Créneau pour ce qui revient — loyer, URSSAF, draps, appels réguliers… — seulement ce qu'ELLE a retenu (ou qu'on va retenir ensemble).
 
 ${block}
 
-AUTRES TRUCS OUVERTS (tu peux les ignorer sauf si un entretien mûr perd face à une urgence réelle — rare) :
-${others}
+${modeBlock}
 
 TON RÔLE : 1 à 2 phrases courtes, chaleureuses.
-- Priorise les fenêtres ouvertes (mûres). S'il n'y en a pas, propose un entretien léger au choix — sans insister.
-- UN entretien nommé dans le message ; pas de liste.
-- pick = durée bureau ("5"|"15"|"30"|"50") — 15 par défaut, 30 si plusieurs mûrs ou effort visible.
+- pick = durée bureau ("5"|"15"|"30"|"50") — 15 par défaut.
 
 RÉPONDS UNIQUEMENT avec : {"message": "...", "pick": "15"}`;
 }
@@ -243,7 +248,7 @@ function systemPrompt(
   const open = openThreads(allThreads);
   if (ctx === "courses") return coursesPlanPrompt(open, name);
   if (ctx === "sortie") return sortiePlanPrompt(open, name);
-  if (ctx === "entretien") return entretienPlanPrompt(allThreads, name);
+  if (ctx === "regulier") return regulierPlanPrompt(allThreads, name);
   return deskPlanPrompt(open, allThreads, stats, chosen, name);
 }
 
@@ -282,25 +287,25 @@ function fallbackPlan(
       pick: "15",
     };
   }
-  if (context === "entretien") {
-    const due = entretiensDueFromThreads(threads);
+  if (context === "regulier") {
+    const due = reguliersDueFromThreads(threads);
     if (due.length > 0) {
       return {
         message: `${due[0].label} — ça fait un moment, on s'y met ?`,
         pick: "15",
       };
     }
-    const container = findEntretiensThread(openThreads(threads));
-    const items = parseEntretiens(container?.note);
+    const container = findReguliersThread(openThreads(threads));
+    const items = parseReguliers(container?.note);
     if (items.length > 0) {
       return {
-        message: `Un tour d'entretien — ${items[0].label}, ou autre chose si tu préfères.`,
+        message: `Un tour tranquille — ${items[0].label}, ou autre chose si tu préfères.`,
         pick: "15",
       };
     }
     return {
       message:
-        "Pas encore d'entretien retenu — en séance on peut en ajouter un si tu veux.",
+        "Rien de retenu pour l'instant — loyer, URSSAF, draps… tu as des trucs qui reviennent ?",
       pick: "15",
     };
   }
@@ -359,8 +364,8 @@ function cue(context?: SessionContext): string {
   if (context === "sortie") {
     return "[J'ai choisi une séance SORTIE dehors. Regarde tous mes trucs, dis-moi ce qui se fait dehors — ignore le bureau. Tu peux inclure les courses si le fil existe. JSON seulement.]";
   }
-  if (context === "entretien") {
-    return "[J'ai choisi une séance ENTRETIEN. Regarde mes entretiens retenus, propose-en un (priorité aux fenêtres ouvertes). JSON seulement.]";
+  if (context === "regulier") {
+    return "[J'ai choisi une séance RÉGULIER. Regarde UNIQUEMENT mes réguliers retenus — ou aide-moi à en retenir si la liste est vide. JSON seulement.]";
   }
   return "[Regarde mes trucs et conseille-moi la forme de ma journée. Réponds seulement avec le JSON demandé.]";
 }
@@ -393,7 +398,7 @@ export async function POST(req: Request) {
 
   const context = body.context ?? "desk";
   const open = (body.threads ?? []).filter((t) => t.status === "open");
-  if (open.length === 0 && context !== "entretien") {
+  if (open.length === 0 && context !== "regulier") {
     return Response.json({ message: "", pick: "15" });
   }
 

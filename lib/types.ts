@@ -1,9 +1,9 @@
 // Le "fil" : une chose qui traîne dans ta tête. Capturé sans friction,
 // enrichi seulement si tu en as l'envie. L'IA se débrouille avec le reste.
 
-// Contexte de séance : bureau (durée en min), sortie, courses, ou entretiens
-// récurrents retenus par la personne (fil conteneur « Entretiens »).
-export type SessionContext = "desk" | "sortie" | "courses" | "entretien";
+// Contexte de séance : bureau, sortie, courses, ou réguliers (loyer, URSSAF,
+// draps… — fil conteneur « Réguliers », retenus par la personne).
+export type SessionContext = "desk" | "sortie" | "courses" | "regulier";
 
 export type ThreadKind = "action" | "suivi"; // à faire soi-même | à surveiller/relancer
 export type Effort = "S" | "M" | "L"; // petite / moyenne / grosse bouchée
