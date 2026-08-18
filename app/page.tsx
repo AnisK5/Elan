@@ -32,6 +32,7 @@ import WeekMomentum from "@/components/home/WeekMomentum";
 import { Dot, greeting, Logo } from "@/components/home/Branding";
 import { useAuth } from "@/components/AuthProvider";
 import { parseThreadOps } from "@/lib/ops";
+import { splitChatQuestion } from "@/lib/chat-question";
 import { doneCountsThisWeek, completionAt } from "@/lib/week-stats";
 import { sessionsToday } from "@/lib/session-memory";
 import { apiFetch, anthropicFailMessage, parseStreamError } from "@/lib/anthropic";
@@ -239,8 +240,11 @@ export default function Home() {
     [openThreads, planStats],
   );
 
-  // Premier lancement : jamais rien déposé ET jamais fait de séance.
-  const isNewcomer = ready && threads.length === 0 && sessions.length === 0;
+  // Premier lancement : pas encore de séance. On reste sur « vider la tête »
+  // jusqu'au premier créneau — pas de morphing brutal vers « 15 min » au-dessus
+  // du chat dès le premier dépôt.
+  const settlingIn = ready && sessions.length === 0;
+  const isNewcomer = settlingIn && threads.length === 0;
 
   const showNotifyPrompt =
     ready &&
@@ -284,6 +288,11 @@ export default function Home() {
   // Mise en cache par jour + signature du backlog pour ne pas rappeler l'IA sans raison.
   useEffect(() => {
     if (!ready || view !== "home" || ritualLockRef.current) return;
+    if (settlingIn) {
+      setPlan(null);
+      setPlanLoading(false);
+      return;
+    }
     if (openThreads.length === 0 && context === "desk") {
       setPlan(null);
       return;
@@ -362,7 +371,7 @@ export default function Home() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, view, planSig, context]);
+  }, [ready, view, planSig, context, settlingIn]);
 
   function endSession(transcript: ChatMessage[]) {
     if (transcript.length > 1) {
@@ -391,6 +400,10 @@ export default function Home() {
   }
 
   function startFresh() {
+    if (sessions.length === 0) {
+      setDuration(15);
+      setContext("desk");
+    }
     clearActiveSession();
     setResume(null);
     sessionStartRef.current = new Date().toISOString();
@@ -559,7 +572,7 @@ export default function Home() {
         body: JSON.stringify({
           threads: snapshotThreads(),
           messages: withUser.map((m) => ({ role: m.role, content: m.content })),
-          meta: { name: settings.name },
+          meta: { name: settings.name, settlingIn: sessions.length === 0 },
         }),
       });
       if (!res.ok || !res.body) throw new Error("chat");
@@ -732,21 +745,28 @@ export default function Home() {
         {isNewcomer ? (
           <>
             <h1 className="mt-1 font-display text-[28px] font-semibold leading-tight text-ink">
-              Commence par vider ta tête.
+              Vide ta tête.
             </h1>
-            <p className="mt-3 text-[15px] leading-relaxed text-muted">
-              Dépose tout ce qui traîne, en vrac — sans classer, sans prioriser.
-              Ensuite je te proposerai un créneau à ta taille, 15, 30 ou 50
-              minutes selon ce que tu as sur les bras et ce qui presse. Et je te
-              dirai précisément quoi y faire, en restant avec toi.
+            <p className="mt-2 text-[15px] leading-relaxed text-muted">
+              Écris en vrac en dessous. Je garde. Ensuite, un créneau — pas
+              avant.
             </p>
-            <div className="mt-4 flex items-start gap-2 rounded-xl bg-sink/60 px-4 py-3 text-sm text-ink">
-              <span className="mt-0.5 text-teal">↓</span>
-              <span>
-                Pour commencer, vide ta tête juste en dessous. Un truc, dix
-                trucs — comme ça vient.
-              </span>
-            </div>
+          </>
+        ) : settlingIn ? (
+          <>
+            <h1 className="mt-1 font-display text-[28px] font-semibold leading-tight text-ink">
+              C&apos;est noté. Je porte.
+            </h1>
+            <p className="mt-2 text-[15px] leading-relaxed text-muted">
+              Tu peux encore déposer en dessous. Quand tu veux, on prend 15
+              min — un truc à la fois, j&apos;y suis.
+            </p>
+            <button
+              onClick={startFresh}
+              className="mt-5 w-full rounded-xl bg-teal py-4 text-center font-display text-lg font-semibold text-white transition hover:bg-teal-ink"
+            >
+              Prendre 15 min
+            </button>
           </>
         ) : (
           <>
@@ -839,57 +859,70 @@ export default function Home() {
         <div className="mb-2 flex items-baseline justify-between gap-3 px-1">
           <h2 className="text-sm font-medium text-muted">
             {isNewcomer
-              ? "Vide ta tête — dépose tout ce qui traîne."
-              : "Quoi de neuf ? Dépose, raconte, ou demande-moi."}
+              ? "Écris ici."
+              : settlingIn
+                ? "Encore un truc ? Écris-le."
+                : "Quoi de neuf ? Dépose, raconte, ou demande-moi."}
           </h2>
           {chat.length > 0 && (
             <div className="flex shrink-0 items-baseline gap-3">
-              <button
-                onClick={() => setChatExpanded((v) => !v)}
-                className="text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
-              >
-                {chatExpanded
-                  ? "masquer"
-                  : `${chat.length} message${chat.length > 1 ? "s" : ""}`}
-              </button>
-              {chatExpanded && (
+              {chat.length > 2 && (
                 <button
-                  onClick={resetChat}
+                  onClick={() => setChatExpanded((v) => !v)}
                   className="text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
                 >
-                  effacer
+                  {chatExpanded ? "masquer plus tôt" : "plus tôt"}
                 </button>
               )}
+              <button
+                onClick={resetChat}
+                className="text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
+              >
+                effacer
+              </button>
             </div>
           )}
         </div>
         <div className="rounded-2xl border border-line px-1 py-0.5">
-          {chatExpanded && chat.length > 0 && (
+          {chat.length > 0 && (
             <div className="max-h-80 overflow-y-auto px-2 pb-2 pt-2">
               <div className="flex flex-col gap-2.5">
-                {chat.map((m, i) => (
-                  <div
-                    key={i}
-                    className={
-                      m.role === "user" ? "flex justify-end" : "flex justify-start"
-                    }
-                  >
+                {(chatExpanded || chat.length <= 2
+                  ? chat
+                  : chat.slice(-2)
+                ).map((m, i) => {
+                  const isUser = m.role === "user";
+                  const split = isUser
+                    ? { body: m.content, question: null }
+                    : splitChatQuestion(m.content);
+                  return (
                     <div
-                      className={
-                        m.role === "user"
-                          ? "max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-sink px-3.5 py-2 text-[15px] leading-relaxed text-ink"
-                          : "max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-teal-soft/50 px-3.5 py-2 text-[15px] leading-relaxed text-teal-ink"
-                      }
+                      key={i}
+                      className={isUser ? "flex justify-end" : "flex flex-col items-start gap-1.5"}
                     >
-                      {m.content ||
-                        (pointBusy ? (
-                          <span className="inline-flex gap-1 py-1">
-                            <Dot /> <Dot /> <Dot />
-                          </span>
-                        ) : null)}
+                      {(split.body || (pointBusy && !m.content)) && (
+                        <div
+                          className={
+                            isUser
+                              ? "max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-sink px-3.5 py-2 text-[15px] leading-relaxed text-ink"
+                              : "max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-teal-soft/50 px-3.5 py-2 text-[15px] leading-relaxed text-teal-ink"
+                          }
+                        >
+                          {split.body || (
+                            <span className="inline-flex gap-1 py-1">
+                              <Dot /> <Dot /> <Dot />
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {split.question && (
+                        <p className="max-w-[92%] rounded-xl border border-teal/40 bg-surface px-3.5 py-2.5 text-[15px] font-medium leading-snug text-ink">
+                          {split.question}
+                        </p>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <div ref={chatEndRef} />
             </div>
@@ -897,7 +930,7 @@ export default function Home() {
           <div className="flex items-end gap-2">
             <textarea
               value={pointText}
-              autoFocus={isNewcomer}
+              autoFocus={settlingIn}
               onChange={(e) => setPointText(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
@@ -907,7 +940,7 @@ export default function Home() {
               }}
               rows={1}
               placeholder={
-                isNewcomer
+                isNewcomer || settlingIn
                   ? "ex. relancer Paul pour le devis"
                   : "ex. j'ai appelé le dentiste · on s'organise comment demain ?"
               }

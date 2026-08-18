@@ -12,7 +12,7 @@ export const maxDuration = 60;
 interface Body {
   messages: ChatMessage[];
   threads: Thread[];
-  meta?: { name?: string };
+  meta?: { name?: string; settlingIn?: boolean };
 }
 
 function renderThreads(threads: Thread[]): string {
@@ -29,15 +29,30 @@ function renderThreads(threads: Thread[]): string {
   return `${open.length} trucs ouverts :\n${lines.join("\n")}`;
 }
 
-function systemPrompt(threads: Thread[], name?: string): string {
+function systemPrompt(
+  threads: Thread[],
+  name?: string,
+  settlingIn?: boolean,
+): string {
+  const firstDump = settlingIn
+    ? `
+PREMIER ACCUEIL (elle n'a pas encore fait de séance) :
+- Elle vide sa tête. Accuse réception en UNE phrase. Confirme que c'est porté. Stop.
+- PAS d'interrogatoire. Pas « c'est pour quand ? », « tu veux commencer par quoi ? », pas deux questions.
+- Une question max, seulement si ça débloque vraiment — et c'est ALORS la dernière phrase, courte.
+- Ne propose pas un programme de séance ici. Le créneau, c'est le bouton en haut, plus tard.
+`
+    : "";
   return `${socle(name)}
 
 OÙ TU ES : une discussion LIBRE, en dehors d'une séance. Pas de minuteur, pas de programme, pas de premier pas à arracher. Elle vient parler — donner des nouvelles, réfléchir à voix haute sur un truc, demander comment s'organiser demain, ou juste poser une question. Tu réponds, simplement.
+${firstDump}
 
 CE QUE TU FAIS ICI :
 - Quand elle demande comment s'organiser (demain, cette semaine), réponds EN CRÉNEAUX : combien, de quelle durée, à quel moment, et ce qu'on y mettrait. « Demain, je te proposerais un créneau de 30 min en matinée : on y attaquerait la relance de l'assurance, et s'il reste du temps on poserait la première pierre du kayak. » Reste clairsemé — un ou deux créneaux par jour, rarement plus — et dis pourquoi cet ordre.
 - Si elle veut réfléchir à un truc, aide-la à le découper, à décider, ou à trouver la première phrase à écrire.
 - Si elle donne des nouvelles (« j'ai appelé le dentiste »), accuse réception en une phrase et enchaîne naturellement. Ce qu'elle dit est enregistré automatiquement sur ses trucs — ne lui demande jamais de noter quoi que ce soit. Quand elle dit « demain matin on fait X », c'est retenu : tu peux le lui confirmer simplement.
+- Si tu poses une question : UNE seule, courte, en DERNIÈRE phrase — jamais un questionnaire.
 - RÉGULIERS : RÉGULIERS RETENUS ci-dessous est LA vérité — pas ce que tu as dit plus tôt dans la conversation. Si la ligne n'y est pas, tu ne le portes PAS.
   · Elle veut s'y mettre (« ça serait bien », « je lave rarement », « quelle fréquence ») : recommande une cadence douce (~2sem pour 1 semaine et demie à 2 semaines), dis que tu le ranges dans Réguliers. Ne dis JAMAIS « c'est déjà calé / je le porte déjà » tant que la ligne n'est pas dans RÉGULIERS RETENUS.
   · Si la ligne Y EST : là oui, on n'y revient pas.
@@ -80,7 +95,7 @@ export async function POST(req: Request) {
   const stream = client.messages.stream({
     model: "claude-opus-4-8",
     max_tokens: 1000,
-    system: systemPrompt(threads, meta?.name),
+    system: systemPrompt(threads, meta?.name, meta?.settlingIn),
     // On ne garde que la fin de la discussion : au-delà, le contexte utile
     // vient des trucs eux-mêmes, pas du bavardage.
     messages: messages.slice(-20).map((m) => ({
