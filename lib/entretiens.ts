@@ -24,7 +24,10 @@ const CONTAINER_TEXTS = new Set([...REGULIERS_CONTAINER_NAMES, "courses"]);
 
 /** Ligne : libellé · ~cadence · YYYY-MM-DD · note optionnelle */
 const LINE_RE =
-  /^(.+?) · (~\d+(?:sem|mois|j)) · (\d{4}-\d{2}-\d{2})(?: · (.+))?$/;
+  /^(.+?) · (~\d+(?:sem|mois|j)) · (\d{4}-\d{2}-\d{2})(?:\s*(?:·\s*|Note\s*:\s+)(.+))?$/i;
+
+const FIRST_PASS_RE =
+  /pas fait|jamais fait|premier (?:passage|lavage)|à lancer|dès que possible|plusieurs mois|depuis des mois/i;
 
 export function isReguliersContainerName(text: string): boolean {
   return REGULIERS_CONTAINER_NAMES.has(text.trim().toLowerCase());
@@ -102,7 +105,24 @@ export function daysSince(isoDate: string, at = new Date()): number {
   return Math.max(0, Math.round((t.getTime() - d.getTime()) / 86_400_000));
 }
 
+export function shiftIsoDay(isoDay: string, days: number): string {
+  const [y, m, d] = isoDay.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return dt.toISOString().slice(0, 10);
+}
+
+/** Date à poser quand on RETIENT un régulier pas encore fait : fenêtre ouverte. */
+export function lastDoneForFirstPass(cadence: string, todayIso: string): string {
+  const period = cadenceToDays(cadence) ?? 14;
+  return shiftIsoDay(todayIso, -period);
+}
+
+export function isRegulierFirstPass(item: RegulierItem): boolean {
+  return Boolean(item.note && FIRST_PASS_RE.test(item.note));
+}
+
 export function isRegulierDue(item: RegulierItem, at = new Date()): boolean {
+  if (isRegulierFirstPass(item)) return true;
   const period = cadenceToDays(item.cadence);
   if (!period) return false;
   return daysSince(item.lastDone, at) >= period;
@@ -181,11 +201,14 @@ export function renderReguliersForPlan(
     const since = daysSince(it.lastDone, at);
     const due = isRegulierDue(it, at);
     const ctx = it.note ? ` · ${it.note}` : "";
-    const status = due
-      ? ` · fenêtre ouverte (dernière fois il y a ${since}j, ~${it.cadence})`
-      : period
-        ? ` · ok pour l'instant (dernière fois il y a ${since}j / ~${it.cadence})`
-        : ` · dernière fois il y a ${since}j`;
+    const first = isRegulierFirstPass(it);
+    const status = first
+      ? ` · PREMIER PASSAGE, à lancer maintenant (~${it.cadence}) — la date n'est PAS une dernière fois faite`
+      : due
+        ? ` · fenêtre ouverte (dernière fois il y a ${since}j, ~${it.cadence})`
+        : period
+          ? ` · ok pour l'instant (dernière fois il y a ${since}j / ~${it.cadence})`
+          : ` · dernière fois il y a ${since}j`;
     return `- ${it.label}${status}${ctx}`;
   });
   const due = dueReguliers(items, at);

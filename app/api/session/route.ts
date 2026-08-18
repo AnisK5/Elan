@@ -78,6 +78,7 @@ MODE RÉGULIER (choisi avant la séance) :
 ${REGULIERS_FOCUS_PROMPT}
 - Loyer, URSSAF, prélèvements, entretien maison, appels réguliers — tout ce qui REVIENT.
 - Priorise les fenêtres ouvertes. Formule « ça fait X semaines » — jamais « en retard ».
+- La date sur la ligne = dernière fois FAITE. Si le contexte dit pas fait / premier passage / depuis des mois / à lancer, la fenêtre est OUVERTE : propose-le MAINTENANT. Ne dis jamais « vient d'être changé / rien à faire » juste parce que la date est aujourd'hui — souvent c'est le jour où on l'a retenu, pas une lessive déjà faite.
 - UN régulier à la fois. Quand c'est fait : mets à jour la date sur la ligne (via reconcile).
 - LISTE VIDE : ${REGULIERS_DISCOVERY_PROMPT}`;
   }

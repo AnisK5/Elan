@@ -33,7 +33,7 @@ describe("extractReguliersFromConvo", () => {
       },
     ];
     expect(extractReguliersFromConvo(messages, at)).toEqual([
-      { label: "linge de lit", cadence: "~2sem", lastDone: "2026-08-18" },
+      { label: "linge de lit", cadence: "~2sem", lastDone: "2026-08-04" },
     ]);
   });
 
@@ -135,7 +135,7 @@ describe("mergeRegulierWrites", () => {
         op: "add",
         text: "Réguliers",
         kind: "action",
-        note: "linge de lit · ~2sem · 2026-08-18",
+        note: "linge de lit · ~2sem · 2026-08-04",
       },
     ]);
   });

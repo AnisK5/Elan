@@ -222,6 +222,7 @@ function regulierPlanPrompt(threads: Thread[], name?: string): string {
     ? REGULIERS_DISCOVERY_PROMPT
     : `${REGULIERS_FOCUS_PROMPT}
 - Priorise les fenêtres ouvertes (mûres). S'il n'y en a pas de mûr, propose un régulier léger au choix — sans insister.
+- Si le contexte dit pas fait / premier passage, c'est mûr MAINTENANT — la date du jour n'est pas une lessive déjà faite.
 - UN régulier nommé dans le message ; pas de liste.`;
 
   return `${socle(name)}

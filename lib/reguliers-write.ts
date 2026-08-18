@@ -3,6 +3,7 @@ import type { ThreadOp } from "@/lib/store";
 import {
   findReguliersThread,
   isReguliersContainerName,
+  lastDoneForFirstPass,
   parseReguliers,
   REGULIERS_THREAD_TEXT,
   serializeReguliers,
@@ -73,7 +74,8 @@ export function extractReguliersFromConvo(
   const cadence = inferCadence(blob);
   if (!cadence) return [];
 
-  const lastDone = isoDayParis(at);
+  const today = isoDayParis(at);
+  const lastDone = lastDoneForFirstPass(cadence, today);
   const items: RegulierItem[] = [];
   for (const habit of HABITS) {
     if (!habit.re.test(blob)) continue;

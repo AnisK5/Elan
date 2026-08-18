@@ -32,6 +32,15 @@ describe("parseReguliers", () => {
     expect(items[1].note).toBe("maison");
   });
 
+  it("parse une note collée après la date", () => {
+    const items = parseReguliers(
+      "linge de lit · ~2sem · 2026-08-18 Note : pas fait depuis plusieurs mois — premier lavage à lancer dès que possible",
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0].label).toBe("linge de lit");
+    expect(items[0].note).toMatch(/pas fait/);
+  });
+
   it("round-trip serialize", () => {
     const raw = "draps · ~2sem · 2026-07-28";
     expect(serializeReguliers(parseReguliers(raw))).toBe(raw);
@@ -52,6 +61,20 @@ describe("cadence et échéance douce", () => {
     };
     expect(isRegulierDue(item, at)).toBe(true);
     expect(isRegulierDue({ ...item, lastDone: "2026-08-10" }, at)).toBe(false);
+  });
+
+  it("reste mûr si le contexte dit que ce n'est pas encore fait", () => {
+    expect(
+      isRegulierDue(
+        {
+          label: "linge de lit",
+          cadence: "~2sem",
+          lastDone: "2026-08-13",
+          note: "pas fait depuis plusieurs mois — premier lavage à lancer",
+        },
+        at,
+      ),
+    ).toBe(true);
   });
 });
 
