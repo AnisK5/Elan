@@ -24,7 +24,7 @@ const CONTAINER_TEXTS = new Set([...REGULIERS_CONTAINER_NAMES, "courses"]);
 
 /** Ligne : libellé · ~cadence · YYYY-MM-DD · note optionnelle */
 const LINE_RE =
-  /^(.+?) · (~\d+(?:sem|mois|j)) · (\d{4}-\d{2}-\d{2})(?:\s*(?:·\s*|Note\s*:\s+)(.+))?$/i;
+  /^(.+?) · (~\d+(?:sem|mois|j)) · (\d{4}-\d{2}-\d{2})(?:\s*(?:·|—|–|:|Note\s*:)?\s*(.+))?$/i;
 
 const FIRST_PASS_RE =
   /pas fait|jamais fait|premier (?:passage|lavage)|à lancer|dès que possible|plusieurs mois|depuis des mois/i;
@@ -55,13 +55,24 @@ export const findRythmesThread = findReguliersThread;
 export const findEntretiensThread = findReguliersThread;
 
 export function parseReguliers(note?: string): RegulierItem[] {
-  if (!note?.trim()) return [];
+  return parseReguliersWithExtra(note).items;
+}
+
+export function parseReguliersWithExtra(note?: string): {
+  items: RegulierItem[];
+  leftover: string;
+} {
+  if (!note?.trim()) return { items: [], leftover: "" };
   const items: RegulierItem[] = [];
+  const leftover: string[] = [];
   for (const line of note.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     const m = LINE_RE.exec(trimmed);
-    if (!m) continue;
+    if (!m) {
+      leftover.push(trimmed);
+      continue;
+    }
     items.push({
       label: m[1].trim(),
       cadence: m[2].trim(),
@@ -69,7 +80,7 @@ export function parseReguliers(note?: string): RegulierItem[] {
       note: m[4]?.trim() || undefined,
     });
   }
-  return items;
+  return { items, leftover: leftover.join("\n") };
 }
 
 /** @deprecated alias */
@@ -117,12 +128,19 @@ export function lastDoneForFirstPass(cadence: string, todayIso: string): string 
   return shiftIsoDay(todayIso, -period);
 }
 
-export function isRegulierFirstPass(item: RegulierItem): boolean {
-  return Boolean(item.note && FIRST_PASS_RE.test(item.note));
+export function isRegulierFirstPass(
+  item: RegulierItem,
+  extra = "",
+): boolean {
+  return FIRST_PASS_RE.test(`${item.note ?? ""}\n${extra}`);
 }
 
-export function isRegulierDue(item: RegulierItem, at = new Date()): boolean {
-  if (isRegulierFirstPass(item)) return true;
+export function isRegulierDue(
+  item: RegulierItem,
+  at = new Date(),
+  extra = "",
+): boolean {
+  if (isRegulierFirstPass(item, extra)) return true;
   const period = cadenceToDays(item.cadence);
   if (!period) return false;
   return daysSince(item.lastDone, at) >= period;
@@ -134,8 +152,9 @@ export const isEntretienDue = isRegulierDue;
 export function dueReguliers(
   items: RegulierItem[],
   at = new Date(),
+  extra = "",
 ): RegulierItem[] {
-  return items.filter((it) => isRegulierDue(it, at));
+  return items.filter((it) => isRegulierDue(it, at, extra));
 }
 
 /** @deprecated alias */
@@ -147,7 +166,8 @@ export function reguliersDueFromThreads(
 ): RegulierItem[] {
   const container = findReguliersThread(threads);
   if (!container) return [];
-  return dueReguliers(parseReguliers(container.note), at);
+  const { items, leftover } = parseReguliersWithExtra(container.note);
+  return dueReguliers(items, at, leftover);
 }
 
 /** @deprecated aliases */
@@ -192,29 +212,32 @@ export function renderReguliersForPlan(
 ): string {
   const container = findReguliersThread(threads);
   if (!container) return "Aucun régulier retenu.";
-  const items = parseReguliers(container.note);
+  const { items, leftover } = parseReguliersWithExtra(container.note);
   if (items.length === 0) {
     return `Fil "${container.text}" présent mais liste vide.`;
   }
+  const extra = leftover;
   const lines = items.map((it) => {
     const period = cadenceToDays(it.cadence);
     const since = daysSince(it.lastDone, at);
-    const due = isRegulierDue(it, at);
-    const ctx = it.note ? ` · ${it.note}` : "";
-    const first = isRegulierFirstPass(it);
+    const first = isRegulierFirstPass(it, extra);
+    const due = isRegulierDue(it, at, extra);
+    const ctx = it.note || extra ? ` · ${[it.note, extra].filter(Boolean).join(" · ")}` : "";
     const status = first
-      ? ` · PREMIER PASSAGE, à lancer maintenant (~${it.cadence}) — la date n'est PAS une dernière fois faite`
+      ? ` · PREMIER PASSAGE, à lancer MAINTENANT (~${it.cadence}) — la date n'est PAS une dernière fois faite, ne dis JAMAIS que c'est déjà fait`
       : due
         ? ` · fenêtre ouverte (dernière fois il y a ${since}j, ~${it.cadence})`
-        : period
-          ? ` · ok pour l'instant (dernière fois il y a ${since}j / ~${it.cadence})`
-          : ` · dernière fois il y a ${since}j`;
+        : since === 0
+          ? ` · inscrit aujourd'hui (PAS fait aujourd'hui) — propose le premier passage`
+          : period
+            ? ` · ok pour l'instant (dernière fois il y a ${since}j / ~${it.cadence})`
+            : ` · dernière fois il y a ${since}j`;
     return `- ${it.label}${status}${ctx}`;
   });
-  const due = dueReguliers(items, at);
+  const due = dueReguliers(items, at, extra);
   const header =
     due.length > 0
-      ? `${items.length} régulier(s) retenu(s), ${due.length} fenêtre(s) ouverte(s) :`
+      ? `${items.length} régulier(s) retenu(s), ${due.length} fenêtre(s) ouverte(s) — propose le premier passage, ne dis JAMAIS que c'est déjà fait :`
       : `${items.length} régulier(s) retenu(s), rien de mûr pour l'instant :`;
   return `${header}\n${lines.join("\n")}`;
 }

@@ -41,6 +41,30 @@ describe("parseReguliers", () => {
     expect(items[0].note).toMatch(/pas fait/);
   });
 
+  it("voit le premier passage même sur la ligne d'après", () => {
+    const note =
+      "linge de lit · ~2sem · 2026-08-18\nNote : pas fait depuis plusieurs mois — premier lavage à lancer dès que possible";
+    expect(
+      isRegulierDue(
+        parseReguliers(note)[0],
+        at,
+        "Note : pas fait depuis plusieurs mois — premier lavage à lancer dès que possible",
+      ),
+    ).toBe(true);
+    expect(
+      reguliersDueFromThreads(
+        [
+          thread({
+            id: "e",
+            text: "Réguliers",
+            note,
+          }),
+        ],
+        at,
+      ).map((d) => d.label),
+    ).toEqual(["linge de lit"]);
+  });
+
   it("round-trip serialize", () => {
     const raw = "draps · ~2sem · 2026-07-28";
     expect(serializeReguliers(parseReguliers(raw))).toBe(raw);
