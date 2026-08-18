@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { resolveAnthropicKey } from "@/lib/anthropic";
+import { resolveAnthropicKey, encodeStreamError } from "@/lib/anthropic";
 import type { ChatMessage, SessionContext, SessionLog, Thread } from "@/lib/types";
 import { renderReguliersForPlan, REGULIERS_DISCOVERY_PROMPT, REGULIERS_FOCUS_PROMPT } from "@/lib/entretiens";
 import {
@@ -255,9 +255,9 @@ export async function POST(req: Request) {
           }
         }
       } catch (err) {
-        const msg =
-          err instanceof Error ? err.message : "Erreur de génération.";
-        controller.enqueue(encoder.encode(`\n\n⚠️ ${msg}`));
+        controller.enqueue(
+          encoder.encode(encodeStreamError(err)),
+        );
       } finally {
         controller.close();
       }

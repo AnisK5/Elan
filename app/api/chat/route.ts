@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { resolveAnthropicKey } from "@/lib/anthropic";
+import { resolveAnthropicKey, encodeStreamError } from "@/lib/anthropic";
 import type { ChatMessage, Thread } from "@/lib/types";
 import { ageLabel, dueLabel, intentionLabel } from "@/lib/thread-labels";
+import { renderReguliersForPlan, isContainerThread } from "@/lib/entretiens";
 import { socle } from "@/lib/voice";
 
 export const runtime = "nodejs";
@@ -15,7 +16,9 @@ interface Body {
 }
 
 function renderThreads(threads: Thread[]): string {
-  const open = threads.filter((t) => t.status === "open");
+  const open = threads.filter(
+    (t) => t.status === "open" && !isContainerThread(t),
+  );
   if (open.length === 0) return "Aucun truc ouvert en ce moment.";
   const lines = open.map((t) => {
     const kind = t.kind === "suivi" ? "À SUIVRE" : "ACTION";
@@ -35,14 +38,18 @@ CE QUE TU FAIS ICI :
 - Quand elle demande comment s'organiser (demain, cette semaine), réponds EN CRÉNEAUX : combien, de quelle durée, à quel moment, et ce qu'on y mettrait. « Demain, je te proposerais un créneau de 30 min en matinée : on y attaquerait la relance de l'assurance, et s'il reste du temps on poserait la première pierre du kayak. » Reste clairsemé — un ou deux créneaux par jour, rarement plus — et dis pourquoi cet ordre.
 - Si elle veut réfléchir à un truc, aide-la à le découper, à décider, ou à trouver la première phrase à écrire.
 - Si elle donne des nouvelles (« j'ai appelé le dentiste »), accuse réception en une phrase et enchaîne naturellement. Ce qu'elle dit est enregistré automatiquement sur ses trucs — ne lui demande jamais de noter quoi que ce soit. Quand elle dit « demain matin on fait X », c'est retenu : tu peux le lui confirmer simplement.
-- RÉGULIERS : si elle dit vouloir penser à quelque chose qui revient (loyer, URSSAF, draps, appeler quelqu'un…) — seulement si ELLE le demande — confirme que c'est retenu. Ne propose jamais une liste toute faite ; tu peux demander une fois s'il y a des trucs récurrents qu'elle oublie.
+- RÉGULIERS : si elle dit vouloir penser à quelque chose qui revient (linge, loyer, URSSAF, appeler quelqu'un…) — seulement si ELLE le demande — confirme que c'est retenu DANS RÉGULIERS (un seul fil, pas un truc à part). Cadence douce (~2sem pour « toutes les 1–2 semaines »). Dis simplement : c'est porté ; quand la fenêtre s'ouvre, ça peut remonter dans le rappel du matin ou un créneau. PAS d'alarme téléphone, PAS « je ne peux pas te notifier ».
 
 CE QUE TU NE FAIS PAS :
 - Tu ne lances pas de séance et tu ne pousses pas au travail. Si ça s'y prête vraiment, glisse une fois « on peut en faire un créneau si tu veux », puis lâche.
 - Tu ne culpabilises jamais, tu ne comptes pas les retards.
+- Tu ne parles jamais de ton fonctionnement interne (outils, code, « est-ce que j'ai un mécanisme »).
 
 CE QU'ELLE A EN COURS :
-${renderThreads(threads)}`;
+${renderThreads(threads)}
+
+RÉGULIERS RETENUS :
+${renderReguliersForPlan(threads)}`;
 }
 
 export async function POST(req: Request) {
@@ -93,8 +100,7 @@ export async function POST(req: Request) {
           }
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Erreur de génération.";
-        controller.enqueue(encoder.encode(`\n\n⚠️ ${msg}`));
+        controller.enqueue(encoder.encode(encodeStreamError(err)));
       } finally {
         controller.close();
       }

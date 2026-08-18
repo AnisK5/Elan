@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { isContainerThread } from "@/lib/entretiens";
+import { findReguliersThread } from "@/lib/entretiens";
 import { useThreads } from "@/lib/store";
 import ThreadRow from "@/components/ThreadRow";
 
@@ -20,10 +20,12 @@ export default function BacklogPeek({
 }) {
   const [show, setShow] = useState(false);
   const { threads, patch, remove } = useThreads();
+  const openList = threads.filter((t) => t.status === "open");
+  const reguliers = findReguliersThread(openList);
 
   if (!ready) return null;
 
-  if (open === 0) {
+  if (open === 0 && !reguliers) {
     return (
       <div className="rounded-2xl border border-dashed border-line px-4 py-5 text-center text-sm text-muted">
         Rien en attente. Tête légère — ou dépose ce qui traîne.
@@ -35,16 +37,22 @@ export default function BacklogPeek({
     <div className="rounded-2xl border border-line bg-sink/40 px-4 py-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-ink">
-          Je garde{" "}
-          <b className="font-display text-lg">{actions}</b>{" "}
-          {actions > 1 ? "trucs à faire" : "truc à faire"}
-          {suivis > 0 && (
+          {open > 0 ? (
             <>
-              {" "}
-              · <b className="font-display text-lg">{suivis}</b> à suivre
+              Je garde{" "}
+              <b className="font-display text-lg">{actions}</b>{" "}
+              {actions > 1 ? "trucs à faire" : "truc à faire"}
+              {suivis > 0 && (
+                <>
+                  {" "}
+                  · <b className="font-display text-lg">{suivis}</b> à suivre
+                </>
+              )}
+              {reguliers ? " · plus tes réguliers." : "."}
             </>
+          ) : (
+            <>Je garde tes réguliers — rien d&apos;autre qui presse.</>
           )}
-          .
         </p>
         <button
           onClick={() => setShow((s) => !s)}
@@ -61,7 +69,7 @@ export default function BacklogPeek({
       {show && (
         <div className="mt-3 flex flex-col gap-0.5 border-t border-line pt-3">
           {threads
-            .filter((t) => t.status === "open" && !isContainerThread(t))
+            .filter((t) => t.status === "open")
             .map((t) => (
               <ThreadRow
                 key={t.id}

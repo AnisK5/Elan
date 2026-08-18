@@ -15,6 +15,72 @@ export function resolveAnthropicKey(req?: Request): string | null {
   return env || null;
 }
 
+export type AnthropicFailKind = "credits" | "auth" | "rate" | "unknown";
+
+const STREAM_ERROR_RE = /⟦elan-error:(credits|auth|rate|unknown)⟧/;
+
+export function classifyAnthropicError(err: unknown): AnthropicFailKind {
+  const raw =
+    err instanceof Error
+      ? `${err.name} ${err.message}`
+      : typeof err === "string"
+        ? err
+        : JSON.stringify(err ?? "");
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes("credit balance is too low") ||
+    lower.includes("too low to access the anthropic api") ||
+    lower.includes("purchase credits")
+  ) {
+    return "credits";
+  }
+  if (
+    lower.includes("invalid api key") ||
+    lower.includes("authentication_error") ||
+    lower.includes("invalid x-api-key")
+  ) {
+    return "auth";
+  }
+  if (
+    lower.includes("rate_limit") ||
+    lower.includes("overloaded") ||
+    lower.includes("429")
+  ) {
+    return "rate";
+  }
+  return "unknown";
+}
+
+export function anthropicFailMessage(kind: AnthropicFailKind): string {
+  if (kind === "credits") {
+    return "Plus de crédits Anthropic pour le moment. Recharge le compte, ou colle une autre clé dans Réglages.";
+  }
+  if (kind === "auth") {
+    return "La clé Claude n'est pas reconnue. Vérifie-la dans Réglages.";
+  }
+  if (kind === "rate") {
+    return "Anthropic est saturé un instant. Réessaie dans quelques secondes.";
+  }
+  return "Élan n'a pas pu répondre. Réessaie dans un instant.";
+}
+
+/** Marqueur dans le flux texte — jamais affiché tel quel. */
+export function encodeStreamError(err: unknown): string {
+  return `⟦elan-error:${classifyAnthropicError(err)}⟧`;
+}
+
+export function parseStreamError(text: string): {
+  clean: string;
+  kind: AnthropicFailKind | null;
+} {
+  const m = STREAM_ERROR_RE.exec(text);
+  if (!m) return { clean: text, kind: null };
+  return {
+    clean: text.replace(/\s*⟦elan-error:(credits|auth|rate|unknown)⟧\s*/g, "").trim(),
+    kind: m[1] as AnthropicFailKind,
+  };
+}
+
 export function readUserAnthropicKey(): string {
   if (typeof window === "undefined") return "";
   try {

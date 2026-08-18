@@ -34,7 +34,8 @@ import { useAuth } from "@/components/AuthProvider";
 import { parseThreadOps } from "@/lib/ops";
 import { doneCountsThisWeek, completionAt } from "@/lib/week-stats";
 import { sessionsToday } from "@/lib/session-memory";
-import { apiFetch } from "@/lib/anthropic";
+import { apiFetch, anthropicFailMessage, parseStreamError } from "@/lib/anthropic";
+import AiRetryBanner from "@/components/AiRetryBanner";
 import {
   normalizeDuration,
   OUTDOOR_DURATION,
@@ -97,6 +98,8 @@ export default function Home() {
   const [pointText, setPointText] = useState("");
   const [pointBusy, setPointBusy] = useState(false);
   const [pointNote, setPointNote] = useState("");
+  const [pointError, setPointError] = useState("");
+  const lastPointRef = useRef("");
   const [pointUndo, setPointUndo] = useState<Thread[] | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([]);
   // Replié par défaut : l'accueil doit rester calme. Un historique qui grossit
@@ -526,19 +529,24 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function sendPoint() {
-    const t = pointText.trim();
+  async function sendPoint(retryText?: string) {
+    const t = (retryText ?? pointText).trim();
     if (!t || pointBusy) return;
     setPointBusy(true);
+    setPointError("");
     setPointText("");
     setPointNote("");
-    // Parler ouvre la discussion : sans ça, la réponse arriverait dans le vide.
+    lastPointRef.current = t;
     setChatExpanded(true);
 
-    const withUser: ChatMessage[] = [
-      ...chat,
-      { role: "user", content: t, at: new Date().toISOString() },
-    ];
+    const last = chat[chat.length - 1];
+    const withUser: ChatMessage[] =
+      retryText && last?.role === "user" && last.content === t
+        ? chat
+        : [
+            ...chat,
+            { role: "user", content: t, at: new Date().toISOString() },
+          ];
     setChat(withUser);
     writeChat(withUser);
 
@@ -562,29 +570,48 @@ export default function Home() {
         const { done, value } = await reader.read();
         if (done) break;
         answer += dec.decode(value, { stream: true });
-        setChat([...withUser, { role: "assistant", content: answer }]);
+        const { clean, kind } = parseStreamError(answer);
+        if (kind) {
+          setPointError(anthropicFailMessage(kind));
+          setChat(withUser);
+          writeChat(withUser);
+          setPointBusy(false);
+          return;
+        }
+        if (answer.includes("⟦elan-error")) continue;
+        setChat([...withUser, { role: "assistant", content: clean }]);
+      }
+
+      const parsed = parseStreamError(answer);
+      if (parsed.kind) {
+        setPointError(anthropicFailMessage(parsed.kind));
+        setChat(withUser);
+        writeChat(withUser);
+        setPointBusy(false);
+        return;
       }
 
       const full: ChatMessage[] = [
         ...withUser,
-        { role: "assistant", content: answer, at: new Date().toISOString() },
+        {
+          role: "assistant",
+          content: parsed.clean,
+          at: new Date().toISOString(),
+        },
       ];
       setChat(full);
       writeChat(full);
     } catch {
-      // Ce champ sert aussi de capture : si l'IA est injoignable, ce qui vient
-      // d'être écrit ne doit surtout pas disparaître dans le vide.
       keepAnyway(t);
-      setChat(chat);
-      writeChat(chat);
+      setPointError(anthropicFailMessage("unknown"));
+      setChat(withUser);
+      writeChat(withUser);
       setPointBusy(false);
       return;
     }
 
     setPointBusy(false);
 
-    // Ce qui vient d'être dit peut changer les trucs (fait, reporté, nouveau) :
-    // on réconcilie en arrière-plan, sans bloquer la conversation.
     try {
       const res = await apiFetch("/api/reconcile", {
         method: "POST",
@@ -885,13 +912,22 @@ export default function Home() {
               className="max-h-40 min-h-[46px] flex-1 resize-none rounded-xl bg-transparent px-3 py-3 text-[15px] leading-snug text-ink outline-none placeholder:text-faint"
             />
             <button
-              onClick={sendPoint}
+              onClick={() => void sendPoint()}
               disabled={!pointText.trim() || pointBusy}
               className="mb-0.5 shrink-0 rounded-xl bg-teal px-4 py-3 text-sm font-medium text-white transition hover:bg-teal-ink disabled:opacity-40"
             >
               {pointBusy ? "…" : "Envoyer"}
             </button>
           </div>
+          {pointError && (
+            <div className="px-2 pb-2 pt-1">
+              <AiRetryBanner
+                message={pointError}
+                busy={pointBusy}
+                onRetry={() => void sendPoint(lastPointRef.current)}
+              />
+            </div>
+          )}
           {pointNote && (
             <div className="animate-rise flex items-center gap-2 px-2 pb-1.5 pt-1 text-xs text-teal-ink">
               <span>✏️</span>

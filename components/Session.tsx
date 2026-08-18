@@ -3,7 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage, SessionContext, SessionLog, Thread } from "@/lib/types";
 import { parseThreadOps } from "@/lib/ops";
-import { apiFetch } from "@/lib/anthropic";
+import {
+  apiFetch,
+  anthropicFailMessage,
+  parseStreamError,
+} from "@/lib/anthropic";
+import AiRetryBanner from "@/components/AiRetryBanner";
 import {
   applyThreadOps,
   clearActiveSession,
@@ -53,6 +58,10 @@ export default function Session({
   const scrollRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
   const closed = useRef(false);
+  const retryRef = useRef<{
+    convo: ChatMessage[];
+    ending: boolean;
+  } | null>(null);
 
   const outdoor = context === "sortie" || context === "courses";
   const totalSec = durationMin * 60;
@@ -119,6 +128,7 @@ export default function Session({
 
   async function runTurn(convo: ChatMessage[], ending = false) {
     setError("");
+    retryRef.current = { convo, ending };
     setStreaming(true);
     const at = new Date().toISOString();
     setMessages([...convo, { role: "assistant", content: "", at }]);
@@ -144,8 +154,8 @@ export default function Session({
       });
 
       if (!res.ok || !res.body) {
-        const j = await res.json().catch(() => ({}));
-        setError(j.error || "Impossible de joindre le guide.");
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(j.error || anthropicFailMessage("unknown"));
         setMessages(convo);
         return;
       }
@@ -157,14 +167,26 @@ export default function Session({
         const { done, value } = await reader.read();
         if (done) break;
         acc += decoder.decode(value, { stream: true });
-        setMessages([...convo, { role: "assistant", content: acc, at }]);
+        const { clean, kind } = parseStreamError(acc);
+        if (kind) {
+          setError(anthropicFailMessage(kind));
+          setMessages(convo);
+          return;
+        }
+        if (acc.includes("⟦elan-error")) continue;
+        setMessages([...convo, { role: "assistant", content: clean, at }]);
       }
 
-      // Après un échange normal (pas l'ouverture ni la clôture), l'IA relit
-      // ce qui vient d'être dit et met à jour les trucs si c'est justifié.
+      const { clean, kind } = parseStreamError(acc);
+      if (kind) {
+        setError(anthropicFailMessage(kind));
+        setMessages(convo);
+        return;
+      }
+
       const lastWasUser = convo[convo.length - 1]?.role === "user";
-      if (!ending && lastWasUser) {
-        void reconcile([...convo, { role: "assistant", content: acc }]);
+      if (!ending && lastWasUser && clean.trim()) {
+        void reconcile([...convo, { role: "assistant", content: clean }]);
       }
     } catch {
       setError("Connexion interrompue.");
@@ -314,9 +336,15 @@ export default function Session({
           )}
 
           {error && (
-            <div className="rounded-xl border border-amber/40 bg-amber-soft px-4 py-3 text-sm text-ink">
-              {error}
-            </div>
+            <AiRetryBanner
+              message={error}
+              busy={streaming}
+              onRetry={() => {
+                const r = retryRef.current;
+                if (!r || streaming) return;
+                void runTurn(r.convo, r.ending);
+              }}
+            />
           )}
         </div>
       </div>
