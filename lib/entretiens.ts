@@ -26,8 +26,12 @@ const CONTAINER_TEXTS = new Set([...REGULIERS_CONTAINER_NAMES, "courses"]);
 const LINE_RE =
   /^(.+?) · (~\d+(?:sem|mois|j)) · (\d{4}-\d{2}-\d{2})(?: · (.+))?$/;
 
+export function isReguliersContainerName(text: string): boolean {
+  return REGULIERS_CONTAINER_NAMES.has(text.trim().toLowerCase());
+}
+
 export function isReguliersContainerThread(t: Thread): boolean {
-  return REGULIERS_CONTAINER_NAMES.has(t.text.trim().toLowerCase());
+  return isReguliersContainerName(t.text);
 }
 
 /** @deprecated alias */

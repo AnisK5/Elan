@@ -551,6 +551,7 @@ export default function Home() {
     writeChat(withUser);
 
     let answer = "";
+    let full: ChatMessage[] | null = null;
     try {
       const res = await apiFetch("/api/chat", {
         method: "POST",
@@ -591,7 +592,7 @@ export default function Home() {
         return;
       }
 
-      const full: ChatMessage[] = [
+      full = [
         ...withUser,
         {
           role: "assistant",
@@ -611,6 +612,7 @@ export default function Home() {
     }
 
     setPointBusy(false);
+    if (!full) return;
 
     try {
       const res = await apiFetch("/api/reconcile", {
@@ -618,10 +620,10 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           threads: snapshotThreads(),
-          messages: [
-            { role: "user", content: t },
-            { role: "assistant", content: answer },
-          ],
+          messages: full.slice(-12).map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
         }),
       });
       if (!res.ok) return;

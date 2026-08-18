@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { resolveAnthropicKey } from "@/lib/anthropic";
 import type { ChatMessage, Thread } from "@/lib/types";
+import { mergeRegulierWrites, reguliersWriteNote, upsertRegulierOps, extractReguliersFromConvo } from "@/lib/reguliers-write";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,6 +45,7 @@ function systemPrompt(threads: Thread[], messages: ChatMessage[]): string {
 AUJOURD'HUI : ${today}. Sers-t'en pour dater et ancrer tout repère temporel.
 
 RÈGLES (tu es CONSERVATEUR) :
+- EXCEPTION RÉGULIERS — passe AVANT le conservatisme : si l'échange parle d'un rythme de vie (linge, draps, loyer, URSSAF…) AVEC une fréquence — même seulement recommandée par Élan et non refusée — tu DOIS l'écrire dans le fil "Réguliers". Un « c'est déjà noté » d'Élan ne compte PAS : vérifie LES TRUCS ACTUELS. Fil absent ou ligne absente → add/note. Elle qui dit que le fil est vide = tu écris MAINTENANT.
 - N'agis QUE sur ce qui est clairement dit ou confirmé dans l'échange. Dans le doute, ne fais rien.
 - N'invente jamais un truc qui n'a pas été évoqué.
 - Ne supprime jamais. Pour un truc terminé, utilise "done" (réversible), pas une suppression.
@@ -117,10 +119,27 @@ function safeParse(text: string): { updates: unknown[]; note: string } | null {
   return null;
 }
 
-export async function POST(req: Request) {
-  const apiKey = resolveAnthropicKey(req);
-  if (!apiKey) return Response.json({ updates: [], note: "" });
+function withReguliers(
+  threads: Thread[],
+  messages: ChatMessage[],
+  greffier: { updates: unknown[]; note: string },
+): { updates: unknown[]; note: string } {
+  const ours = upsertRegulierOps(
+    threads,
+    extractReguliersFromConvo(messages),
+  );
+  const updates = mergeRegulierWrites(threads, messages, greffier.updates);
+  if (ours.length === 0) return { ...greffier, updates };
+  const extra = reguliersWriteNote(ours);
+  const note = greffier.note?.trim()
+    ? greffier.note.includes("Réguliers")
+      ? greffier.note
+      : `${greffier.note} · ${extra}`
+    : extra;
+  return { updates, note };
+}
 
+export async function POST(req: Request) {
   let body: Body;
   try {
     body = (await req.json()) as Body;
@@ -133,6 +152,12 @@ export async function POST(req: Request) {
   if (threads.length === 0 && messages.length === 0)
     return Response.json({ updates: [], note: "" });
 
+  const empty = { updates: [] as unknown[], note: "" };
+  const apiKey = resolveAnthropicKey(req);
+  if (!apiKey) {
+    return Response.json(withReguliers(threads, messages, empty));
+  }
+
   const client = new Anthropic({ apiKey });
   try {
     const res = await client.messages.create({
@@ -143,10 +168,9 @@ export async function POST(req: Request) {
     });
     const block = res.content.find((b) => b.type === "text");
     const text = block && block.type === "text" ? block.text : "";
-    const parsed = safeParse(text);
-    if (!parsed) return Response.json({ updates: [], note: "" });
-    return Response.json(parsed);
+    const parsed = safeParse(text) ?? empty;
+    return Response.json(withReguliers(threads, messages, parsed));
   } catch {
-    return Response.json({ updates: [], note: "" });
+    return Response.json(withReguliers(threads, messages, empty));
   }
 }

@@ -478,7 +478,9 @@ export function clean(s: string | undefined): string {
     .replace(/<\/?[a-z][^>]*>/gi, "")
     .replace(/\s*\bindex\s*=\s*"[^"]*"/gi, "")
     .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/\s{2,}/g, " ")
+    // Garde les sauts de ligne : le fil Réguliers porte une ligne par habitude.
+    .replace(/[^\S\n]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 

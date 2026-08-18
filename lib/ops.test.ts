@@ -150,4 +150,10 @@ describe("clean — le balisage des modèles ne doit pas atteindre la base", () 
     expect(clean(undefined)).toBe("");
     expect(clean("   ")).toBe("");
   });
+
+  it("garde les lignes du fil Réguliers", () => {
+    expect(clean("linge de lit · ~2sem · 2026-08-18\nURSSAF · ~1mois · 2026-07-01")).toBe(
+      "linge de lit · ~2sem · 2026-08-18\nURSSAF · ~1mois · 2026-07-01",
+    );
+  });
 });

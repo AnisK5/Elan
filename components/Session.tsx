@@ -205,7 +205,7 @@ export default function Session({
       });
       if (!res.ok) return;
       const j = (await res.json()) as { updates?: unknown; note?: string };
-      const before = snapshotThreads(); // pour pouvoir tout annuler
+      const before = snapshotThreads();
       const ops = parseThreadOps(j.updates, new Set(before.map((t) => t.id)));
       if (ops.length > 0) {
         applyThreadOps(ops);
