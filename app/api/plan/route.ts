@@ -13,6 +13,7 @@ import {
 } from "@/lib/entretiens";
 import { ageLabel, dayDiff, dueLabel, intentionLabel } from "@/lib/thread-labels";
 import { identity, socle, today, TON, VOIX } from "@/lib/voice";
+import { DEPOSER_PLAN_MESSAGE } from "@/lib/session-mode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -258,6 +259,9 @@ function fallbackPlan(
   context: SessionContext,
   threads: Thread[],
 ): { message: string; pick: string } {
+  if (context === "deposer") {
+    return { message: DEPOSER_PLAN_MESSAGE, pick: "15" };
+  }
   if (context === "courses") {
     const courses = findCoursesThread(openThreads(threads));
     if (courses?.note?.trim()) {
@@ -399,6 +403,9 @@ export async function POST(req: Request) {
   }
 
   const context = body.context ?? "desk";
+  if (context === "deposer") {
+    return Response.json({ message: DEPOSER_PLAN_MESSAGE, pick: "15" });
+  }
   const open = (body.threads ?? []).filter((t) => t.status === "open");
   if (open.length === 0 && context !== "regulier") {
     return Response.json({ message: "", pick: "15" });

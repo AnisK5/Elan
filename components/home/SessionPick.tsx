@@ -1,7 +1,7 @@
 import type { SessionContext } from "@/lib/types";
 import { DURATIONS } from "@/lib/constants";
 
-/** Boutons durée (bureau) + contexte Sortie / Courses. */
+/** Boutons durée (bureau) + contextes Déposer / Sortie / Courses / Régulier. */
 
 export default function SessionPick({
   duration,
@@ -12,7 +12,7 @@ export default function SessionPick({
   duration: number;
   context: SessionContext;
   onPickDuration: (d: number) => void;
-  onPickContext: (c: "sortie" | "courses" | "regulier") => void;
+  onPickContext: (c: "sortie" | "courses" | "regulier" | "deposer") => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -35,6 +35,7 @@ export default function SessionPick({
       <div className="inline-flex rounded-xl bg-sink p-1">
         {(
           [
+            { id: "deposer" as const, label: "Déposer" },
             { id: "sortie" as const, label: "Sortie" },
             { id: "courses" as const, label: "Courses" },
             { id: "regulier" as const, label: "Régulier" },

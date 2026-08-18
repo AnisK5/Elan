@@ -18,6 +18,8 @@ import {
   writeActiveSession,
   type ActiveSession,
 } from "@/lib/store";
+import { AssistantSpeech } from "@/components/HighlightEncart";
+import { isUntimedSession } from "@/lib/session-mode";
 import QuickCapture from "./QuickCapture";
 import ThreadRow from "./ThreadRow";
 
@@ -63,7 +65,7 @@ export default function Session({
     ending: boolean;
   } | null>(null);
 
-  const outdoor = context === "sortie" || context === "courses";
+  const outdoor = isUntimedSession(context);
   const totalSec = durationMin * 60;
   const remaining = totalSec - elapsed;
   const overtime = !outdoor && remaining < 0;
@@ -243,7 +245,11 @@ export default function Session({
             <>
               <div className="flex items-baseline gap-2">
                 <span className="font-display text-lg font-semibold text-ink">
-                  {context === "courses" ? "Courses" : "Sortie"}
+                  {context === "courses"
+                    ? "Courses"
+                    : context === "deposer"
+                      ? "Déposer"
+                      : "Sortie"}
                 </span>
                 <span className="text-xs text-muted">pas de chrono</span>
               </div>
@@ -314,9 +320,7 @@ export default function Session({
                   )}
                 </div>
                 {m.content ? (
-                  <p className="whitespace-pre-wrap text-[17px] leading-relaxed text-ink">
-                    {m.content}
-                  </p>
+                  <AssistantSpeech content={m.content} />
                 ) : (
                   streaming && <TypingDots />
                 )}
@@ -380,24 +384,26 @@ export default function Session({
               )}
             </div>
           )}
-          <div className="mb-2 flex items-center gap-2">
-            <Toggle
-              active={panel === "capture"}
-              onClick={() =>
-                setPanel((p) => (p === "capture" ? "none" : "capture"))
-              }
-            >
-              + un truc
-            </Toggle>
-            <Toggle
-              active={panel === "threads"}
-              onClick={() =>
-                setPanel((p) => (p === "threads" ? "none" : "threads"))
-              }
-            >
-              Mes trucs ({openThreads.length})
-            </Toggle>
-          </div>
+          {context !== "deposer" && (
+            <div className="mb-2 flex items-center gap-2">
+              <Toggle
+                active={panel === "capture"}
+                onClick={() =>
+                  setPanel((p) => (p === "capture" ? "none" : "capture"))
+                }
+              >
+                + un truc
+              </Toggle>
+              <Toggle
+                active={panel === "threads"}
+                onClick={() =>
+                  setPanel((p) => (p === "threads" ? "none" : "threads"))
+                }
+              >
+                Mes trucs ({openThreads.length})
+              </Toggle>
+            </div>
+          )}
           <div className="flex items-end gap-2 rounded-2xl border border-line bg-surface p-2 shadow-[0_2px_20px_-12px_rgba(38,35,29,0.25)]">
             <textarea
               value={input}
@@ -409,7 +415,11 @@ export default function Session({
                 }
               }}
               rows={1}
-              placeholder="Réponds au guide…"
+              placeholder={
+                context === "deposer"
+                  ? "Tout ce qui te trotte…"
+                  : "Réponds au guide…"
+              }
               className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] leading-snug text-ink outline-none placeholder:text-faint"
             />
             <button

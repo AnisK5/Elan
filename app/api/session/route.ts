@@ -7,6 +7,7 @@ import {
   renderSessionContinuity,
 } from "@/lib/session-memory";
 import { socleSession } from "@/lib/voice";
+import { isUntimedSession } from "@/lib/session-mode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,10 +43,14 @@ const OPENING_COURSES =
 const OPENING_REGULIER =
   "[La séance RÉGULIER commence. UNIQUEMENT le fil \"Réguliers\" (ou legacy Rythmes/Entretiens) compte — ignore tout le reste. Si la liste est vide : une question douce pour repérer ce qui revient (loyer, URSSAF, draps…) — jamais une checklist imposée. Sinon : UN régulier mûr ou léger, UN pas concret. Quand c'est fait, mets à jour la date de la ligne via reconcile.]";
 
+const OPENING_DEPOSER =
+  "[La séance DÉPOSER commence. Elle vient vider sa tête. Accueille en UNE phrase courte, invite à tout poser en vrac. Tu REÇOIS, tu confirmes ce que tu ranges. ZÉRO questionnaire. Pas de programme de travail, pas de 15 min, pas de premier pas à faire. Si elle a déjà des trucs, tu les as en tête mais tu ne les récites pas.]";
+
 function openingCue(context?: SessionContext): string {
   if (context === "sortie") return OPENING_SORTIE;
   if (context === "courses") return OPENING_COURSES;
   if (context === "regulier") return OPENING_REGULIER;
+  if (context === "deposer") return OPENING_DEPOSER;
   return OPENING_DESK;
 }
 
@@ -82,13 +87,28 @@ ${REGULIERS_FOCUS_PROMPT}
 - UN régulier à la fois. Quand c'est fait : mets à jour la date sur la ligne (via reconcile).
 - LISTE VIDE : ${REGULIERS_DISCOVERY_PROMPT}`;
   }
+  if (context === "deposer") {
+    return `
+
+MODE DÉPOSER (choisi avant la séance) :
+- Elle vient VIDER SA TÊTE. Tu reçois, tu confirmes ce que tu ranges (« c'est noté : relancer Paul »), tu n'interroges pas.
+- ZÉRO question par défaut. UNE seule, en dernière phrase, seulement si tu ne peux vraiment pas ranger sans (deux trucs collés). Sinon aucune.
+- Pas de programme, pas de « on s'y met », pas de 15 min, pas de premier pas de travail.
+- Quand elle dit que c'est tout, ou qu'elle s'arrête : une phrase sur ce que tu as rangé. Le prochain accueil proposera un créneau. Pas d'interview de clôture.`;
+  }
   return "";
 }
 
 function systemPrompt(meta: Meta, threads: Thread[]): string {
-  const outdoor = meta.context === "sortie" || meta.context === "courses";
-  const timingBlock = outdoor
-    ? `DURÉE : séance ${meta.context === "courses" ? "courses" : "sortie"} — pas de contrainte de minuteur. Ne mentionne pas le temps écoulé ni restant.`
+  const untimed = isUntimedSession(meta.context);
+  const timingBlock = untimed
+    ? `DURÉE : séance ${
+        meta.context === "courses"
+          ? "courses"
+          : meta.context === "deposer"
+            ? "déposer"
+            : "sortie"
+      } — pas de contrainte de minuteur. Ne mentionne pas le temps écoulé ni restant.`
     : `DURÉE : séance de ${meta.durationMin} min. Écoulé : ${Math.floor(meta.elapsedSec / 60)} min. Restant : ${Math.max(0, Math.floor(meta.remainingSec / 60))} min.
 - Ce temps restant FAIT FOI. Ne l'invente jamais, ne le contredis jamais.
 - UNE TÂCHE FAITE ≠ SÉANCE FINIE. C'est l'erreur à ne PAS commettre. Après avoir bouclé un truc, s'il reste du temps utile (plus de ~1-2 min) ET des trucs ouverts, ta réaction PAR DÉFAUT est d'enchaîner : félicite en une phrase, puis propose le PROCHAIN petit pas. Tu ne clôtures pas.
@@ -96,7 +116,7 @@ function systemPrompt(meta: Meta, threads: Thread[]): string {
 - Tu ne décides JAMAIS d'arrêter à la place de la personne tant qu'il reste du temps. Si tu penses que c'est peut-être un bon moment pour souffler, tu le lui DEMANDES sans clôturer : « il te reste ${Math.max(0, Math.floor(meta.remainingSec / 60))} min — on attaque un dernier petit truc, ou tu préfères t'arrêter là ? ». C'est elle qui tranche.
 - Si vous avez vraiment fait le tour de TOUT (plus de trucs ouverts pertinents) avant la fin, dis-le honnêtement et propose le choix ci-dessus — sans prétendre que le chrono est fini.
 - Dans les VRAIES dernières minutes (Restant proche de 0) : arrête d'ouvrir de nouveaux fronts, fais un point doux, célèbre ce qui a bougé, propose une toute petite intention pour la prochaine fois, et invite à revenir demain.`;
-  const deskProgramBlock = outdoor
+  const deskProgramBlock = untimed
     ? ""
     : `
 LE PROGRAMME DE LA SÉANCE (adapté au temps — TDAH = un truc à la fois) :
@@ -114,12 +134,17 @@ LE PROGRAMME DE LA SÉANCE (adapté au temps — TDAH = un truc à la fois) :
 
 TU ES EN SÉANCE : tu accompagnes le créneau en cours, en direct, du début à la clôture. Tu fais du body-doubling — ta présence aide à s'y mettre.
 ${deskProgramBlock}
-COMPRENDRE AVANT DE PROPOSER (avec parcimonie) :
+${
+  meta.context === "deposer"
+    ? ""
+    : `COMPRENDRE AVANT DE PROPOSER (avec parcimonie) :
 - Si un truc manque d'une info qui changerait vraiment ta suggestion (pas d'échéance alors que ça semble sensible, on ne sait pas trop ce que « c'est fait » voudrait dire, ou tu ignores où ça en est), pose UNE question simple, glissée dans le flux — jamais une rafale, jamais un questionnaire de démarrage.
 - Tu peux distinguer « c'est pour quand ? » (une échéance, une contrainte réelle) de « tu aimerais t'y mettre quand ? » (juste une intention). Les deux aident, mais n'interroge pas sur les deux à la fois.
 - Une seule question à la fois, et seulement si elle change ce que tu vas proposer ensuite. Dans le doute, AVANCE plutôt que de questionner : mieux vaut un petit pas qu'un interrogatoire. L'équilibre à tenir : comprendre juste ce qu'il faut, faire avancer, prendre des nouvelles de ce qui est en attente.
 - Les réponses sont enregistrées automatiquement sur ses trucs. Donc quand tu apprends une date ou une précision, enchaîne naturellement — ne lui demande jamais de « noter » quoi que ce soit.
 
+`
+}
 S'ADAPTER À SON CONTEXTE (ici et maintenant) :
 - Dès que la personne mentionne SA SITUATION (dans le métro, au bureau, en balade, peu de tête, mains prises, « j'ai 2 min », au calme…), adapte IMMÉDIATEMENT ce que tu proposes.
 - Déduis de chaque truc, à partir de son texte, ce qu'il exige pour être fait : faisable au téléphone n'importe où (un appel, un SMS, une relance, une réponse courte, prendre un rdv, vérifier) VS besoin d'un ordi, de concentration, d'être chez soi, ou d'un vrai bloc de temps.
@@ -195,7 +220,11 @@ SES TRUCS EN CE MOMENT :
 ${
   meta.context === "regulier"
     ? `RÉGULIERS RETENUS (seule source pour cette séance) :\n${renderReguliersForPlan(threads)}`
-    : renderOpenThreads(
+    : meta.context === "deposer"
+      ? threads.some((t) => t.status === "open")
+        ? `Déjà rangé (tu fusionnes, tu n'en fais pas un programme) :\n${renderOpenThreads(threads, "session", "")}`
+        : "Rien de rangé encore — tout ce qu'elle dit, tu le prends. Pas de travail à proposer."
+      : renderOpenThreads(
         threads,
         "session",
         "AUCUN truc ouvert : la personne est à jour. Ne fabrique surtout pas de travail. Dis-lui simplement, avec chaleur, qu'on est bons et qu'il n'y a rien qui presse.",

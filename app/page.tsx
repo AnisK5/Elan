@@ -32,7 +32,6 @@ import WeekMomentum from "@/components/home/WeekMomentum";
 import { Dot, greeting, Logo } from "@/components/home/Branding";
 import { useAuth } from "@/components/AuthProvider";
 import { parseThreadOps } from "@/lib/ops";
-import { splitChatQuestion } from "@/lib/chat-question";
 import { doneCountsThisWeek, completionAt } from "@/lib/week-stats";
 import { sessionsToday } from "@/lib/session-memory";
 import { apiFetch, anthropicFailMessage, parseStreamError } from "@/lib/anthropic";
@@ -43,6 +42,8 @@ import {
   PLAN_VERSION,
   RESUME_MAX_AGE_MS,
 } from "@/lib/constants";
+import { AssistantSpeech } from "@/components/HighlightEncart";
+import { DEPOSER_PLAN_MESSAGE } from "@/lib/session-mode";
 import {
   backlogCounts,
   hasReguliersContainer,
@@ -240,11 +241,8 @@ export default function Home() {
     [openThreads, planStats],
   );
 
-  // Premier lancement : pas encore de séance. On reste sur « vider la tête »
-  // jusqu'au premier créneau — pas de morphing brutal vers « 15 min » au-dessus
-  // du chat dès le premier dépôt.
-  const settlingIn = ready && sessions.length === 0;
-  const isNewcomer = settlingIn && threads.length === 0;
+  // Premier lancement : jamais rien déposé ET jamais fait de séance.
+  const isNewcomer = ready && threads.length === 0 && sessions.length === 0;
 
   const showNotifyPrompt =
     ready &&
@@ -282,14 +280,17 @@ export default function Home() {
     if (ctx === "regulier") {
       return "Loyer, URSSAF, draps… on regarde ce qui revient — un pas à la fois.";
     }
+    if (ctx === "deposer") {
+      return DEPOSER_PLAN_MESSAGE;
+    }
     return "Présente-toi et je prends le pouls de tout ça avec toi, un pas à la fois.";
   }
 
   // Mise en cache par jour + signature du backlog pour ne pas rappeler l'IA sans raison.
   useEffect(() => {
     if (!ready || view !== "home" || ritualLockRef.current) return;
-    if (settlingIn) {
-      setPlan(null);
+    if (context === "deposer") {
+      setPlan({ message: DEPOSER_PLAN_MESSAGE, pick: "15" });
       setPlanLoading(false);
       return;
     }
@@ -371,7 +372,7 @@ export default function Home() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, view, planSig, context, settlingIn]);
+  }, [ready, view, planSig, context]);
 
   function endSession(transcript: ChatMessage[]) {
     if (transcript.length > 1) {
@@ -391,6 +392,7 @@ export default function Home() {
       : 0;
     clearActiveSession();
     setResume(null);
+    setContext("desk");
     setView("home");
     setRitualBrief(null);
     ritualLockRef.current = false;
@@ -400,10 +402,6 @@ export default function Home() {
   }
 
   function startFresh() {
-    if (sessions.length === 0) {
-      setDuration(15);
-      setContext("desk");
-    }
     clearActiveSession();
     setResume(null);
     sessionStartRef.current = new Date().toISOString();
@@ -423,11 +421,25 @@ export default function Home() {
     await fetchPlan({ chosen: d, ctx: "desk" });
   }
 
-  function pickContext(ctx: "sortie" | "courses" | "regulier") {
+  function startDeposer() {
+    ritualLockRef.current = false;
+    setRitualBrief(null);
+    setContext("deposer");
+    setDuration(OUTDOOR_DURATION);
+    durationSettled.current = true;
+    startFresh();
+  }
+
+  function pickContext(ctx: "sortie" | "courses" | "regulier" | "deposer") {
     setContext(ctx);
     setPlan(null);
     durationSettled.current = true;
     appliedSig.current = planSig;
+    if (ctx === "deposer") {
+      setPlan({ message: DEPOSER_PLAN_MESSAGE, pick: "15" });
+      setPlanLoading(false);
+      return;
+    }
     if (ctx === "regulier") {
       setDuration(15);
     }
@@ -436,6 +448,11 @@ export default function Home() {
 
   async function fetchPlan(opts?: { chosen?: number; ctx?: SessionContext }) {
     const ctx = opts?.ctx ?? context;
+    if (ctx === "deposer") {
+      setPlan({ message: DEPOSER_PLAN_MESSAGE, pick: "15" });
+      setPlanLoading(false);
+      return;
+    }
     if (openThreads.length === 0 && ctx === "desk") return;
     const reqId = ++planReq.current;
     setPlanLoading(true);
@@ -550,7 +567,7 @@ export default function Home() {
     setPointText("");
     setPointNote("");
     lastPointRef.current = t;
-    setChatExpanded(true);
+    // La dernière réplique s'affiche dans la bulle ; on n'ouvre pas l'historique.
 
     const last = chat[chat.length - 1];
     const withUser: ChatMessage[] =
@@ -572,7 +589,7 @@ export default function Home() {
         body: JSON.stringify({
           threads: snapshotThreads(),
           messages: withUser.map((m) => ({ role: m.role, content: m.content })),
-          meta: { name: settings.name, settlingIn: sessions.length === 0 },
+          meta: { name: settings.name },
         }),
       });
       if (!res.ok || !res.body) throw new Error("chat");
@@ -748,24 +765,13 @@ export default function Home() {
               Vide ta tête.
             </h1>
             <p className="mt-2 text-[15px] leading-relaxed text-muted">
-              Écris en vrac en dessous. Je garde. Ensuite, un créneau — pas
-              avant.
-            </p>
-          </>
-        ) : settlingIn ? (
-          <>
-            <h1 className="mt-1 font-display text-[28px] font-semibold leading-tight text-ink">
-              C&apos;est noté. Je porte.
-            </h1>
-            <p className="mt-2 text-[15px] leading-relaxed text-muted">
-              Tu peux encore déposer en dessous. Quand tu veux, on prend 15
-              min — un truc à la fois, j&apos;y suis.
+              Un truc, dix trucs — comme ça vient. On range ensemble.
             </p>
             <button
-              onClick={startFresh}
+              onClick={startDeposer}
               className="mt-5 w-full rounded-xl bg-teal py-4 text-center font-display text-lg font-semibold text-white transition hover:bg-teal-ink"
             >
-              Prendre 15 min
+              Déposer
             </button>
           </>
         ) : (
@@ -801,14 +807,18 @@ export default function Home() {
                         ? "Élan réfléchit à ce format…"
                         : context === "regulier"
                           ? "Élan regarde tes réguliers…"
-                        : "Élan regarde ce qu'il y a dehors…"
+                          : context === "deposer"
+                            ? "Élan t'attend…"
+                            : "Élan regarde ce qu'il y a dehors…"
                       : context === "desk"
                         ? "Élan te conseille pour aujourd'hui"
                         : context === "sortie"
                           ? "Élan pour ta sortie"
                           : context === "regulier"
                             ? "Élan pour ton régulier"
-                          : "Élan pour tes courses"}
+                            : context === "deposer"
+                              ? "Élan pour déposer"
+                              : "Élan pour tes courses"}
                   </span>
                 </div>
                 {/* Pendant le recalcul on masque l'ancien conseil : le laisser
@@ -820,9 +830,12 @@ export default function Home() {
                     <span className="h-3 w-3/5 animate-pulse rounded bg-teal/15" />
                   </div>
                 ) : plan?.message ? (
-                  <p className="animate-rise text-[15px] leading-relaxed text-teal-ink">
-                    {plan.message}
-                  </p>
+                  <div className="animate-rise">
+                    <AssistantSpeech
+                      content={plan.message}
+                      className="whitespace-pre-wrap text-[15px] leading-relaxed text-teal-ink"
+                    />
+                  </div>
                 ) : planUnreachable ? (
                   <p className="text-[15px] leading-relaxed text-amber">
                     Je n&apos;arrive pas à joindre Élan pour le moment. Tes
@@ -842,95 +855,100 @@ export default function Home() {
             )}
 
             <button
-              onClick={startFresh}
+              onClick={context === "deposer" ? startDeposer : startFresh}
               className="mt-5 w-full rounded-xl bg-teal py-4 text-center font-display text-lg font-semibold text-white transition hover:bg-teal-ink"
             >
-              Commencer la séance
+              {context === "deposer" ? "Déposer" : "Commencer la séance"}
             </button>
           </>
         )}
       </section>
 
-      {/* Une seule entrée : déposer, donner des nouvelles, ou les deux à la
-          fois. Séparer les deux n'avait pas de sens — c'est la même phrase
-          qu'on écrit, et /api/reconcile sait déjà créer autant que mettre
-          à jour. */}
-      <section className="mt-8">
-        <div className="mb-2 flex items-baseline justify-between gap-3 px-1">
-          <h2 className="text-sm font-medium text-muted">
-            {isNewcomer
-              ? "Écris ici."
-              : settlingIn
-                ? "Encore un truc ? Écris-le."
-                : "Quoi de neuf ? Dépose, raconte, ou demande-moi."}
-          </h2>
+      {!isNewcomer && (
+      <section className="mt-6">
+        <div className="mb-1.5 flex items-baseline justify-between gap-3 px-1">
+          <p className="text-xs font-medium text-faint">Une info en passant</p>
           {chat.length > 0 && (
             <div className="flex shrink-0 items-baseline gap-3">
-              {chat.length > 2 && (
-                <button
-                  onClick={() => setChatExpanded((v) => !v)}
-                  className="text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
-                >
-                  {chatExpanded ? "masquer plus tôt" : "plus tôt"}
-                </button>
-              )}
               <button
-                onClick={resetChat}
+                onClick={() => setChatExpanded((v) => !v)}
                 className="text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
               >
-                effacer
+                {chatExpanded
+                  ? "masquer"
+                  : `${chat.length} message${chat.length > 1 ? "s" : ""}`}
               </button>
+              {chatExpanded && (
+                <button
+                  onClick={resetChat}
+                  className="text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
+                >
+                  effacer
+                </button>
+              )}
             </div>
           )}
         </div>
-        <div className="rounded-2xl border border-line px-1 py-0.5">
-          {chat.length > 0 && (
+        <div className="rounded-2xl border border-line bg-surface/80 px-1 py-0.5 shadow-[0_8px_30px_-20px_rgba(38,35,29,0.45)]">
+          {chatExpanded && chat.length > 0 && (
             <div className="max-h-80 overflow-y-auto px-2 pb-2 pt-2">
               <div className="flex flex-col gap-2.5">
-                {(chatExpanded || chat.length <= 2
-                  ? chat
-                  : chat.slice(-2)
-                ).map((m, i) => {
-                  const isUser = m.role === "user";
-                  const split = isUser
-                    ? { body: m.content, question: null }
-                    : splitChatQuestion(m.content);
-                  return (
-                    <div
-                      key={i}
-                      className={isUser ? "flex justify-end" : "flex flex-col items-start gap-1.5"}
-                    >
-                      {(split.body || (pointBusy && !m.content)) && (
-                        <div
-                          className={
-                            isUser
-                              ? "max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-sink px-3.5 py-2 text-[15px] leading-relaxed text-ink"
-                              : "max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-teal-soft/50 px-3.5 py-2 text-[15px] leading-relaxed text-teal-ink"
-                          }
-                        >
-                          {split.body || (
-                            <span className="inline-flex gap-1 py-1">
-                              <Dot /> <Dot /> <Dot />
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      {split.question && (
-                        <p className="max-w-[92%] rounded-xl border border-teal/40 bg-surface px-3.5 py-2.5 text-[15px] font-medium leading-snug text-ink">
-                          {split.question}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
+                {chat.map((m, i) => (
+                  <div
+                    key={i}
+                    className={
+                      m.role === "user" ? "flex justify-end" : "flex justify-start"
+                    }
+                  >
+                    {m.role === "user" ? (
+                      <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-sink px-3.5 py-2 text-[15px] leading-relaxed text-ink">
+                        {m.content}
+                      </div>
+                    ) : (
+                      <div className="max-w-[92%] px-1 py-1">
+                        {m.content ? (
+                          <AssistantSpeech
+                            content={m.content}
+                            className="whitespace-pre-wrap text-[15px] leading-relaxed text-teal-ink"
+                          />
+                        ) : pointBusy ? (
+                          <span className="inline-flex gap-1 py-1">
+                            <Dot /> <Dot /> <Dot />
+                          </span>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
               <div ref={chatEndRef} />
             </div>
           )}
+          {!chatExpanded &&
+            (() => {
+              const last = [...chat]
+                .reverse()
+                .find((m) => m.role === "assistant");
+              const text = last?.content.trim() ?? "";
+              if (!text && !pointBusy) return null;
+              return (
+                <div className="px-3 pt-2">
+                  {text ? (
+                    <AssistantSpeech
+                      content={last?.content ?? ""}
+                      className="whitespace-pre-wrap text-[15px] leading-relaxed text-teal-ink"
+                    />
+                  ) : (
+                    <span className="inline-flex gap-1 py-1">
+                      <Dot /> <Dot /> <Dot />
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
           <div className="flex items-end gap-2">
             <textarea
               value={pointText}
-              autoFocus={settlingIn}
               onChange={(e) => setPointText(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
@@ -939,11 +957,7 @@ export default function Home() {
                 }
               }}
               rows={1}
-              placeholder={
-                isNewcomer || settlingIn
-                  ? "ex. relancer Paul pour le devis"
-                  : "ex. j'ai appelé le dentiste · on s'organise comment demain ?"
-              }
+              placeholder="ex. j'ai appelé le dentiste"
               className="max-h-40 min-h-[46px] flex-1 resize-none rounded-xl bg-transparent px-3 py-3 text-[15px] leading-snug text-ink outline-none placeholder:text-faint"
             />
             <button
@@ -983,6 +997,7 @@ export default function Home() {
           )}
         </div>
       </section>
+      )}
 
       {/* Avancement — colonne des victoires, jamais ce qui reste */}
       {doneWeek > 0 && (

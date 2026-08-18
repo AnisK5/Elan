@@ -6,9 +6,11 @@ export function splitChatQuestion(text: string): {
 } {
   const trimmed = text.trim();
   if (!trimmed) return { body: "", question: null };
-  if (!/\?\s*$/.test(trimmed)) return { body: trimmed, question: null };
 
-  const m = trimmed.match(/^(.*?[.!…])\s+([^?]*\?)\s*$/);
-  if (m) return { body: m[1].trim(), question: m[2].trim() };
-  return { body: "", question: trimmed };
+  const chunks = trimmed.split(/(?<=[.!?])\s+/);
+  const last = chunks[chunks.length - 1]?.trim() ?? "";
+  if (!last.endsWith("?")) return { body: trimmed, question: null };
+
+  const body = chunks.slice(0, -1).join(" ").trim();
+  return { body, question: last };
 }
