@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { resolveAnthropicKey } from "@/lib/anthropic";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,7 +40,7 @@ function safeParse(text: string): { title: string; note: string | null } | null 
 }
 
 export async function POST(req: Request) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = resolveAnthropicKey(req);
   if (!apiKey) return Response.json({ title: null, note: null });
 
   let body: Body;

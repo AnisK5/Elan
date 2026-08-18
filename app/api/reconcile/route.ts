@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { resolveAnthropicKey } from "@/lib/anthropic";
 import type { ChatMessage, Thread } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -117,7 +118,7 @@ function safeParse(text: string): { updates: unknown[]; note: string } | null {
 }
 
 export async function POST(req: Request) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = resolveAnthropicKey(req);
   if (!apiKey) return Response.json({ updates: [], note: "" });
 
   let body: Body;

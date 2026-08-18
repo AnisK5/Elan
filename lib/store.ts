@@ -13,6 +13,7 @@ import type {
   ThreadKind,
 } from "./types";
 import { getSupabase } from "./supabase";
+import { apiFetch } from "./anthropic";
 
 const THREADS_KEY = "elan.threads.v1";
 const PROJECTS_KEY = "elan.projects.v1";
@@ -402,7 +403,7 @@ function tomorrowISO(): string {
 
 export async function tidyThread(id: string, text: string): Promise<void> {
   try {
-    const res = await fetch("/api/tidy", {
+    const res = await apiFetch("/api/tidy", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),

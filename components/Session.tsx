@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage, SessionContext, SessionLog, Thread } from "@/lib/types";
 import { parseThreadOps } from "@/lib/ops";
+import { apiFetch } from "@/lib/anthropic";
 import {
   applyThreadOps,
   clearActiveSession,
@@ -123,7 +124,7 @@ export default function Session({
     setMessages([...convo, { role: "assistant", content: "", at }]);
 
     try {
-      const res = await fetch("/api/session", {
+      const res = await apiFetch("/api/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -175,7 +176,7 @@ export default function Session({
 
   async function reconcile(msgs: ChatMessage[]) {
     try {
-      const res = await fetch("/api/reconcile", {
+      const res = await apiFetch("/api/reconcile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ threads: threadsRef.current, messages: msgs }),

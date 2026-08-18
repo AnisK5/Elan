@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { resolveAnthropicKey } from "@/lib/anthropic";
 import type { ChatMessage, SessionContext, SessionLog, Thread } from "@/lib/types";
 import { renderReguliersForPlan, REGULIERS_DISCOVERY_PROMPT, REGULIERS_FOCUS_PROMPT } from "@/lib/entretiens";
 import {
@@ -202,12 +203,12 @@ ${
 }
 
 export async function POST(req: Request) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = resolveAnthropicKey(req);
   if (!apiKey) {
     return Response.json(
       {
         error:
-          "Clé API manquante. Ajoute ANTHROPIC_API_KEY dans elan/.env.local puis relance le serveur.",
+          "Clé API manquante. Colle la tienne dans Clé Claude, ou configure ANTHROPIC_API_KEY.",
       },
       { status: 400 },
     );

@@ -52,12 +52,13 @@ URL `/`.
 
 Tout l'écran = **`app/page.tsx`** + morceaux dans `components/home/*`.
 
-### Header — « Élan » + date
+### Header — « Élan » + date + réglages
 
 | | |
 |-|-|
-| **Tu vois** | **Élan** · date du jour à droite |
-| **Front** | `app/page.tsx` · `Branding.tsx` |
+| **Tu vois** | **Élan** · date du jour · pictogramme réglages |
+| **Front** | `app/page.tsx` · `Branding.tsx` · `components/SettingsSheet.tsx` |
+| **Au clic réglages** | Tiroir : rappel matin, clé Claude, import, déconnexion |
 | **Données** | — |
 
 ### « Ta séance du jour »
@@ -128,7 +129,8 @@ Tout l'écran = **`app/page.tsx`** + morceaux dans `components/home/*`.
 
 | | |
 |-|-|
-| **Front** | `page.tsx` · `signOut()` |
+| **Tu vois** | Dans le tiroir **Réglages** |
+| **Front** | `components/SettingsSheet.tsx` · `signOut()` |
 | **Au clic** | Retour écran Welcome |
 
 ---

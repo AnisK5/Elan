@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { resolveAnthropicKey } from "@/lib/anthropic";
 import type { ChatMessage, Thread } from "@/lib/types";
 import { ageLabel, dueLabel, intentionLabel } from "@/lib/thread-labels";
 import { socle } from "@/lib/voice";
@@ -45,10 +46,10 @@ ${renderThreads(threads)}`;
 }
 
 export async function POST(req: Request) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = resolveAnthropicKey(req);
   if (!apiKey) {
     return Response.json(
-      { error: "Clé API manquante." },
+      { error: "Clé API manquante. Colle la tienne dans Clé Claude, ou configure ANTHROPIC_API_KEY." },
       { status: 400 },
     );
   }

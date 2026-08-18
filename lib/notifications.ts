@@ -1,5 +1,6 @@
 import type { SessionContext, Settings, Thread } from "./types";
 import { getSupabase, isSupabaseConfigured } from "./supabase";
+import { apiFetch } from "./anthropic";
 
 export const DEFAULT_NOTIFY_TIME = "09:00";
 export const NOTIFY_FIRED_KEY = "elan.notify.fired.v1";
@@ -395,7 +396,7 @@ export async function fetchPlanForNotification(
     return { message: "", pick: "15" };
   }
   try {
-    const deskRes = await fetch("/api/plan", {
+    const deskRes = await apiFetch("/api/plan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ threads: open, stats, context, meta }),
@@ -407,7 +408,7 @@ export async function fetchPlanForNotification(
     };
     const pick = desk.pick ?? "15";
     const chosen = Number(pick);
-    const notifyRes = await fetch("/api/plan", {
+    const notifyRes = await apiFetch("/api/plan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

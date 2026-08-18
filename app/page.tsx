@@ -21,13 +21,12 @@ import {
 import Session from "@/components/Session";
 import InstallPrompt from "@/components/InstallPrompt";
 import RitualNotify from "@/components/RitualNotify";
-import RitualNotifySettings from "@/components/RitualNotifySettings";
+import SettingsSheet from "@/components/SettingsSheet";
 import { useRitualReminder } from "@/components/useRitualReminder";
 import { isNotifyPromptDismissed } from "@/lib/notifications";
 import Welcome from "@/components/Welcome";
 import HelpButton from "@/components/HelpButton";
 import BacklogPeek from "@/components/home/BacklogPeek";
-import ImportData from "@/components/home/ImportData";
 import SessionPick from "@/components/home/SessionPick";
 import WeekMomentum from "@/components/home/WeekMomentum";
 import { Dot, greeting, Logo } from "@/components/home/Branding";
@@ -35,6 +34,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { parseThreadOps } from "@/lib/ops";
 import { doneCountsThisWeek, completionAt } from "@/lib/week-stats";
 import { sessionsToday } from "@/lib/session-memory";
+import { apiFetch } from "@/lib/anthropic";
 import {
   normalizeDuration,
   OUTDOOR_DURATION,
@@ -308,7 +308,7 @@ export default function Home() {
     let cancelled = false;
     const reqId = ++planReq.current;
     setPlanLoading(true);
-    fetch("/api/plan", {
+    apiFetch("/api/plan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -425,7 +425,7 @@ export default function Home() {
     setPlanLoading(true);
     if (ctx !== "desk") setPlan(null);
     try {
-      const res = await fetch("/api/plan", {
+      const res = await apiFetch("/api/plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -544,7 +544,7 @@ export default function Home() {
 
     let answer = "";
     try {
-      const res = await fetch("/api/chat", {
+      const res = await apiFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -586,7 +586,7 @@ export default function Home() {
     // Ce qui vient d'être dit peut changer les trucs (fait, reporté, nouveau) :
     // on réconcilie en arrière-plan, sans bloquer la conversation.
     try {
-      const res = await fetch("/api/reconcile", {
+      const res = await apiFetch("/api/reconcile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -664,7 +664,14 @@ export default function Home() {
             Élan
           </span>
         </div>
-        <span className="text-sm capitalize text-muted">{today}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm capitalize text-muted">{today}</span>
+          <SettingsSheet
+            threads={threads}
+            planStats={planStats}
+            onSignOut={signOut}
+          />
+        </div>
       </header>
 
       {wrapUp && (
@@ -934,18 +941,8 @@ export default function Home() {
         planStats={planStats}
       />
 
-      <RitualNotifySettings threads={threads} planStats={planStats} />
-
-      <ImportData />
-
-      <footer className="mt-auto flex flex-col items-center gap-1 pt-10 text-center text-xs text-faint">
-        <span>Élan — pense à la séance, pas à la liste.</span>
-        <button
-          onClick={signOut}
-          className="text-faint underline-offset-2 hover:text-muted hover:underline"
-        >
-          Se déconnecter
-        </button>
+      <footer className="mt-auto pt-10 text-center text-xs text-faint">
+        Élan — pense à la séance, pas à la liste.
       </footer>
     </main>
 

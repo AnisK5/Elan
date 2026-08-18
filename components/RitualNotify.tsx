@@ -20,10 +20,13 @@ export default function RitualNotify({
   visible,
   threads,
   planStats,
+  embedded = false,
 }: {
   visible: boolean;
   threads: Thread[];
   planStats: PlanStatsForNotify;
+  /** Dans les réglages : on ignore le « plus tard » de l'accueil. */
+  embedded?: boolean;
 }) {
   const { settings, update } = useSettings();
   const [time, setTime] = useState(settings.notifyTime ?? DEFAULT_NOTIFY_TIME);
@@ -58,8 +61,11 @@ export default function RitualNotify({
     };
   }, [pushReady, settings.notifyEnabled]);
 
-  if (!visible || hidden || setupComplete) return null;
-  if (!settings.notifyEnabled && isNotifyPromptDismissed()) return null;
+  if (setupComplete) return null;
+  if (!embedded) {
+    if (!visible || hidden) return null;
+    if (!settings.notifyEnabled && isNotifyPromptDismissed()) return null;
+  }
 
   async function enable() {
     setBusy(true);
@@ -134,7 +140,11 @@ export default function RitualNotify({
   }
 
   return (
-    <div className="animate-rise mt-6 rounded-2xl border border-teal-soft bg-teal-soft/40 p-4">
+    <div
+      className={`rounded-2xl border border-teal-soft bg-teal-soft/40 p-4 ${
+        embedded ? "" : "animate-rise mt-6"
+      }`}
+    >
       <p className="text-sm font-medium text-ink">
         {needsDevicePush
           ? "Rappel activé — finalise sur cet appareil"
@@ -169,12 +179,14 @@ export default function RitualNotify({
         >
           Exemple
         </button>
-        <button
-          onClick={later}
-          className="rounded-lg px-2 py-1.5 text-sm text-muted transition hover:text-ink"
-        >
-          Plus tard
-        </button>
+        {!embedded && (
+          <button
+            onClick={later}
+            className="rounded-lg px-2 py-1.5 text-sm text-muted transition hover:text-ink"
+          >
+            Plus tard
+          </button>
+        )}
       </div>
       {error && <p className="mt-2 text-xs text-amber">{error}</p>}
       <p className="mt-2 text-[11px] leading-relaxed text-faint">

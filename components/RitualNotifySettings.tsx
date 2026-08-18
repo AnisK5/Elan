@@ -103,7 +103,7 @@ export default function RitualNotifySettings({
   }
 
   return (
-    <div className="animate-rise mt-6 rounded-2xl border border-line bg-surface p-4">
+    <div className="rounded-2xl border border-line bg-surface p-4">
       <p className="text-sm font-medium text-ink">Rappel du matin</p>
       <p className="mt-1 text-[13px] leading-relaxed text-muted">
         Notif courte sur le téléphone. Le mail reprend le conseil complet du

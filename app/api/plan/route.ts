@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { resolveAnthropicKey } from "@/lib/anthropic";
 import type { SessionContext, Thread } from "@/lib/types";
 import {
   isContainerThread,
@@ -386,7 +387,7 @@ function safeParse(text: string): { message: string; pick: string } | null {
 }
 
 export async function POST(req: Request) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = resolveAnthropicKey(req);
   if (!apiKey) return Response.json({ error: "no-key" }, { status: 400 });
 
   let body: Body;

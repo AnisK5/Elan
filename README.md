@@ -47,7 +47,7 @@ npm run dev
 
 | Variable | Obligatoire | Description |
 |----------|-------------|-------------|
-| `ANTHROPIC_API_KEY` | Oui | API Claude |
+| `ANTHROPIC_API_KEY` | Oui (repli) | Clé Claude de l'app. Chaque personne peut coller la sienne (réglage **Clé Claude**, stockée sur l'appareil). Les rappels matin côté serveur utilisent encore celle-ci. |
 | `NEXT_PUBLIC_SUPABASE_*` | Non | Compte + sync |
 
 Sans Supabase : **localStorage** uniquement. SQL (tables + cron push) : [docs/supabase-schema.sql](./docs/supabase-schema.sql).

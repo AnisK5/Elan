@@ -27,7 +27,7 @@ export default function ImportData() {
 
   if (!open) {
     return (
-      <div className="mt-8 text-center">
+      <div className="text-center">
         <button
           onClick={() => setOpen(true)}
           className="text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
@@ -39,7 +39,7 @@ export default function ImportData() {
   }
 
   return (
-    <div className="mt-8 rounded-2xl border border-line bg-surface p-4">
+    <div className="rounded-2xl border border-line bg-surface p-4">
       <p className="text-sm font-medium text-ink">
         Importer d&apos;anciennes données
       </p>
