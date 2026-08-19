@@ -44,6 +44,7 @@ import {
 } from "@/lib/constants";
 import { AssistantSpeech } from "@/components/HighlightEncart";
 import { DEPOSER_PLAN_MESSAGE } from "@/lib/session-mode";
+import { trucLabels } from "@/lib/emphasize-truc";
 import {
   backlogCounts,
   hasReguliersContainer,
@@ -181,6 +182,8 @@ export default function Home() {
 
   const showPlanBlock =
     open > 0 || context !== "desk" || hasReguliersContainer(openThreads);
+
+  const trucs = useMemo(() => trucLabels(threads), [threads]);
 
   // Avancement : trucs bouclés par jour cette semaine (colonne des victoires, sans dénominateur).
   const { doneToday, doneWeek, days, todayIdx } = useMemo(
@@ -712,7 +715,7 @@ export default function Home() {
 
   return (
     <>
-    <main className="mx-auto flex min-h-dvh w-full max-w-xl flex-col px-5 pb-24">
+    <main className={`mx-auto flex min-h-dvh w-full max-w-xl flex-col px-5 ${isNewcomer ? "pb-24" : "pb-32"}`}>
       <header className="flex items-center justify-between py-6">
         <div className="flex items-center gap-2">
           <Logo />
@@ -831,6 +834,7 @@ export default function Home() {
                     <AssistantSpeech
                       content={plan.message}
                       className="whitespace-pre-wrap text-[15px] leading-relaxed text-teal-ink"
+                      trucs={trucs}
                     />
                   </div>
                 ) : planUnreachable ? (
@@ -839,9 +843,11 @@ export default function Home() {
                     trucs sont bien là — tu peux quand même lancer un créneau.
                   </p>
                 ) : (
-                  <p className="text-[15px] leading-relaxed text-teal-ink">
-                    {planFallbackMessage(context)}
-                  </p>
+                  <AssistantSpeech
+                    content={planFallbackMessage(context)}
+                    className="whitespace-pre-wrap text-[15px] leading-relaxed text-teal-ink"
+                    trucs={trucs}
+                  />
                 )}
               </div>
             ) : (
@@ -879,6 +885,7 @@ export default function Home() {
             setPointNote("");
           }}
           onReset={resetChat}
+          trucs={trucs}
         />
       )}
 
@@ -915,7 +922,7 @@ export default function Home() {
       </footer>
     </main>
 
-    <HelpButton />
+    <HelpButton lift={!isNewcomer} />
     </>
   );
 }

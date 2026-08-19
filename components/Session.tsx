@@ -20,6 +20,7 @@ import {
 } from "@/lib/store";
 import { AssistantSpeech } from "@/components/HighlightEncart";
 import { isUntimedSession } from "@/lib/session-mode";
+import { trucLabels } from "@/lib/emphasize-truc";
 import QuickCapture from "./QuickCapture";
 import ThreadRow from "./ThreadRow";
 
@@ -235,6 +236,7 @@ export default function Session({
   }
 
   const openThreads = threads.filter((t) => t.status === "open");
+  const trucs = trucLabels(threads);
 
   return (
     <div className="fixed inset-0 z-40 flex flex-col bg-paper">
@@ -320,7 +322,7 @@ export default function Session({
                   )}
                 </div>
                 {m.content ? (
-                  <AssistantSpeech content={m.content} />
+                  <AssistantSpeech content={m.content} trucs={trucs} />
                 ) : (
                   streaming && <TypingDots />
                 )}

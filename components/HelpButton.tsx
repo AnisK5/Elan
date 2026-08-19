@@ -4,7 +4,11 @@ import { useEffect, useState } from "react";
 import { ExplainerBody } from "./Explainer";
 
 /** Bouton flottant discret : ramène l'explication d'Élan quand on l'a perdue. */
-export default function HelpButton() {
+export default function HelpButton({
+  lift = false,
+}: {
+  lift?: boolean;
+}) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -26,7 +30,11 @@ export default function HelpButton() {
         onClick={() => setOpen(true)}
         aria-label="Comment marche Élan ?"
         title="Comment marche Élan ?"
-        style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}
+        style={{
+          bottom: lift
+            ? "calc(4.75rem + env(safe-area-inset-bottom, 0px))"
+            : "calc(1.25rem + env(safe-area-inset-bottom, 0px))",
+        }}
         className="fixed right-5 z-40 grid h-11 w-11 place-items-center rounded-full border border-line bg-surface font-display text-xl font-semibold text-muted shadow-[0_4px_20px_-6px_rgba(38,35,29,0.35)] transition hover:border-teal hover:text-teal"
       >
         ?

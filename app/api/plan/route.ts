@@ -158,7 +158,7 @@ function deskPlanPrompt(
 
 TON RÔLE ICI : à partir de ses trucs en cours, tu conseilles la FORME de sa journée d'aujourd'hui, avant même qu'elle commence son créneau.
 
-TA SORTIE : 1 à 2 phrases courtes, chaleureuses, CONCRÈTES, qui citent ses trucs réels par leur nom. COMMENCE par la durée que TU recommandes et dis pourquoi ce format-là. C'est un conseil que tu donnes, pas un format que tu constates : n'écris jamais « 30 min, ça tombe bien » comme si la durée t'était imposée — c'est toi qui la proposes, alors annonce-la (« je te propose 30 min aujourd'hui, parce que… »). Exemples de ton :
+TA SORTIE : 1 à 2 phrases courtes, chaleureuses, CONCRÈTES, qui citent ses trucs réels par leur nom. COMMENCE par la durée que TU recommandes et dis pourquoi ce format-là. C'est un conseil que tu donnes, pas un format que tu constates : n'écris jamais « 30 min, ça tombe bien » comme si la durée t'était imposée — c'est toi qui la proposes, alors annonce-la (« je te propose 30 min aujourd'hui, parce que… »). La DERNIÈRE phrase est le pas (le truc nommé) — l'écran la sort du paragraphe. Exemples de ton :
 - « Une séance de 25 min suffit largement aujourd'hui : de quoi débloquer la relance de Paul et rester serein. »
 - « Il y a de quoi faire — je te suggérerais 2 séances de 25 min, ou une de 50, pour venir à bout de la déclaration tant que la fenêtre est ouverte. »
 - « Peu de temps ? Une séance éclair de 10 min juste pour poser les choses et faire le point, ce serait déjà ça. »

@@ -6,7 +6,24 @@ import AiRetryBanner from "@/components/AiRetryBanner";
 import { AssistantSpeech } from "@/components/HighlightEncart";
 import { Dot } from "@/components/home/Branding";
 
-/** Passe-plat hors séance : pastille muette, calque au-dessus pour l'échange. */
+/** Passe-plat hors séance : champ en bas (comme un composeur), calque au-dessus. */
+
+function ChatIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="h-[18px] w-[18px] shrink-0 text-teal"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M5.5 18.5 4 21l3.2-1.2A8.5 8.5 0 1 0 5.5 18.5Z" />
+    </svg>
+  );
+}
 
 export default function ChatBubble({
   chat,
@@ -20,6 +37,7 @@ export default function ChatBubble({
   undo,
   onUndo,
   onReset,
+  trucs,
 }: {
   chat: ChatMessage[];
   pointText: string;
@@ -32,6 +50,7 @@ export default function ChatBubble({
   undo: Thread[] | null;
   onUndo: () => void;
   onReset: () => void;
+  trucs?: string[];
 }) {
   const [open, setOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -58,30 +77,31 @@ export default function ChatBubble({
     };
   }, [open]);
 
-  const lastAssistant = [...chat]
-    .reverse()
-    .find((m) => m.role === "assistant" && m.content.trim());
-  const preview = busy
-    ? "Élan écrit…"
-    : lastAssistant?.content.trim() || "Une info en passant";
-
   return (
     <>
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        onClick={() => setOpen(true)}
-        className="mt-3 inline-flex max-w-[85%] items-center gap-2 rounded-full bg-sink px-3.5 py-2 text-left transition hover:bg-line"
-      >
-        <span className="min-w-0 truncate text-[13px] text-muted">
-          {preview}
-        </span>
-      </button>
+      {!open && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30">
+          <div className="mx-auto max-w-xl px-5 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pt-2">
+            <button
+              type="button"
+              aria-expanded={false}
+              aria-haspopup="dialog"
+              aria-label="Donner une info en passant"
+              onClick={() => setOpen(true)}
+              className="pointer-events-auto flex w-full items-center gap-3 rounded-full border border-line bg-surface px-4 py-3 text-left shadow-[0_-6px_24px_-12px_rgba(38,35,29,0.35)] transition hover:border-teal/40"
+            >
+              <ChatIcon />
+              <span className="min-w-0 flex-1 truncate text-[15px] text-faint">
+                Une info en passant…
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {open && (
         <div
-          className="fixed inset-0 z-40 flex items-end justify-center bg-ink/25 backdrop-blur-[2px]"
+          className="fixed inset-0 z-[45] flex items-end justify-center bg-ink/25 backdrop-blur-[2px]"
           onClick={() => setOpen(false)}
         >
           <div
@@ -144,6 +164,7 @@ export default function ChatBubble({
                             <AssistantSpeech
                               content={m.content}
                               className="whitespace-pre-wrap text-[15px] leading-relaxed text-teal-ink"
+                              trucs={trucs}
                             />
                           ) : busy ? (
                             <span className="inline-flex gap-1 py-1">
