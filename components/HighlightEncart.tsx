@@ -29,7 +29,7 @@ function SpokenBits({ text, trucs }: { text: string; trucs?: string[] }) {
     <>
       {runs.map((r, i) =>
         r.strong ? (
-          <strong key={i} className="font-bold text-teal-ink">
+          <strong key={i} className="font-bold">
             {r.text}
           </strong>
         ) : (

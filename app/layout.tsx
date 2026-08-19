@@ -12,6 +12,7 @@ const display = Bricolage_Grotesque({
 const sans = Instrument_Sans({
   variable: "--font-instrument",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {

@@ -61,6 +61,8 @@ export default function Session({
   const scrollRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
   const closed = useRef(false);
+  const ritualBriefRef = useRef(ritualBrief);
+  ritualBriefRef.current = ritualBrief;
   const retryRef = useRef<{
     convo: ChatMessage[];
     ending: boolean;
@@ -151,7 +153,7 @@ export default function Session({
             name,
             ending,
             priorSessionsToday,
-            ritualBrief: ritualBrief ?? undefined,
+            ritualBrief: ritualBriefRef.current ?? undefined,
           },
         }),
       });

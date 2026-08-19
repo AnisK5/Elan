@@ -396,10 +396,17 @@ export default function Home() {
     setTimeout(() => setWrapUp(false), 6000);
   }
 
-  function startFresh() {
+  function startFresh(opts?: { brief?: string | null }) {
     clearActiveSession();
     setResume(null);
     sessionStartRef.current = new Date().toISOString();
+    // Même contrat que la notif : le conseil déjà lu devient le brief de séance.
+    if (opts && "brief" in opts) {
+      setRitualBrief(opts.brief?.trim() ? { message: opts.brief.trim() } : null);
+    } else {
+      const msg = (ritualBrief?.message ?? plan?.message ?? "").trim();
+      if (msg) setRitualBrief({ message: msg });
+    }
     setView("session");
   }
 
@@ -419,11 +426,10 @@ export default function Home() {
 
   function startDeposer() {
     ritualLockRef.current = false;
-    setRitualBrief(null);
     setContext("deposer");
     setDuration(OUTDOOR_DURATION);
     durationSettled.current = true;
-    startFresh();
+    startFresh({ brief: null });
   }
 
   function pickContext(ctx: "sortie" | "courses" | "regulier" | "deposer") {

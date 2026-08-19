@@ -58,4 +58,16 @@ describe("emphasize-truc", () => {
       { text: ", c'est calé.", strong: false },
     ]);
   });
+
+  it("gras approximatif si le modèle paraphrase le libellé", () => {
+    const text =
+      "relancer l'impression de son doc sur la donation, qu'il attend depuis un moment.";
+    expect(findTrucInText(text, ["Impression doc donation papa"])).toEqual({
+      start: text.indexOf("impression"),
+      match: "impression de son doc sur la donation",
+    });
+    expect(
+      speechRuns(text, ["Impression doc donation papa"]).some((r) => r.strong),
+    ).toBe(true);
+  });
 });

@@ -418,6 +418,7 @@ export async function fetchPlanForNotification(
         meta,
         forNotify: true,
         chosen: Number.isFinite(chosen) ? chosen : 15,
+        sourceMessage: desk.message,
       }),
     });
     if (notifyRes.ok) {

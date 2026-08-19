@@ -36,6 +36,8 @@ interface Body {
   meta?: { name?: string };
   /** Corps court pour notif push — pas le paragraphe conseil de l'accueil. */
   forNotify?: boolean;
+  /** Conseil déjà composé (accueil / mail) — la notif le raccourcit, elle ne recompose pas. */
+  sourceMessage?: string;
 }
 
 function renderLines(threads: Thread[]): string {
@@ -327,15 +329,20 @@ function notifyPlanPrompt(
   stats?: PlanStats,
   name?: string,
   chosen?: number,
+  sourceMessage?: string,
 ): string {
   const chosenRule = chosen
     ? `\n\nDURÉE DÉJÀ CHOISIE : ${chosen} min — c'est le même conseil que sur l'accueil. Renvoie obligatoirement "pick":"${chosen}". Tu n'écris QUE le message court (max 90 car.), sans répéter la durée.`
+    : "";
+  const source = sourceMessage?.trim()
+    ? `\n\nCONSEIL DÉJÀ COMPOSÉ (accueil et mail) :\n« ${sourceMessage.trim()} »\nTu RACCOURCIS ce conseil. MÊME truc. Tu n'en choisis pas un autre.`
     : "";
   return `${socle(name)}
 
 ${renderStats(stats)}
 
 ${renderLines(threads)}
+${source}
 
 TON RÔLE : rédiger le corps d'une NOTIFICATION PUSH du matin — pas le paragraphe conseil de l'accueil.
 
@@ -344,7 +351,7 @@ SORTIE JSON : "pick" ("5"|"15"|"30"|"50") + "message" (UNE phrase, max 90 caract
 RÈGLES NOTIF (non négociables) :
 - La durée va dans le titre de l'app ("Élan · 30 min") — NE la répète PAS dans message (pas de « je te propose 30 min »).
 - Pas de dates, échéances, comptages (« 23 trucs », « avant le 15/08 »), pas de culpabilité.
-- Concret : UN truc ou intention, nommé simplement.
+- Concret : UN truc ou intention, nommé simplement — le même que le conseil déjà composé, s'il est fourni.
 - Ton : compagnon qui attend, chaleureux, léger — donne envie d'ouvrir, pas de pression.
 - Pas de « Tap pour » ni consigne technique.
 
@@ -355,7 +362,22 @@ Exemples de message :
 - « Darty et la poste — on regarde ça ensemble ? »`;
 }
 
-function fallbackNotifyPlan(threads: Thread[]): { message: string; pick: string } {
+function clipForNotify(message: string): string {
+  const t = message.trim();
+  if (t.length <= 90) return t;
+  const cut = t.slice(0, 87);
+  const i = cut.lastIndexOf(" ");
+  return `${(i > 40 ? cut.slice(0, i) : cut).trim()}…`;
+}
+
+function fallbackNotifyPlan(
+  threads: Thread[],
+  sourceMessage?: string,
+): { message: string; pick: string } {
+  const source = sourceMessage?.trim();
+  if (source) {
+    return { message: clipForNotify(source), pick: "15" };
+  }
   const open = openThreads(threads);
   if (open.length === 0) {
     return { message: "Rien qui presse. Un petit point quand tu veux ?", pick: "5" };
@@ -423,7 +445,13 @@ export async function POST(req: Request) {
       model: "claude-sonnet-4-6",
       max_tokens: forNotify ? 120 : 400,
       system: forNotify
-        ? notifyPlanPrompt(open, body.stats, body.meta?.name, body.chosen)
+        ? notifyPlanPrompt(
+            open,
+            body.stats,
+            body.meta?.name,
+            body.chosen,
+            body.sourceMessage,
+          )
         : systemPrompt(
             open,
             body.stats,
@@ -448,7 +476,7 @@ export async function POST(req: Request) {
     const plan = parsed?.message.trim()
       ? parsed
       : forNotify
-        ? fallbackNotifyPlan(open)
+        ? fallbackNotifyPlan(open, body.sourceMessage)
         : fallbackPlan(context, open);
     let pick = ["5", "15", "30", "50"].includes(plan.pick)
       ? plan.pick
@@ -460,7 +488,7 @@ export async function POST(req: Request) {
   } catch (e) {
     console.error("[plan] échec:", e instanceof Error ? e.message : e);
     const plan = forNotify
-      ? fallbackNotifyPlan(open)
+      ? fallbackNotifyPlan(open, body.sourceMessage)
       : fallbackPlan(context, open);
     return Response.json({
       message: plan.message,

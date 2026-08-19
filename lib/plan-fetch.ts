@@ -72,6 +72,7 @@ export async function generateNotifyCopyViaApi(opts: {
   stats: PlanStatsForNotify;
   chosen: number;
   meta?: { name?: string };
+  sourceMessage?: string;
 }): Promise<{ message: string; pick: string } | null> {
   return postPlan({
     threads: opts.threads.filter((t) => t.status === "open"),
@@ -80,5 +81,6 @@ export async function generateNotifyCopyViaApi(opts: {
     meta: opts.meta,
     forNotify: true,
     chosen: opts.chosen,
+    sourceMessage: opts.sourceMessage,
   });
 }

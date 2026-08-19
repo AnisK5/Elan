@@ -44,4 +44,15 @@ describe("splitChatQuestion", () => {
       point: "On se fait 15 min ?",
     });
   });
+
+  it("raccourcit une question trop longue sur le dernier tiret", () => {
+    expect(
+      splitChatQuestion(
+        "On relance l'impression. Le tout petit premier pas, là maintenant, c'est juste de vérifier que tu as bien le fichier sous la main dans ta boîte mail — tu le retrouves ?",
+      ),
+    ).toEqual({
+      body: "On relance l'impression. Le tout petit premier pas, là maintenant, c'est juste de vérifier que tu as bien le fichier sous la main dans ta boîte mail.",
+      point: "Tu le retrouves ?",
+    });
+  });
 });

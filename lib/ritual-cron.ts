@@ -199,6 +199,7 @@ export async function runRitualPushCron(options?: {
         stats,
         chosen: mins,
         meta: { name: raw.name ?? undefined },
+        sourceMessage: plan.message,
       })) ?? null;
     const payload = buildRitualNotification({
       minutes: mins,

@@ -21,7 +21,7 @@ interface Meta {
   ending?: boolean;
   context?: SessionContext;
   priorSessionsToday?: SessionLog[];
-  /** Accroche notif matin — garder le même fil en ouverture de séance. */
+  /** Conseil déjà lu (accueil, mail ou notif) — même fil en ouverture. */
   ritualBrief?: { message: string };
 }
 
@@ -32,7 +32,7 @@ interface Body {
 }
 
 const OPENING_DESK =
-  "[La séance commence. Accueille en une phrase chaleureuse. Puis UN SEUL truc, nommé comme elle le dirait, en français simple — pas de jargon, pas de liste. Trie en silence : si un truc n'est pas pour maintenant, il n'entre pas dans le message, même pour dire qu'on n'y touche pas. Termine par UN premier pas minuscule, une question. Séance BUREAU = assis, sous la main. Si un BRIEF RITUEL est fourni, accroche-toi à ce sujet.]";
+  "[La séance commence. Accueille en une phrase chaleureuse. Puis UN SEUL truc — le même que le BRIEF s'il est fourni, nommé comme elle le dirait, en français simple. Pas de jargon, pas de liste. Trie en silence : si un truc n'est pas pour maintenant, il n'entre pas dans le message, même pour dire qu'on n'y touche pas. Termine par UNE question courte (le pas, 8-12 mots, sans préambule) : « tu as le fichier sous la main ? ». Séance BUREAU = assis, sous la main. Si un BRIEF RITUEL est fourni, accroche-toi à CE sujet : n'invente pas un autre programme.]";
 
 const OPENING_SORTIE =
   "[La séance SORTIE commence. La personne est (ou va être) dehors — pas assise. Regarde TOUS ses trucs ouverts et repère ceux qui demandent de se déplacer (poste, pharmacie, banque, rdv sur place…) — ignore le bureau (voyage, kayak, mails, docs). Accueille brièvement, demande une fois si elle peut sortir là. Regroupe par trajet. Si un fil \"Courses\" a une liste, propose d'en profiter pour le super. UN arrêt à la fois.]";
@@ -209,10 +209,11 @@ ${timingBlock}${contextRule(meta.context)}${renderSessionContinuity(meta.priorSe
     meta.ritualBrief?.message?.trim()
       ? `
 
-BRIEF RITUEL (notif matin — la personne vient d'ouvrir depuis là) :
+BRIEF RITUEL (le conseil déjà donné — accueil, mail ou notif du matin) :
 « ${meta.ritualBrief.message.trim()} »
 Durée déjà choisie : ${meta.durationMin} min — ne la remets pas en question.
-Ouvre sur CE sujet. Ne proposes pas autre chose au démarrage.`
+Ouvre sur CE sujet, le même. N'invente pas un autre programme. Le premier pas est DANS ce sujet.
+La question finale est COURTE (une dizaine de mots) : le pas, pas un recap.`
       : ""
   }
 
