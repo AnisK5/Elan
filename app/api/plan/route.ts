@@ -150,7 +150,9 @@ function deskPlanPrompt(
   name?: string,
 ): string {
   const chosenRule = chosen
-    ? `\n\nDURÉE DÉJÀ CHOISIE : ${chosen} min. La personne vient de la sélectionner elle-même — c'est SON choix et tu fais avec. Ton message dit ce qu'on peut concrètement faire en ${chosen} min, en citant ses trucs réels : le petit ensemble qui tient dans ce temps-là. Renvoie "pick":"${chosen}". Si une autre durée servirait vraiment mieux ce qu'il y a aujourd'hui, dis-le UNE fois, franchement et sans insister — « je ferais plutôt 30, il y a de quoi » — puis enchaîne quand même sur ce qu'on peut faire en ${chosen} min. Un bon compagnon donne son avis ; il ne le répète pas et n'impose rien.`
+    ? `\n\nDURÉE DÉJÀ CHOISIE : ${chosen} min. Elle vient de cliquer ce bouton — c'est SON choix. Renvoie "pick":"${chosen}".
+Le pavé conseil DOIT relier le bouton et le contenu, pour quelqu'un qui découvre l'app : « Pour ce créneau de ${chosen} min : … » puis ce qu'on y met, UN truc, en clair.
+Si ${chosen} min est vraiment juste pour ce qu'il y a aujourd'hui, UNE phrase ensuite, une fois, sans insister : ce qui ne tiendra pas, et quelle durée tu proposerais (« je te proposerais plutôt 30 min, pour aussi le linge »). Pas le mot urgence. Tu fais quand même avec les ${chosen} min.`
     : "";
   const render = renderLines(threads);
 
@@ -158,10 +160,13 @@ function deskPlanPrompt(
 
 TON RÔLE ICI : à partir de ses trucs en cours, tu conseilles la FORME de sa journée d'aujourd'hui, avant même qu'elle commence son créneau.
 
-TA SORTIE : 1 à 2 phrases. Nomme D'ABORD le truc, comme elle le dirait. La durée est déjà sur les boutons : ne commence JAMAIS par la redire (« 15 min, c'est calibré », « 5 min, parfait pour un truc borné »). Pas de jargon interne (borné, calibré, fenêtre, pick). UN seul truc. C'est un conseil que tu donnes. Exemples :
-- « Relancer Laura : un message, ça tient dans 15 min, et c'est dans 6 jours. »
-- « Le linge — le mettre en machine, trois minutes, et ça tourne sans toi. »
-- « La déclaration, tant que c'est ouvert : je te proposerais 50 min, ou deux fois 30. »
+TA SORTIE : 2 phrases max. Le conseil PORTE SUR UN CRÉNEAU — durée + contenu, pour que les boutons et le texte se parlent. Tu conseilles la durée (champ "pick") ET tu la nommes dans le message. Pas de jargon (borné, calibré, fenêtre, pick). UN seul truc dans le créneau.
+Si tu proposes la durée : « Je te propose 15 min : relancer Laura, un message. »
+Si elle a déjà cliqué : vois DURÉE DÉJÀ CHOISIE ci-dessous.
+Exemples (quand TU proposes) :
+- « Je te propose 15 min : relancer Laura, un message, c'est dans 6 jours. »
+- « Je te propose 5 min : le linge, le mettre en machine, et ça tourne sans toi. »
+- « Je te proposerais 50 min, ou deux fois 30 : la déclaration, tant que c'est ouvert. »
 
 DURÉE (champ "pick"), une seule valeur parmi "5", "15", "30", "50" — par DÉFAUT, vise la plus PETITE séance sensée :
 - "5" = ~5 min : quasi rien à faire, ou juste faire le point / poser un truc / un micro-pas pour se lancer.
