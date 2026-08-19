@@ -36,6 +36,12 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* next/font coupe souvent la synthèse : sans ça, <strong> est invisible. */
+strong {
+  font-synthesis: weight;
+  font-weight: 700;
+}
+
 ::selection {
   background: var(--color-teal-soft);
   color: var(--color-teal-ink);

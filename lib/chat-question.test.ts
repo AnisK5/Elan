@@ -55,4 +55,13 @@ describe("splitChatQuestion", () => {
       point: "Tu le retrouves ?",
     });
   });
+
+  it("n'envoie pas une question encore trop longue dans l'encart", () => {
+    const long =
+      "On relance Laura. Le tout premier pas, c'est juste de retrouver son contact ou notre dernier échange ; tu veux que je te prépare le message pendant que tu ouvres la conversation ?";
+    expect(splitChatQuestion(long)).toEqual({
+      body: long,
+      point: null,
+    });
+  });
 });

@@ -8,6 +8,7 @@ import {
 } from "@/lib/session-memory";
 import { socleSession } from "@/lib/voice";
 import { isUntimedSession } from "@/lib/session-mode";
+import { sessionOpeningFromBrief } from "@/lib/session-opening";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -211,9 +212,9 @@ ${timingBlock}${contextRule(meta.context)}${renderSessionContinuity(meta.priorSe
 
 BRIEF RITUEL (le conseil déjà donné — accueil, mail ou notif du matin) :
 « ${meta.ritualBrief.message.trim()} »
+C'est LE programme de cette séance, déjà annoncé sur l'écran. La continuité ci-dessus est une mémoire, pas une invitation à changer de truc — même si un autre dossier « pèse plus » (urgence, père, échéance).
 Durée déjà choisie : ${meta.durationMin} min — ne la remets pas en question.
-Ouvre sur CE sujet, le même. N'invente pas un autre programme. Le premier pas est DANS ce sujet.
-La question finale est COURTE (une dizaine de mots) : le pas, pas un recap.`
+Ne proposes pas autre chose. Le premier pas est DANS ce sujet.`
       : ""
   }
 
@@ -234,6 +235,22 @@ ${
 }
 
 export async function POST(req: Request) {
+  let body: Body;
+  try {
+    body = (await req.json()) as Body;
+  } catch {
+    return Response.json({ error: "Requête invalide." }, { status: 400 });
+  }
+
+  const { messages = [], threads = [], meta } = body;
+  const brief = meta?.ritualBrief?.message?.trim() ?? "";
+  const isOpening = !meta?.ending && messages.length === 0;
+  if (isOpening && brief && meta?.context !== "deposer") {
+    return new Response(sessionOpeningFromBrief(brief), {
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+
   const apiKey = resolveAnthropicKey(req);
   if (!apiKey) {
     return Response.json(
@@ -244,15 +261,6 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-
-  let body: Body;
-  try {
-    body = (await req.json()) as Body;
-  } catch {
-    return Response.json({ error: "Requête invalide." }, { status: 400 });
-  }
-
-  const { messages = [], threads = [], meta } = body;
 
   const apiMessages: { role: "user" | "assistant"; content: string }[] = [
     { role: "user", content: openingCue(meta?.context) },

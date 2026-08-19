@@ -94,6 +94,8 @@ export default function Home() {
   const [ritualBrief, setRitualBrief] = useState<{ message: string } | null>(
     null,
   );
+  /** Conseil visible au clic — plus fiable que le state pour l'ouverture. */
+  const sessionBriefRef = useRef<string | null>(null);
   /** Bloque le plan auto tant que l'ouverture vient de la notif matin. */
   const ritualLockRef = useRef(false);
 
@@ -141,6 +143,7 @@ export default function Home() {
     setDuration(a.durationMin);
     setContext(a.context ?? "desk");
     sessionStartRef.current = a.startedAt;
+    sessionBriefRef.current = null;
     setView("session");
   }, []);
   // « Aujourd'hui » et la carte de la semaine doivent basculer de jour même si
@@ -390,6 +393,7 @@ export default function Home() {
     planCtxRef.current = "desk";
     setView("home");
     setRitualBrief(null);
+    sessionBriefRef.current = null;
     ritualLockRef.current = false;
     setWrapUpCount(count);
     setWrapUp(true);
@@ -400,13 +404,13 @@ export default function Home() {
     clearActiveSession();
     setResume(null);
     sessionStartRef.current = new Date().toISOString();
-    // Même contrat que la notif : le conseil déjà lu devient le brief de séance.
-    if (opts && "brief" in opts) {
-      setRitualBrief(opts.brief?.trim() ? { message: opts.brief.trim() } : null);
-    } else {
-      const msg = (ritualBrief?.message ?? plan?.message ?? "").trim();
-      if (msg) setRitualBrief({ message: msg });
-    }
+    // Le texte AFFICHÉ sur la carte, pas un brief de notif resté en mémoire.
+    const msg =
+      opts && "brief" in opts
+        ? (opts.brief?.trim() ?? "")
+        : (plan?.message ?? "").trim();
+    sessionBriefRef.current = msg || null;
+    setRitualBrief(msg ? { message: msg } : null);
     setView("session");
   }
 
@@ -713,7 +717,11 @@ export default function Home() {
         name={settings.name}
         initial={resume}
         priorSessionsToday={sessionsToday(sessions)}
-        ritualBrief={ritualBrief}
+        ritualBrief={
+          sessionBriefRef.current
+            ? { message: sessionBriefRef.current }
+            : ritualBrief
+        }
         onEnd={endSession}
       />
     );
@@ -865,7 +873,8 @@ export default function Home() {
 
             <button
               onClick={context === "deposer" ? startDeposer : startFresh}
-              className="mt-5 w-full rounded-xl bg-teal py-4 text-center font-display text-lg font-semibold text-white transition hover:bg-teal-ink"
+              disabled={planLoading && context !== "deposer"}
+              className="mt-5 w-full rounded-xl bg-teal py-4 text-center font-display text-lg font-semibold text-white transition hover:bg-teal-ink disabled:opacity-50"
             >
               {context === "deposer" ? "Déposer" : "Commencer la séance"}
             </button>

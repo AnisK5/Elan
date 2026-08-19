@@ -43,6 +43,9 @@ export function splitChatQuestion(text: string): {
 
   const rest = chunks.slice(0, -1);
   const { point, prefix } = shortenNextStep(last);
+  if (wordCount(point) > MAX_NEXT_STEP_WORDS) {
+    return { body: trimmed, point: null };
+  }
   if (prefix) rest.push(prefix.endsWith(".") ? prefix : `${prefix}.`);
   return { body: rest.join(" ").trim(), point };
 }

@@ -199,6 +199,18 @@ export function splitAroundTruc(
   };
 }
 
+function properNamesInText(text: string): string[] {
+  const names: string[] = [];
+  const re = /(?<=\s)([A-ZÉÈÊÀÂÎÏÔÙÛÇ][\p{L}'’-]{3,})\b/gu;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const n = m[1];
+    if (STOP.has(fold(n))) continue;
+    names.push(n);
+  }
+  return names;
+}
+
 export type TextRun = { text: string; strong: boolean };
 
 /** Gras visible : d'abord **markdown**, sinon le nom du truc. */
@@ -218,7 +230,7 @@ export function speechRuns(text: string, labels: string[] = []): TextRun[] {
     if (last < text.length) runs.push({ text: text.slice(last), strong: false });
     return runs.filter((r) => r.text);
   }
-  const hit = splitAroundTruc(text, labels);
+  const hit = splitAroundTruc(text, [...labels, ...properNamesInText(text)]);
   if (!hit) return text ? [{ text, strong: false }] : [];
   return [
     { text: hit.before, strong: false },

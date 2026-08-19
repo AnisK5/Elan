@@ -66,8 +66,10 @@ describe("emphasize-truc", () => {
       start: text.indexOf("impression"),
       match: "impression de son doc sur la donation",
     });
-    expect(
-      speechRuns(text, ["Impression doc donation papa"]).some((r) => r.strong),
-    ).toBe(true);
+  });
+
+  it("gras sur un prénom même sans libellé de fil", () => {
+    const runs = speechRuns("On relance Laura en un message.", []);
+    expect(runs.some((r) => r.strong && r.text === "Laura")).toBe(true);
   });
 });

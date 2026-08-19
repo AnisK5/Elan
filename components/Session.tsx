@@ -21,6 +21,7 @@ import {
 import { AssistantSpeech } from "@/components/HighlightEncart";
 import { isUntimedSession } from "@/lib/session-mode";
 import { trucLabels } from "@/lib/emphasize-truc";
+import { sessionOpeningFromBrief } from "@/lib/session-opening";
 import QuickCapture from "./QuickCapture";
 import ThreadRow from "./ThreadRow";
 
@@ -91,7 +92,19 @@ export default function Session({
     started.current = true;
     const prior = (initial?.messages ?? []).filter((m) => m.content.trim());
     if (prior.length === 0) {
-      void runTurn([]); // nouvelle séance : le guide t'accueille
+      const brief = ritualBriefRef.current?.message?.trim() ?? "";
+      if (brief && context !== "deposer") {
+        // Le créneau a déjà choisi : on n'envoie pas le modèle recomposer.
+        setMessages([
+          {
+            role: "assistant",
+            content: sessionOpeningFromBrief(brief),
+            at: new Date().toISOString(),
+          },
+        ]);
+      } else {
+        void runTurn([]);
+      }
     } else if (prior[prior.length - 1].role === "user") {
       void runTurn(prior); // le refresh a coupé la réponse du guide : on la relance
     }
