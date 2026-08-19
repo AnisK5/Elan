@@ -14,6 +14,7 @@ import {
 import { ageLabel, dayDiff, dueLabel, intentionLabel } from "@/lib/thread-labels";
 import { identity, socle, today, TON, VOIX } from "@/lib/voice";
 import { DEPOSER_PLAN_MESSAGE } from "@/lib/session-mode";
+import { buildOfflinePlanHint } from "@/lib/notifications";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -264,6 +265,7 @@ function systemPrompt(
 function fallbackPlan(
   context: SessionContext,
   threads: Thread[],
+  chosen?: number,
 ): { message: string; pick: string } {
   if (context === "deposer") {
     return { message: DEPOSER_PLAN_MESSAGE, pick: "15" };
@@ -321,7 +323,9 @@ function fallbackPlan(
       pick: "15",
     };
   }
-  return { message: "", pick: "15" };
+  const minutes =
+    chosen && [5, 15, 30, 50].includes(chosen) ? chosen : 15;
+  return buildOfflinePlanHint(threads, minutes);
 }
 
 function notifyPlanPrompt(
@@ -477,7 +481,7 @@ export async function POST(req: Request) {
       ? parsed
       : forNotify
         ? fallbackNotifyPlan(open, body.sourceMessage)
-        : fallbackPlan(context, open);
+        : fallbackPlan(context, open, body.chosen);
     let pick = ["5", "15", "30", "50"].includes(plan.pick)
       ? plan.pick
       : "15";
@@ -489,7 +493,7 @@ export async function POST(req: Request) {
     console.error("[plan] échec:", e instanceof Error ? e.message : e);
     const plan = forNotify
       ? fallbackNotifyPlan(open, body.sourceMessage)
-      : fallbackPlan(context, open);
+      : fallbackPlan(context, open, body.chosen);
     return Response.json({
       message: plan.message,
       pick: plan.pick,

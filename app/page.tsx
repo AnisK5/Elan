@@ -23,7 +23,7 @@ import InstallPrompt from "@/components/InstallPrompt";
 import RitualNotify from "@/components/RitualNotify";
 import SettingsSheet from "@/components/SettingsSheet";
 import { useRitualReminder } from "@/components/useRitualReminder";
-import { isNotifyPromptDismissed } from "@/lib/notifications";
+import { isNotifyPromptDismissed, buildOfflinePlanHint } from "@/lib/notifications";
 import Welcome from "@/components/Welcome";
 import HelpButton from "@/components/HelpButton";
 import BacklogPeek from "@/components/home/BacklogPeek";
@@ -335,13 +335,21 @@ export default function Home() {
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
-        if (cancelled || !j) return;
+        if (cancelled) return;
         if (planReq.current !== reqId || planCtxRef.current !== context) return;
-        setPlanUnreachable(Boolean(j.unreachable));
-        const msg = (j.message ?? "").trim();
-        if (msg) setPlan({ message: msg, pick: j.pick ?? "15" });
-        if (manualPickSig.current !== planSig) {
-          applyPick(j.pick ?? "15", planSig);
+        const msg = (j?.message ?? "").trim();
+        setPlanUnreachable(Boolean(j?.unreachable) || !msg);
+        if (msg) {
+          setPlan({ message: msg, pick: j?.pick ?? "15" });
+          if (manualPickSig.current !== planSig) {
+            applyPick(j?.pick ?? "15", planSig);
+          }
+        } else {
+          const hint = buildOfflinePlanHint(openThreads, duration);
+          setPlan(hint);
+          if (manualPickSig.current !== planSig) {
+            applyPick(hint.pick, planSig);
+          }
         }
         try {
           if (msg) {
@@ -353,7 +361,7 @@ export default function Home() {
                 sig: planSig,
                 context,
                 message: msg,
-                pick: j.pick ?? "15",
+                pick: j?.pick ?? "15",
               }),
             );
           }
@@ -361,7 +369,12 @@ export default function Home() {
           // ignore
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        if (cancelled) return;
+        if (planReq.current !== reqId || planCtxRef.current !== context) return;
+        setPlanUnreachable(true);
+        setPlan(buildOfflinePlanHint(openThreads, duration));
+      })
       .finally(() => {
         if (!cancelled && planReq.current === reqId) setPlanLoading(false);
       });
@@ -486,18 +499,30 @@ export default function Home() {
           unreachable?: boolean;
         };
         if (planReq.current === reqId && planCtxRef.current === ctx) {
-          setPlanUnreachable(Boolean(j.unreachable));
           const msg = (j.message ?? "").trim();
+          setPlanUnreachable(Boolean(j.unreachable) || !msg);
           if (msg) {
             setPlan({
               message: msg,
               pick: opts?.chosen ? String(opts.chosen) : (j.pick ?? "15"),
             });
+          } else {
+            const hint = buildOfflinePlanHint(
+              openThreads,
+              opts?.chosen ?? duration,
+            );
+            setPlan(hint);
           }
         }
+      } else if (planReq.current === reqId && planCtxRef.current === ctx) {
+        setPlanUnreachable(true);
+        setPlan(buildOfflinePlanHint(openThreads, opts?.chosen ?? duration));
       }
     } catch {
-      // on garde le conseil précédent
+      if (planReq.current === reqId && planCtxRef.current === ctx) {
+        setPlanUnreachable(true);
+        setPlan((prev) => prev ?? buildOfflinePlanHint(openThreads, opts?.chosen ?? duration));
+      }
     } finally {
       if (planReq.current === reqId) setPlanLoading(false);
     }
