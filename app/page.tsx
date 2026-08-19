@@ -28,14 +28,14 @@ import Welcome from "@/components/Welcome";
 import HelpButton from "@/components/HelpButton";
 import BacklogPeek from "@/components/home/BacklogPeek";
 import SessionPick from "@/components/home/SessionPick";
+import ChatBubble from "@/components/home/ChatBubble";
 import WeekMomentum from "@/components/home/WeekMomentum";
-import { Dot, greeting, Logo } from "@/components/home/Branding";
+import { greeting, Logo } from "@/components/home/Branding";
 import { useAuth } from "@/components/AuthProvider";
 import { parseThreadOps } from "@/lib/ops";
 import { doneCountsThisWeek, completionAt } from "@/lib/week-stats";
 import { sessionsToday } from "@/lib/session-memory";
 import { apiFetch, anthropicFailMessage, parseStreamError } from "@/lib/anthropic";
-import AiRetryBanner from "@/components/AiRetryBanner";
 import {
   normalizeDuration,
   OUTDOOR_DURATION,
@@ -84,6 +84,7 @@ export default function Home() {
   // de durée. Sans numéro de série, une réponse lente écrase une réponse
   // récente — d'où un conseil calibré sur 15 alors qu'on vient de cliquer 30.
   const planReq = useRef(0);
+  const planCtxRef = useRef<SessionContext>("desk");
   // Une fois qu'on a choisi soi-même pour ce backlog, la reco générique n'a
   // plus le droit de reprendre la main.
   const manualPickSig = useRef("");
@@ -104,15 +105,8 @@ export default function Home() {
   const lastPointRef = useRef("");
   const [pointUndo, setPointUndo] = useState<Thread[] | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([]);
-  // Replié par défaut : l'accueil doit rester calme. Un historique qui grossit
-  // à chaque échange recrée le mur de texte que l'app promet d'éviter.
-  const [chatExpanded, setChatExpanded] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setChat(readChat()), []);
-  useEffect(() => {
-    if (chat.length > 0) chatEndRef.current?.scrollIntoView({ block: "end" });
-  }, [chat]);
 
   // La durée par défaut ne sert qu'au tout premier rendu. `settings` change
   // d'identité à l'hydratation, et sans ce garde l'effet repartait APRÈS la
@@ -290,6 +284,8 @@ export default function Home() {
   useEffect(() => {
     if (!ready || view !== "home" || ritualLockRef.current) return;
     if (context === "deposer") {
+      planCtxRef.current = "deposer";
+      planReq.current += 1;
       setPlan({ message: DEPOSER_PLAN_MESSAGE, pick: "15" });
       setPlanLoading(false);
       return;
@@ -334,19 +330,14 @@ export default function Home() {
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
         if (cancelled || !j) return;
-        if (planReq.current === reqId) setPlanUnreachable(Boolean(j.unreachable));
-        if (planReq.current === reqId) {
-          const msg = (j.message ?? "").trim();
-          if (msg) setPlan({ message: msg, pick: j.pick ?? "15" });
-        }
-        if (
-          planReq.current === reqId &&
-          manualPickSig.current !== planSig
-        ) {
+        if (planReq.current !== reqId || planCtxRef.current !== context) return;
+        setPlanUnreachable(Boolean(j.unreachable));
+        const msg = (j.message ?? "").trim();
+        if (msg) setPlan({ message: msg, pick: j.pick ?? "15" });
+        if (manualPickSig.current !== planSig) {
           applyPick(j.pick ?? "15", planSig);
         }
         try {
-          const msg = (j.message ?? "").trim();
           if (msg) {
             localStorage.setItem(
               "elan.plan.v1",
@@ -393,6 +384,7 @@ export default function Home() {
     clearActiveSession();
     setResume(null);
     setContext("desk");
+    planCtxRef.current = "desk";
     setView("home");
     setRitualBrief(null);
     ritualLockRef.current = false;
@@ -413,6 +405,7 @@ export default function Home() {
   async function pickDuration(d: number) {
     ritualLockRef.current = false;
     setRitualBrief(null);
+    planCtxRef.current = "desk";
     setContext("desk");
     setDuration(d);
     durationSettled.current = true;
@@ -431,8 +424,9 @@ export default function Home() {
   }
 
   function pickContext(ctx: "sortie" | "courses" | "regulier" | "deposer") {
+    planCtxRef.current = ctx;
+    planReq.current += 1;
     setContext(ctx);
-    setPlan(null);
     durationSettled.current = true;
     appliedSig.current = planSig;
     if (ctx === "deposer") {
@@ -440,6 +434,7 @@ export default function Home() {
       setPlanLoading(false);
       return;
     }
+    setPlan(null);
     if (ctx === "regulier") {
       setDuration(15);
     }
@@ -448,7 +443,9 @@ export default function Home() {
 
   async function fetchPlan(opts?: { chosen?: number; ctx?: SessionContext }) {
     const ctx = opts?.ctx ?? context;
+    planCtxRef.current = ctx;
     if (ctx === "deposer") {
+      planReq.current += 1;
       setPlan({ message: DEPOSER_PLAN_MESSAGE, pick: "15" });
       setPlanLoading(false);
       return;
@@ -475,7 +472,7 @@ export default function Home() {
           pick?: string;
           unreachable?: boolean;
         };
-        if (planReq.current === reqId) {
+        if (planReq.current === reqId && planCtxRef.current === ctx) {
           setPlanUnreachable(Boolean(j.unreachable));
           const msg = (j.message ?? "").trim();
           if (msg) {
@@ -865,138 +862,24 @@ export default function Home() {
       </section>
 
       {!isNewcomer && (
-      <section className="mt-6">
-        <div className="mb-1.5 flex items-baseline justify-between gap-3 px-1">
-          <p className="text-xs font-medium text-faint">Une info en passant</p>
-          {chat.length > 0 && (
-            <div className="flex shrink-0 items-baseline gap-3">
-              <button
-                onClick={() => setChatExpanded((v) => !v)}
-                className="text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
-              >
-                {chatExpanded
-                  ? "masquer"
-                  : `${chat.length} message${chat.length > 1 ? "s" : ""}`}
-              </button>
-              {chatExpanded && (
-                <button
-                  onClick={resetChat}
-                  className="text-xs text-faint underline-offset-2 hover:text-muted hover:underline"
-                >
-                  effacer
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="rounded-2xl border border-line bg-surface/80 px-1 py-0.5 shadow-[0_8px_30px_-20px_rgba(38,35,29,0.45)]">
-          {chatExpanded && chat.length > 0 && (
-            <div className="max-h-80 overflow-y-auto px-2 pb-2 pt-2">
-              <div className="flex flex-col gap-2.5">
-                {chat.map((m, i) => (
-                  <div
-                    key={i}
-                    className={
-                      m.role === "user" ? "flex justify-end" : "flex justify-start"
-                    }
-                  >
-                    {m.role === "user" ? (
-                      <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-sink px-3.5 py-2 text-[15px] leading-relaxed text-ink">
-                        {m.content}
-                      </div>
-                    ) : (
-                      <div className="max-w-[92%] px-1 py-1">
-                        {m.content ? (
-                          <AssistantSpeech
-                            content={m.content}
-                            className="whitespace-pre-wrap text-[15px] leading-relaxed text-teal-ink"
-                          />
-                        ) : pointBusy ? (
-                          <span className="inline-flex gap-1 py-1">
-                            <Dot /> <Dot /> <Dot />
-                          </span>
-                        ) : null}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <div ref={chatEndRef} />
-            </div>
-          )}
-          {!chatExpanded &&
-            (() => {
-              const last = [...chat]
-                .reverse()
-                .find((m) => m.role === "assistant");
-              const text = last?.content.trim() ?? "";
-              if (!text && !pointBusy) return null;
-              return (
-                <div className="px-3 pt-2">
-                  {text ? (
-                    <AssistantSpeech
-                      content={last?.content ?? ""}
-                      className="whitespace-pre-wrap text-[15px] leading-relaxed text-teal-ink"
-                    />
-                  ) : (
-                    <span className="inline-flex gap-1 py-1">
-                      <Dot /> <Dot /> <Dot />
-                    </span>
-                  )}
-                </div>
-              );
-            })()}
-          <div className="flex items-end gap-2">
-            <textarea
-              value={pointText}
-              onChange={(e) => setPointText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  sendPoint();
-                }
-              }}
-              rows={1}
-              placeholder="ex. j'ai appelé le dentiste"
-              className="max-h-40 min-h-[46px] flex-1 resize-none rounded-xl bg-transparent px-3 py-3 text-[15px] leading-snug text-ink outline-none placeholder:text-faint"
-            />
-            <button
-              onClick={() => void sendPoint()}
-              disabled={!pointText.trim() || pointBusy}
-              className="mb-0.5 shrink-0 rounded-xl bg-teal px-4 py-3 text-sm font-medium text-white transition hover:bg-teal-ink disabled:opacity-40"
-            >
-              {pointBusy ? "…" : "Envoyer"}
-            </button>
-          </div>
-          {pointError && (
-            <div className="px-2 pb-2 pt-1">
-              <AiRetryBanner
-                message={pointError}
-                busy={pointBusy}
-                onRetry={() => void sendPoint(lastPointRef.current)}
-              />
-            </div>
-          )}
-          {pointNote && (
-            <div className="animate-rise flex items-center gap-2 px-2 pb-1.5 pt-1 text-xs text-teal-ink">
-              <span>✏️</span>
-              <span className="flex-1">{pointNote}</span>
-              {pointUndo && (
-                <button
-                  onClick={() => {
-                    restoreThreads(pointUndo);
-                    setPointUndo(null);
-                    setPointNote("");
-                  }}
-                  className="shrink-0 rounded-md px-2 py-0.5 font-medium text-teal underline-offset-2 hover:underline"
-                >
-                  annuler
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      </section>
+        <ChatBubble
+          chat={chat}
+          pointText={pointText}
+          onPointText={setPointText}
+          onSend={() => void sendPoint()}
+          busy={pointBusy}
+          error={pointError}
+          onRetry={() => void sendPoint(lastPointRef.current)}
+          note={pointNote}
+          undo={pointUndo}
+          onUndo={() => {
+            if (!pointUndo) return;
+            restoreThreads(pointUndo);
+            setPointUndo(null);
+            setPointNote("");
+          }}
+          onReset={resetChat}
+        />
       )}
 
       {/* Avancement — colonne des victoires, jamais ce qui reste */}
