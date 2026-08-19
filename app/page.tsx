@@ -897,7 +897,9 @@ export default function Home() {
             )}
 
             <button
-              onClick={context === "deposer" ? startDeposer : startFresh}
+              onClick={() =>
+                context === "deposer" ? startDeposer() : startFresh()
+              }
               disabled={planLoading && context !== "deposer"}
               className="mt-5 w-full rounded-xl bg-teal py-4 text-center font-display text-lg font-semibold text-white transition hover:bg-teal-ink disabled:opacity-50"
             >
