@@ -1,4 +1,4 @@
-/** Dernière phrase = le point — à afficher à part, plus visible. */
+/** Dernière question — à afficher à part. Le reste reste un seul paragraphe. */
 
 export function splitChatQuestion(text: string): {
   body: string;
@@ -9,12 +9,8 @@ export function splitChatQuestion(text: string): {
 
   const chunks = trimmed.split(/(?<=[.!?])\s+/);
   const last = chunks[chunks.length - 1]?.trim() ?? "";
+  if (!last.endsWith("?")) return { body: trimmed, point: null };
+
   const body = chunks.slice(0, -1).join(" ").trim();
-
-  if (!body) {
-    if (last.endsWith("?")) return { body: "", point: last };
-    return { body: trimmed, point: null };
-  }
-
   return { body, point: last };
 }

@@ -3,6 +3,7 @@ import {
   findTrucInText,
   indexOfTruc,
   splitAroundTruc,
+  speechRuns,
   trucLabels,
 } from "./emphasize-truc";
 import type { Thread } from "./types";
@@ -46,5 +47,15 @@ describe("emphasize-truc", () => {
       },
     ] as Thread[];
     expect(trucLabels(threads)).toEqual(["linge de lit"]);
+  });
+
+  it("rend **gras** au lieu de laisser les astérisques", () => {
+    expect(
+      speechRuns("appeler **Orange pour l'éligibilité fibre**, c'est calé.", []),
+    ).toEqual([
+      { text: "appeler ", strong: false },
+      { text: "Orange pour l'éligibilité fibre", strong: true },
+      { text: ", c'est calé.", strong: false },
+    ]);
   });
 });

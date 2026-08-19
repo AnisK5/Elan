@@ -69,3 +69,31 @@ export function splitAroundTruc(
     after: text.slice(hit.start + hit.match.length),
   };
 }
+
+export type TextRun = { text: string; strong: boolean };
+
+/** Gras visible : d'abord **markdown**, sinon le nom du truc. */
+export function speechRuns(text: string, labels: string[] = []): TextRun[] {
+  const runs: TextRun[] = [];
+  const re = /\*\*([^*]+)\*\*/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let foundMd = false;
+  while ((m = re.exec(text)) !== null) {
+    foundMd = true;
+    if (m.index > last) runs.push({ text: text.slice(last, m.index), strong: false });
+    runs.push({ text: m[1], strong: true });
+    last = m.index + m[0].length;
+  }
+  if (foundMd) {
+    if (last < text.length) runs.push({ text: text.slice(last), strong: false });
+    return runs.filter((r) => r.text);
+  }
+  const hit = splitAroundTruc(text, labels);
+  if (!hit) return text ? [{ text, strong: false }] : [];
+  return [
+    { text: hit.before, strong: false },
+    { text: hit.match, strong: true },
+    { text: hit.after, strong: false },
+  ].filter((r) => r.text);
+}

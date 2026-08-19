@@ -18,14 +18,14 @@ describe("splitChatQuestion", () => {
     });
   });
 
-  it("sort le pas même sans point d'interrogation", () => {
+  it("garde le paragraphe entier s'il n'y a pas de question", () => {
     expect(
       splitChatQuestion(
         "Il est tôt, 15 min suffisent. Le linge de lit — le mettre en machine, trois minutes.",
       ),
     ).toEqual({
-      body: "Il est tôt, 15 min suffisent.",
-      point: "Le linge de lit — le mettre en machine, trois minutes.",
+      body: "Il est tôt, 15 min suffisent. Le linge de lit — le mettre en machine, trois minutes.",
+      point: null,
     });
   });
 

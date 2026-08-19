@@ -1,7 +1,7 @@
 import { splitChatQuestion } from "@/lib/chat-question";
-import { findTrucInText, splitAroundTruc } from "@/lib/emphasize-truc";
+import { speechRuns } from "@/lib/emphasize-truc";
 
-/** Le point — une question ou un pas, hors du paragraphe. */
+/** Le point — une question, hors du paragraphe. */
 export default function HighlightEncart({
   text,
   trucs,
@@ -14,7 +14,7 @@ export default function HighlightEncart({
   return (
     <div
       role="note"
-      className="mt-3 first:mt-0 rounded-2xl border border-teal/35 bg-teal-soft px-4 py-3"
+      className="mt-3 first:mt-0 rounded-2xl border border-teal/40 bg-teal-soft px-4 py-3"
     >
       <p className="text-[15px] font-medium leading-snug text-teal-ink">
         <SpokenBits text={t} trucs={trucs} />
@@ -24,13 +24,18 @@ export default function HighlightEncart({
 }
 
 function SpokenBits({ text, trucs }: { text: string; trucs?: string[] }) {
-  const hit = splitAroundTruc(text, trucs ?? []);
-  if (!hit) return text;
+  const runs = speechRuns(text, trucs ?? []);
   return (
     <>
-      {hit.before}
-      <strong className="font-semibold">{hit.match}</strong>
-      {hit.after}
+      {runs.map((r, i) =>
+        r.strong ? (
+          <strong key={i} className="font-bold text-teal-ink">
+            {r.text}
+          </strong>
+        ) : (
+          <span key={i}>{r.text}</span>
+        ),
+      )}
     </>
   );
 }
@@ -46,8 +51,9 @@ export function AssistantSpeech({
 }) {
   const { body, point } = splitChatQuestion(content);
   const names = trucs ?? [];
-  const inBody = body ? findTrucInText(body, names) : null;
-  const encartTrucs = inBody ? [] : names;
+  const bodyHasStrong = body
+    ? speechRuns(body, names).some((r) => r.strong)
+    : false;
   return (
     <>
       {body ? (
@@ -55,7 +61,9 @@ export function AssistantSpeech({
           <SpokenBits text={body} trucs={names} />
         </p>
       ) : null}
-      {point ? <HighlightEncart text={point} trucs={encartTrucs} /> : null}
+      {point ? (
+        <HighlightEncart text={point} trucs={bodyHasStrong ? [] : names} />
+      ) : null}
     </>
   );
 }
