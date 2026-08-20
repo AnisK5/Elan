@@ -95,6 +95,32 @@ describe("buildOfflinePlanHint", () => {
     expect(hint.message).not.toContain("15 min");
     expect(hint.message).toContain("on s'y met");
   });
+
+  it("ignore une relance dont le délai est encore dans le futur", () => {
+    const due = new Date();
+    due.setHours(0, 0, 0, 0);
+    due.setDate(due.getDate() + 12);
+    const iso = due.toISOString().slice(0, 10);
+    const hint = buildOfflinePlanHint([
+      {
+        id: "c",
+        text: "relancer Claire",
+        kind: "suivi",
+        status: "open",
+        createdAt: new Date().toISOString(),
+        due: iso,
+      },
+      {
+        id: "l",
+        text: "mettre le linge",
+        kind: "action",
+        status: "open",
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    expect(hint.message).toContain("linge");
+    expect(hint.message).not.toMatch(/Claire/i);
+  });
 });
 
 describe("isNotifyTimeNow", () => {

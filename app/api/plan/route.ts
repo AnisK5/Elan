@@ -12,6 +12,7 @@ import {
   REGULIERS_FOCUS_PROMPT,
 } from "@/lib/entretiens";
 import { ageLabel, dayDiff, dueLabel, intentionLabel } from "@/lib/thread-labels";
+import { splitPlanThreads } from "@/lib/plan-candidates";
 import { identity, socle, today, TON, VOIX } from "@/lib/voice";
 import { DEPOSER_PLAN_MESSAGE } from "@/lib/session-mode";
 import { buildOfflinePlanHint } from "@/lib/notifications";
@@ -41,21 +42,33 @@ interface Body {
   sourceMessage?: string;
 }
 
+function formatPlanLine(t: Thread): string {
+  const kind = t.kind === "suivi" ? "À SUIVRE" : "ACTION";
+  const effort = t.effort ? ` · effort ${t.effort}` : "";
+  const note = t.note ? ` · liste/contexte: ${t.note}` : "";
+  const seen = t.touchedAt
+    ? ageLabel(t.touchedAt, "revu")
+    : " · jamais entamé";
+  return `- [${kind}] ${t.text}${dueLabel(t.due, "plan")}${intentionLabel(t.plannedFor)}${ageLabel(t.createdAt, "déposé")}${seen}${effort}${note}`;
+}
+
 function renderLines(threads: Thread[]): string {
   const open = threads.filter(
     (t) => t.status === "open" && !isContainerThread(t),
   );
   if (open.length === 0) return "(rien de pertinent en ce moment)";
+  const { candidates, waiting } = splitPlanThreads(open);
   const overdue = open.filter((t) => t.due && dayDiff(t.due) < 0).length;
-  const lines = open
-    .map((t) => {
-      const kind = t.kind === "suivi" ? "À SUIVRE" : "ACTION";
-      const effort = t.effort ? ` · effort ${t.effort}` : "";
-      const note = t.note ? ` · liste/contexte: ${t.note}` : "";
-      return `- [${kind}] ${t.text}${dueLabel(t.due, "plan")}${intentionLabel(t.plannedFor)}${ageLabel(t.createdAt, "déposé")}${effort}${note}`;
-    })
-    .join("\n");
-  return `${open.length} trucs ouverts (${overdue} dont la fenêtre est passée) :\n${lines}`;
+  const header = `${open.length} trucs ouverts (${overdue} dont la fenêtre est passée)`;
+  const candidateBlock =
+    candidates.length > 0
+      ? `CANDIDATS POUR AUJOURD'HUI (tu choisis UN truc ICI) :\n${candidates.map(formatPlanLine).join("\n")}`
+      : `CANDIDATS POUR AUJOURD'HUI : (aucun — propose un micro-créneau de point / rien qui presse)`;
+  const waitingBlock =
+    waiting.length > 0
+      ? `\n\nEN ATTENTE — NE PROPOSE PAS AUJOURD'HUI (délai de relance pas écoulé, ou contacté récemment) :\n${waiting.map(formatPlanLine).join("\n")}`
+      : "";
+  return `${header}.\n\n${candidateBlock}${waitingBlock}`;
 }
 
 function findCoursesThread(threads: Thread[]): Thread | undefined {
@@ -167,9 +180,10 @@ TA SORTIE : 2 phrases max, COMPLÈTES (sujet, verbe, complément — pas de titr
 Si tu proposes la durée : « Je te propose un créneau de 15 min, pour que l'on relance Laura en un message. »
 Si elle a déjà cliqué : vois DURÉE DÉJÀ CHOISIE ci-dessous.
 Exemples (quand TU proposes) :
-- « Je te propose un créneau de 15 min, pour que l'on relance Laura en un message — c'est dans 6 jours. »
+- « Je te propose un créneau de 15 min, pour que l'on relance Laura en un message — son délai est passé. »
 - « Je te propose un créneau de 5 min, pour que l'on mette le linge en machine — et ça tourne sans toi. »
 - « Je te proposerais un créneau de 50 min, ou deux de 30, pour avancer la déclaration tant que c'est ouvert. »
+INTERDIT : proposer une relance / un contact « parce que c'est dans X jours ». « C'est dans 12j » veut dire ATTENDRE, pas agir aujourd'hui. Ne cite un délai futur que pour une vraie fenêtre externe à saisir (déclaration, inscription…), jamais pour justifier une relance anticipée.
 
 DURÉE (champ "pick"), une seule valeur parmi "5", "15", "30", "50" — par DÉFAUT, vise la plus PETITE séance sensée :
 - "5" = ~5 min : quasi rien à faire, ou juste faire le point / poser un truc / un micro-pas pour se lancer.
@@ -185,9 +199,14 @@ DURÉE (champ "pick"), une seule valeur parmi "5", "15", "30", "50" — par DÉF
 - FENÊTRES SAISONNIÈRES : certains trucs n'ont pas de date mais perdent leur sens passé un moment (organiser un voyage ou une activité d'été, un cadeau avant une fête, une inscription avant la rentrée). Déduis-le du texte et de la saison actuelle : si la fenêtre se referme bientôt, c'est le moment de le dire, même sans échéance saisie. Un truc de ce genre jamais entamé depuis des semaines mérite d'être nommé avant qu'il soit trop tard.
 - TÂCHE AFFAMÉE : si un truc important est vieux et manifestement toujours doublé (déposé il y a longtemps, jamais avancé), tu peux soit le désigner comme LE pas à faire aujourd'hui dans une séance normale (lui donner de l'oxygène), soit — s'il a besoin d'un vrai bloc — OFFRIR un peu plus de temps. Toujours comme une option calme et bienveillante, jamais une pression ni un reproche de l'avoir laissé traîner.
 - CONTEXTE : si un truc porte un « contexte » (enjeux, qui attend, intention douce, conséquence), tiens-en compte pour juger son importance et pour le formuler avec justesse (« ton père attend toujours ça »). Une intention douce (« aimerait cette semaine ») → un rappel léger si la semaine avance, jamais une urgence artificielle.
-- NE RE-PROPOSE JAMAIS CE QUI VIENT D'ÊTRE FAIT. Si un truc porte une note indiquant qu'il a été fait / envoyé / relancé récemment (« relancé le 17/07, en attente de réponse »), NE suggère PAS de le refaire ni de le relancer. On ne relance un suivi que si son délai d'attente est réellement passé — un truc contacté aujourd'hui se laisse tranquille. Regarde les notes et les échéances avant de proposer quoi que ce soit.
+- NE RE-PROPOSE JAMAIS CE QUI VIENT D'ÊTRE FAIT. Si un truc porte une note indiquant qu'il a été fait / envoyé / relancé récemment (« relancé le 17/07, en attente de réponse »), NE suggère PAS de le refaire ni de le relancer. On ne relance un suivi que si son délai d'attente est réellement passé — un truc contacté aujourd'hui se laisse tranquille. Regarde les notes, « revu aujourd'hui », et les échéances avant de proposer quoi que ce soit.
+- SÉMANTIQUE DES DATES (crucial — ne pas confondre) :
+  · [À SUIVRE] + « fenêtre ouverte encore Nj » / échéance future = PROCHAINE relance : c'est trop tôt. Ces fils sont listés sous EN ATTENTE — ne les propose JAMAIS dans le créneau du jour.
+  · [ACTION] dont le texte est une relance / un contact / un envoi, avec due encore future = même règle : trop tôt, laisse tranquille.
+  · [ACTION] avec due future pour une contrainte EXTERNE (déclaration, inscription, dossier à déposer) = là oui, la date est une fenêtre à saisir tant qu'elle est ouverte.
+  · Choisis UNIQUEMENT parmi CANDIDATS POUR AUJOURD'HUI. La section EN ATTENTE est du contexte, pas un menu.
 
-PHILOSOPHIE DES ÉCHÉANCES (importante) : il n'y a jamais rien qu'on est OBLIGÉ de faire. Une échéance n'est pas une menace, c'est une FENÊTRE — une occasion disponible seulement un moment. Sois FACTUEL sur le timing (« c'est dans 2 jours », « la fenêtre est passée depuis 3 jours ») — n'adoucis jamais un vrai délai au point de le faire oublier — mais formule la suite comme une opportunité à saisir tant qu'elle est ouverte, jamais comme une obligation, jamais de culpabilité.
+PHILOSOPHIE DES ÉCHÉANCES (importante) : il n'y a jamais rien qu'on est OBLIGÉ de faire. Une échéance n'est pas une menace, c'est une FENÊTRE — une occasion disponible seulement un moment. Sois FACTUEL sur le timing (« c'est dans 2 jours », « la fenêtre est passée depuis 3 jours ») — n'adoucis jamais un vrai délai au point de le faire oublier — mais formule la suite comme une opportunité à saisir tant qu'elle est ouverte, jamais comme une obligation, jamais de culpabilité. Ça vaut pour les vraies fenêtres externes (ACTION type dossier / déclaration), PAS pour les délais d'attente d'une relance.
 - LE CONTEXTE PRIME SUR LA DATE. Si le contexte d'un truc énonce une CONDITION (« dès réception du salaire », « quand j'aurai la réponse de X », « après mon rdv de jeudi »), c'est cette condition qui fait foi, pas la date portée par le truc. Tant qu'elle n'est pas remplie, le truc n'est PAS en retard, même si sa date est passée.
 - NE PENSE PAS À VOIX HAUTE. Si tu repères une alerte puis que tu l'écartes, n'en parle tout simplement PAS. N'écris jamais « j'ai un truc qui clignote… mais en fait ce n'est pas encore l'heure », ni « c'est marqué en retard, or son contexte dit que non » : tu inquiètes puis tu détricotes, et il ne reste qu'une impression de désordre. Le tri se fait en silence ; on ne lit que ta conclusion.
 - Quand la fenêtre est IMMINENTE (aujourd'hui ou demain), dis-le EXPLICITEMENT : « c'est aujourd'hui », « c'est demain ». Reste calme, mais net sur le JOUR — ne te contente jamais d'un vague « tant que c'est ouvert » pour une échéance du jour même, sinon on risque de la louper.
@@ -382,14 +401,14 @@ function fallbackNotifyPlan(
   if (source) {
     return { message: clipForNotify(source), pick: "15" };
   }
-  const open = openThreads(threads);
-  if (open.length === 0) {
+  const { candidates } = splitPlanThreads(openThreads(threads));
+  if (candidates.length === 0) {
     return { message: "Rien qui presse. Un petit point quand tu veux ?", pick: "5" };
   }
   const label =
-    open[0].text.length > 55
-      ? `${open[0].text.slice(0, 54).trim()}…`
-      : open[0].text;
+    candidates[0].text.length > 55
+      ? `${candidates[0].text.slice(0, 54).trim()}…`
+      : candidates[0].text;
   return { message: `${label} — on s'y met ?`, pick: "15" };
 }
 

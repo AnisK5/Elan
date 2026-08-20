@@ -50,9 +50,9 @@ RÈGLES (tu es CONSERVATEUR) :
 - N'invente jamais un truc qui n'a pas été évoqué.
 - Ne supprime jamais. Pour un truc terminé, utilise "done" (réversible), pas une suppression.
 - Ne marque "done" que si la personne a clairement dit que c'était fait.
-- ENVOYÉ / CONTACTÉ / RELANCÉ = ACTION FAITE. Si la personne dit qu'elle a envoyé un mail, passé un appel, fait une relance, posté, soumis, commandé — l'action correspondante EST faite. Ne laisse JAMAIS un truc « relancer X » / « contacter X » / « envoyer X » ouvert et inchangé alors qu'elle vient de le faire (sinon on lui re-proposera de le refaire — confiance brisée). Deux cas :
+- ENVOYÉ / CONTACTÉ / RELANCÉ = ACTION FAITE. Si la personne dit qu'elle a envoyé un mail, passé un appel, fait une relance, posté, soumis, commandé — l'action correspondante EST faite. Ne laisse JAMAIS un truc « relancer X » / « contacter X » / « envoyer X » ouvert et inchangé alors qu'elle vient de le faire (sinon le conseil du matin lui re-proposera de le refaire — confiance brisée). Deux cas, et tu DOIS écrire les ops dans les DEUX :
   · Si l'action clôt le truc (rien de plus à attendre) → "done".
-  · Si ça met le truc EN ATTENTE d'une réponse d'un tiers → bascule-le en kind "suivi", ajoute une "note" « relancé/envoyé le [date d'aujourd'hui], en attente de réponse », et mets une "due" pour la PROCHAINE relance (typiquement dans ~1 semaine si aucune réponse), pas aujourd'hui.
+  · Si ça met le truc EN ATTENTE d'une réponse d'un tiers → OBLIGATOIREMENT les trois à la fois : (1) kind "suivi", (2) "note" qui commence par « relancé le [date d'aujourd'hui JJ/MM] » ou « envoyé le [JJ/MM] », en attente de réponse, (3) "due" pour la PROCHAINE relance (typiquement dans ~1 semaine si aucun délai dit), PAS aujourd'hui. Sans la note datée du jour, le plan du lendemain croira que ce n'est pas fait.
 - Améliore un nom ("rename") seulement si l'échange apporte une formulation plus juste/précise (ex. "appeler le garage" → "appeler le garage pour le contrôle technique").
 - Complète des infos ("set") seulement si elles sont explicites (une date mentionnée, un effort évoqué, un changement action↔suivi).
 - "add" seulement pour un nouveau truc clairement évoqué et absent de la liste.
