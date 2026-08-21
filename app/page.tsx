@@ -13,6 +13,8 @@ import {
   readChat,
   writeChat,
   clearChat,
+  readSituation,
+  writeSituation,
   useSessions,
   useSettings,
   useThreads,
@@ -38,6 +40,7 @@ import WeekMomentum from "@/components/home/WeekMomentum";
 import { greeting, Logo } from "@/components/home/Branding";
 import { useAuth } from "@/components/AuthProvider";
 import { parseThreadOps } from "@/lib/ops";
+import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
 import { doneCountsThisWeek, completionAt } from "@/lib/week-stats";
 import { sessionsToday } from "@/lib/session-memory";
 import { apiFetch, anthropicFailMessage, parseStreamError } from "@/lib/anthropic";
@@ -118,8 +121,18 @@ export default function Home() {
   const pointNoteTimer = useRef(0);
   const [pointUndo, setPointUndo] = useState<Thread[] | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([]);
+  const [situationText, setSituationText] = useState("");
 
   useEffect(() => setChat(readChat()), []);
+  useEffect(() => {
+    setSituationText(readSituation()?.text ?? "");
+  }, [ready]);
+  useEffect(() => {
+    const s = extractSituationFromConvo(chat);
+    if (!s) return;
+    writeSituation(mergeSituation(readSituation(), s));
+    setSituationText(readSituation()?.text ?? s.text);
+  }, [chat]);
 
   // La durée par défaut ne sert qu'au tout premier rendu. `settings` change
   // d'identité à l'hydratation, et sans ce garde l'effet repartait APRÈS la
@@ -247,8 +260,9 @@ export default function Home() {
             `${t.id}:${t.due ?? ""}:${t.effort ?? ""}:${t.kind}:${t.text}:${t.note ?? ""}`,
         )
         .join("|") +
-      `#${planStats.doneLast7}:${planStats.sessionsLast7}:${planStats.daysSinceLastSession}`,
-    [openThreads, planStats],
+      `#${planStats.doneLast7}:${planStats.sessionsLast7}:${planStats.daysSinceLastSession}` +
+      `#sit:${situationText}`,
+    [openThreads, planStats, situationText],
   );
 
   useEffect(() => {
@@ -366,7 +380,11 @@ export default function Home() {
         threads: openThreads,
         stats: planStats,
         context,
-        meta: { name: settings.name },
+        meta: { name: settings.name, situation: situationText || undefined },
+        messages: chat.slice(-16).map((m) => ({
+          role: m.role,
+          content: m.content,
+        })),
         ...(wantDebug ? { debug: true } : {}),
       }),
     })
@@ -562,7 +580,11 @@ export default function Home() {
           stats: planStats,
           chosen: opts?.chosen,
           context: ctx,
-          meta: { name: settings.name },
+          meta: { name: settings.name, situation: situationText || undefined },
+          messages: chat.slice(-16).map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
           ...(wantDebug ? { debug: true } : {}),
         }),
       });
@@ -737,10 +759,33 @@ export default function Home() {
         }),
       });
       if (!res.ok) return false;
-      const j = (await res.json()) as { updates?: unknown; note?: string };
+      const j = (await res.json()) as {
+        updates?: unknown;
+        note?: string;
+        situation?: string;
+      };
+      const extracted = extractSituationFromConvo(messages);
+      const fromApi = j.situation?.trim()
+        ? { text: j.situation.trim() }
+        : null;
+      const sit = mergeSituation(extracted, fromApi);
+      if (sit) {
+        writeSituation(sit);
+        setSituationText(sit.text);
+      }
       const before = snapshotThreads();
-      const ops = parseThreadOps(j.updates, new Set(before.map((t) => t.id)));
-      if (ops.length === 0) return false;
+      const ops = parseThreadOps(
+        j.updates,
+        new Set(before.map((t) => t.id)),
+        before,
+      );
+      if (ops.length === 0) {
+        if (sit) {
+          showPointNote(j.note || "c'est noté", null);
+          return true;
+        }
+        return false;
+      }
       applyThreadOps(ops);
       showPointNote(j.note || "trucs mis à jour", before);
       return true;
@@ -782,7 +827,7 @@ export default function Home() {
         body: JSON.stringify({
           threads: snapshotThreads(),
           messages: withUser.map((m) => ({ role: m.role, content: m.content })),
-          meta: { name: settings.name },
+          meta: { name: settings.name, situation: situationText || undefined },
         }),
       });
       if (!res.ok || !res.body) throw new Error("chat");
@@ -829,6 +874,12 @@ export default function Home() {
       ];
       setChat(full);
       writeChat(full);
+      setPointBusy(false);
+      const wrote = await clerkP;
+      // Seconde passe : le greffier a vu le message, pas encore la réplique.
+      // Si rien n'a bougé, on relit l'échange entier (comme en séance).
+      if (!wrote) await applyReconcile(full);
+      return;
     } catch {
       const wrote = await clerkP;
       if (!wrote) keepAnyway(t);
@@ -838,9 +889,6 @@ export default function Home() {
       setPointBusy(false);
       return;
     }
-
-    setPointBusy(false);
-    await clerkP;
   }
 
   function keepAnyway(text: string) {
@@ -874,6 +922,7 @@ export default function Home() {
         durationMin={context === "desk" ? duration : OUTDOOR_DURATION}
         context={context}
         name={settings.name}
+        situation={situationText || undefined}
         initial={resume}
         priorSessionsToday={sessionsToday(sessions)}
         ritualBrief={

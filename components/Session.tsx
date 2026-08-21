@@ -16,8 +16,11 @@ import {
   snapshotThreads,
   useThreads,
   writeActiveSession,
+  writeSituation,
+  readSituation,
   type ActiveSession,
 } from "@/lib/store";
+import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
 import { AssistantSpeech } from "@/components/HighlightEncart";
 import { isUntimedSession } from "@/lib/session-mode";
 import { trucLabels } from "@/lib/emphasize-truc";
@@ -32,6 +35,7 @@ export default function Session({
   initial,
   priorSessionsToday = [],
   ritualBrief,
+  situation,
   onEnd,
 }: {
   durationMin: number;
@@ -40,6 +44,7 @@ export default function Session({
   initial?: ActiveSession | null;
   priorSessionsToday?: SessionLog[];
   ritualBrief?: { message: string } | null;
+  situation?: string;
   onEnd: (transcript: ChatMessage[]) => void;
 }) {
   const { threads, add, patch, remove, ready } = useThreads();
@@ -165,6 +170,7 @@ export default function Session({
             remainingSec: totalSec - elapsedRef.current,
             name,
             ending,
+            situation,
             priorSessionsToday,
             ritualBrief: ritualBriefRef.current ?? undefined,
           },
@@ -222,9 +228,23 @@ export default function Session({
         body: JSON.stringify({ threads: threadsRef.current, messages: msgs }),
       });
       if (!res.ok) return;
-      const j = (await res.json()) as { updates?: unknown; note?: string };
+      const j = (await res.json()) as {
+        updates?: unknown;
+        note?: string;
+        situation?: string;
+      };
+      const extracted = extractSituationFromConvo(msgs);
+      const fromApi = j.situation?.trim()
+        ? { text: j.situation.trim() }
+        : null;
+      const sit = mergeSituation(extracted, fromApi);
+      if (sit) writeSituation(mergeSituation(readSituation(), sit));
       const before = snapshotThreads();
-      const ops = parseThreadOps(j.updates, new Set(before.map((t) => t.id)));
+      const ops = parseThreadOps(
+        j.updates,
+        new Set(before.map((t) => t.id)),
+        before,
+      );
       if (ops.length > 0) {
         applyThreadOps(ops);
         setUndoSnapshot(before);

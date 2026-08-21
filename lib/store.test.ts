@@ -105,7 +105,9 @@ describe("applyThreadOps — ce que le greffier a le droit de faire à tes trucs
 describe("la chaîne réelle : ce que le modèle renvoie → ce que tes trucs deviennent", () => {
   function reconcile(updates: unknown) {
     const before = snapshotThreads();
-    applyThreadOps(parseThreadOps(updates, new Set(before.map((t) => t.id))));
+    applyThreadOps(
+      parseThreadOps(updates, new Set(before.map((t) => t.id)), before),
+    );
   }
 
   it("ne change RIEN quand le modèle écrit une date en relatif", () => {
@@ -121,6 +123,16 @@ describe("la chaîne réelle : ce que le modèle renvoie → ce que tes trucs de
     const avant = storage.getItem(THREADS_KEY);
     reconcile([{ op: "done", id: "b" }]);
     expect(storage.getItem(THREADS_KEY)).toBe(avant);
+  });
+
+  it("raye quand le modèle envoie le libellé au lieu de l'id", () => {
+    seed([
+      thread({ id: "a", text: "Rendre l'argent au coffre" }),
+      thread({ id: "b", text: "Appeler Sonia" }),
+    ]);
+    reconcile([{ op: "done", id: "coffre" }]);
+    expect(byId("a")?.status).toBe("done");
+    expect(byId("b")?.status).toBe("open");
   });
 
   it("pose un jour de sortie sur tout le lot d'un coup", () => {

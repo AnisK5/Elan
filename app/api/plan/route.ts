@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { resolveAnthropicKey } from "@/lib/anthropic";
-import type { SessionContext, Thread } from "@/lib/types";
+import type { ChatMessage, SessionContext, Thread } from "@/lib/types";
 import {
   isContainerThread,
   renderReguliersForPlan,
@@ -18,6 +18,7 @@ import {
   splitDeskBuckets,
   splitPlanThreads,
 } from "@/lib/plan-candidates";
+import { extractSituationFromConvo } from "@/lib/situation";
 import { identity, socle, today, TON, VOIX } from "@/lib/voice";
 import { DEPOSER_PLAN_MESSAGE } from "@/lib/session-mode";
 import { buildOfflinePlanHint } from "@/lib/notifications";
@@ -40,13 +41,15 @@ interface Body {
   stats?: PlanStats;
   chosen?: number;
   context?: SessionContext;
-  meta?: { name?: string };
+  meta?: { name?: string; situation?: string };
   /** Corps court pour notif push — pas le paragraphe conseil de l'accueil. */
   forNotify?: boolean;
   /** Conseil déjà composé (accueil / mail) — la notif le raccourcit, elle ne recompose pas. */
   sourceMessage?: string;
   /** Diagnostic local : demande un champ why + snapshot des lignes vues. */
   debug?: boolean;
+  /** Derniers messages du chat accueil — si le contexte de vie n'est pas encore stocké. */
+  messages?: ChatMessage[];
 }
 
 function renderLines(threads: Thread[]): string {
@@ -76,7 +79,7 @@ function renderLines(threads: Thread[]): string {
       : "";
   const filet =
     outdoor.length > 0 || conditions.length > 0
-      ? `\n\nFILET (obligatoire) : s'il reste des CANDIDATS SORTIE ou des CONDITIONS JAMAIS POSÉES, tu n'as PAS le droit de les ignorer. Soit le pick du jour EST une Sortie, soit la dernière phrase du message est LA question qui les considère (une seule, courte). L'écran reste simple : un créneau + cette question. Oublier ces seaux = les faire disparaître.`
+      ? `\n\nFILET : s'il reste des CANDIDATS SORTIE ou des CONDITIONS JAMAIS POSÉES faisables D'OÙ ELLE EST (lis le CONTEXTE DE VIE), tu n'as PAS le droit de les ignorer. Soit le pick du jour EST une Sortie, soit la dernière phrase est LA question qui les considère (une seule, courte). Une question à laquelle elle ne peut pas répondre là où elle est n'est pas un filet — ne la pose pas. L'écran reste simple : un créneau + cette question.`
       : "";
   return `${header}.\n\n${sittingBlock}${outdoorBlock}${conditionBlock}${waitingBlock}${filet}`;
 }
@@ -174,6 +177,7 @@ function deskPlanPrompt(
   stats?: PlanStats,
   chosen?: number,
   name?: string,
+  situation?: string,
 ): string {
   const chosenRule = chosen
     ? `\n\nDURÉE DÉJÀ CHOISIE : ${chosen} min. Elle vient de cliquer ce bouton — c'est SON choix. Renvoie "pick":"${chosen}" (pas "sortie").
@@ -183,13 +187,13 @@ Si ${chosen} min est vraiment juste pour un truc ASSIS, UNE phrase ensuite, une 
     : "";
   const render = renderLines(threads);
 
-  return `${socle(name)}
+  return `${socle(name, situation)}
 
 TON RÔLE ICI : à partir de ses trucs en cours, tu conseilles la FORME de sa journée d'aujourd'hui, avant même qu'elle commence son créneau.
 
 TA SORTIE : 2 phrases max, COMPLÈTES (sujet, verbe, complément — pas de titre, pas de tirets). Le conseil PORTE SUR UN CRÉNEAU — et le bouton doit matcher (5/15/30/50 min OU Sortie). Tu conseilles le créneau (champ "pick") ET tu le nommes dans le message. Pas de jargon (borné, calibré, fenêtre, pick). UN seul truc dans CE créneau.
 QUESTION (dernière phrase, une seule, courte) : pas « tu as le téléphone sous la main ? » (évident). Deux usages, dans cet ordre :
-1) Débloquer une CONDITION jamais vérifiée, ou un truc que le mode bureau ne traitera jamais (« Le salaire est arrivé, pour le coffre ? », « Tu peux sortir, pour les chaussures ? »). C'est comme ça qu'on considère ce qui dormait — sans réciter la liste.
+1) Débloquer une CONDITION jamais vérifiée, ou un truc que le mode bureau ne traitera jamais — SEULEMENT si elle peut y répondre / le faire D'OÙ ELLE EST (CONTEXTE DE VIE). « Les patins sont là ? » alors qu'elle n'est pas chez elle n'est pas un filet.
 2) Sinon, le pas de CE créneau.
 Si tu poses cette question, elle PEUT porter sur un autre truc que celui du créneau : c'est volontaire, c'est le filet. En séance, la question reste sur le truc du créneau.
 Si tu proposes la durée : « Je te propose un créneau de 15 min, pour que l'on relance Laura en un message. »
@@ -204,11 +208,12 @@ Exemples (quand TU proposes) :
 INTERDIT : proposer une relance / un contact « parce que c'est dans X jours ». « C'est dans 12j » veut dire ATTENDRE, pas agir aujourd'hui. Ne cite un délai futur que pour une vraie fenêtre externe à saisir (déclaration, inscription…), jamais pour justifier une relance anticipée.
 
 ARBITRAGE SILENCIEUX (OBLIGATOIRE — avant de choisir durée + truc ; NE PAS écrire ces étapes dans "message") :
-1) URGENCE / FENÊTRE : qu'est-ce qui presse parmi BUREAU, SORTIE et CONDITIONS ? Une envie douce n'est pas une fenêtre. Une condition jamais posée n'est pas « trop tôt ».
-2) RYTHME / STAGNATION : au vu du RYTHME RÉCENT, qu'est-ce qui stagne ou n'a jamais été entamé et mérite de l'oxygène — sans culpabiliser ?
-3) MEILLEUR CRÉNEAU : parmi 5 / 15 / 30 / 50 / Sortie, quel couple créneau + UN truc a le meilleur ratio avancée / temps AUJOURD'HUI ? Par défaut la plus petite séance bureau sensée ; si ce qui pèse exige de sortir, "pick":"sortie". N'allonge le bureau que si une vraie raison (fenêtre qui se ferme, gros pas assis, rythme qui décroche).
-4) CE QU'ON LAISSE — sois RÉALISTE, pas confortable. Pour 2–4 candidats laissés : le mode normal (un créneau bureau 5/15, un par jour) les traitera-t-il un jour, ou ce type de truc n'y entre jamais (sortie, déplacement en journée, gros bloc trop ouvert) ? « OK au rythme actuel » est FAUX si ce rythme ne peut pas les porter. Une condition jamais demandée n'est pas un motif d'écart. Dis l'impact (dormira encore des semaines / rate une fenêtre / quelqu'un attend). Si l'impact n'est pas OK : change de pick, ou la question du message porte dessus — AVANT de valider.
-5) VALIDATION : une fois les 4 points tenus, seulement alors tu rédiges "message" + "pick". Le message ne montre que la conclusion — jamais le parcours.
+1) CONTEXTE DE VIE : lis-le. D'où elle est, jusqu'à quand ? Parmi BUREAU / SORTIE / CONDITIONS, qu'est-ce qui n'est PAS faisable ou demandable aujourd'hui de là où elle est ? Ça n'entre ni dans le créneau, ni dans la question à l'écran — ce n'est pas un oubli, c'est reporté.
+2) URGENCE / FENÊTRE : parmi ce qui RESTE faisable, qu'est-ce qui presse ? Une envie douce n'est pas une fenêtre. Une condition jamais posée n'est pas « trop tôt » — sauf si le contexte dit qu'elle ne peut pas y répondre aujourd'hui.
+3) RYTHME / STAGNATION : au vu du RYTHME RÉCENT, qu'est-ce qui stagne ou n'a jamais été entamé et mérite de l'oxygène — sans culpabiliser ?
+4) MEILLEUR CRÉNEAU : parmi 5 / 15 / 30 / 50 / Sortie, quel couple créneau + UN truc a le meilleur ratio avancée / temps AUJOURD'HUI, parmi ce qui est faisable ? Par défaut la plus petite séance bureau sensée ; si ce qui pèse exige de sortir ET qu'elle peut sortir, "pick":"sortie". N'allonge le bureau que si une vraie raison (fenêtre qui se ferme, gros pas assis, rythme qui décroche).
+5) CE QU'ON LAISSE — sois RÉALISTE, pas confortable. Pour 2–4 candidats laissés : le mode normal les traitera-t-il un jour ? Ce que le contexte écarte (pas chez elle) n'est pas oublié : c'est reporté, pas un filet. « OK au rythme actuel » est FAUX si ce rythme ne peut pas porter le reste. Dis l'impact. Si l'impact n'est pas OK : change de pick, ou la question porte dessus — seulement si elle peut y répondre là où elle est.
+6) VALIDATION : une fois les points tenus, seulement alors tu rédiges "message" + "pick". Le message ne montre que la conclusion — jamais le parcours.
 
 DURÉE (champ "pick"), une seule valeur parmi "5", "15", "30", "50", ou "sortie" :
 - "sortie" = le créneau du jour EST une Sortie (bouton Sortie). À utiliser quand ce qui pèse vraiment exige de se déplacer.
@@ -220,7 +225,7 @@ DURÉE (champ "pick"), une seule valeur parmi "5", "15", "30", "50", ou "sortie"
 - MAIS LA TENDANCE, ELLE, COMPTE — et l'ignorer serait te rendre passif, ce qui est un défaut aussi grave que stresser. Lis le RYTHME RÉCENT et réagis :
   · Si on dépose nettement plus qu'on ne boucle, ou si les séances se sont espacées / arrêtées, ou s'il y a un paquet de trucs qui traînent depuis plus de deux semaines sans bouger : le rythme actuel ne suffit pas, DIS-LE simplement, et OFFRE plus de capacité. Trois formes : une séance bureau plus longue ("30" ou "50") ; DEUX séances dans la journée ; ou — si ce qui stagne est surtout dehors — le bouton Sortie ("pick":"sortie").
   · Si le rythme tient (on boucle à peu près autant qu'on dépose, les séances sont régulières) ET que rien de lourd n'attend dehors, reste sur la plus petite séance sensée.
-  · Une séance déjà faite aujourd'hui justifie un 5 min, PAS d'enterrer ce que ce 5 min ne portera jamais : la question (Sortie, condition jamais posée) reste due.
+  · Une séance déjà faite aujourd'hui justifie un 5 min. La question-filet reste due SI elle est faisable d'où elle est (CONTEXTE DE VIE) — sinon ce n'est pas un filet.
 - Constater honnêtement que ça s'accumule N'EST PAS stresser. Ce qui est interdit, c'est la culpabilité, le reproche et le décompte accusateur — pas le constat lucide. Une personne à qui on cache que le rythme décroche n'est pas rassurée, elle est abandonnée.
 - INTENTION DE JOUR : un truc marqué « intention : prévu aujourd'hui » (ou passé) est un signal à peser avec le reste — conséquences, stagnation, fenêtre — pas une priorité absolue qui écrase tout. Si elle s'était donné un rendez-vous avec elle-même et que ça stagne, nomme-le et propose-le dans la composition du jour, sans reproche.
 - FENÊTRES SAISONNIÈRES : certains trucs n'ont pas de date mais perdent leur sens passé un moment (organiser un voyage ou une activité d'été, un cadeau avant une fête, une inscription avant la rentrée). Déduis-le du texte et de la saison actuelle : si la fenêtre se referme bientôt, c'est le moment de le dire, même sans échéance saisie. Une envie douce (« aimerait essayer ce mois-ci ») n'est PAS une fenêtre qui se ferme — ne la transforme pas en deadline, et ne la mets jamais devant quelqu'un qui attend.
@@ -306,13 +311,14 @@ function systemPrompt(
   chosen?: number,
   name?: string,
   context?: SessionContext,
+  situation?: string,
 ): string {
   const ctx = context ?? "desk";
   const open = openThreads(allThreads);
   if (ctx === "courses") return coursesPlanPrompt(open, name);
   if (ctx === "sortie") return sortiePlanPrompt(open, name);
   if (ctx === "regulier") return regulierPlanPrompt(allThreads, name);
-  return deskPlanPrompt(open, allThreads, stats, chosen, name);
+  return deskPlanPrompt(open, allThreads, stats, chosen, name, situation);
 }
 
 function fallbackPlan(
@@ -387,6 +393,7 @@ function notifyPlanPrompt(
   name?: string,
   chosen?: number,
   sourceMessage?: string,
+  situation?: string,
 ): string {
   const chosenRule = chosen
     ? `\n\nDURÉE DÉJÀ CHOISIE : ${chosen} min — c'est le même conseil que sur l'accueil. Renvoie obligatoirement "pick":"${chosen}". Tu n'écris QUE le message court (max 90 car.), sans répéter la durée.`
@@ -394,7 +401,7 @@ function notifyPlanPrompt(
   const source = sourceMessage?.trim()
     ? `\n\nCONSEIL DÉJÀ COMPOSÉ (accueil et mail) :\n« ${sourceMessage.trim()} »\nTu RACCOURCIS ce conseil. MÊME truc. Tu n'en choisis pas un autre.`
     : "";
-  return `${socle(name)}
+  return `${socle(name, situation)}
 
 ${renderStats(stats)}
 
@@ -490,19 +497,24 @@ DIAGNOSTIC ACTIVÉ : tu DOIS écrire le parcours d'ARBITRAGE SILENCIEUX AVANT de
 Ordre OBLIGATOIRE du JSON — "why" EN PREMIER, puis "message", puis "pick" :
 {"why":"...","message":"...","pick":"15"}
 
-"why" reprend EXPLICITEMENT les 5 points (phrases courtes, factuelles, pour le développeur — JAMAIS repris dans "message") :
-1) Urgence / fenêtre : ce qui presse ou se ferme.
-2) Rythme / stagnation : ce qui stagne ou n'a jamais bougé.
-3) Meilleur créneau : 5/15/30/50 ou Sortie + truc retenus, et pourquoi ce ratio aujourd'hui (cite 1–2 alternatives écartées).
-4) Ce qu'on laisse : 2–4 candidats + le mode normal les portera-t-il vraiment + impact si on laisse. Condition jamais demandée = pas un mur. Si pas OK, tu changes.
-5) Validation : une phrase qui confirme la cohérence why → message/pick.
+"why" reprend EXPLICITEMENT les points d'ARBITRAGE SILENCIEUX (phrases courtes, factuelles, pour le développeur — JAMAIS repris dans "message") :
+1) Contexte de vie : d'où elle est, ce qui n'est pas faisable aujourd'hui.
+2) Urgence / fenêtre : ce qui presse ou se ferme, parmi le reste.
+3) Rythme / stagnation : ce qui stagne ou n'a jamais bougé.
+4) Meilleur créneau : 5/15/30/50 ou Sortie + truc retenus, et pourquoi (cite 1–2 alternatives écartées).
+5) Ce qu'on laisse : 2–4 candidats + reportés par le contexte vs vraiment laissés + impact. Question infaisable d'où elle est = pas un filet.
+6) Validation : une phrase qui confirme la cohérence why → message/pick.
 
 Ensuite seulement tu rédiges "message" et "pick", EN COHÉRENCE avec ce why. Si why dit qu'un truc est trop tôt ou qu'une durée est trop longue, message/pick doivent suivre.`;
 }
 
 function debugPayload(
   threads: Thread[],
-  opts?: { why?: string; system?: string; user?: string },
+  opts?: {
+    why?: string;
+    system?: string;
+    user?: string;
+  },
 ) {
   return {
     ...buildPlanViewSnapshot(threads),
@@ -510,6 +522,12 @@ function debugPayload(
     ...(opts?.system ? { system: opts.system } : {}),
     ...(opts?.user ? { user: opts.user } : {}),
   };
+}
+
+function resolveSituation(body: Body): string | undefined {
+  const stored = body.meta?.situation?.trim();
+  if (stored) return stored;
+  return extractSituationFromConvo(body.messages ?? [])?.text;
 }
 
 export async function POST(req: Request) {
@@ -541,6 +559,7 @@ export async function POST(req: Request) {
     });
   }
 
+  const situation = resolveSituation(body);
   const client = new Anthropic({ apiKey });
   const forNotify = body.forNotify === true;
   const userCue = forNotify
@@ -555,6 +574,7 @@ export async function POST(req: Request) {
           body.meta?.name,
           body.chosen,
           body.sourceMessage,
+          situation,
         )
       : systemPrompt(
           open,
@@ -562,6 +582,7 @@ export async function POST(req: Request) {
           body.chosen,
           body.meta?.name,
           context,
+          situation,
         );
     const system = withDebugPrompt(baseSystem, debug);
     const res = await client.messages.create({
@@ -624,6 +645,7 @@ export async function POST(req: Request) {
                       body.meta?.name,
                       body.chosen,
                       body.sourceMessage,
+                      situation,
                     )
                   : systemPrompt(
                       open,
@@ -631,6 +653,7 @@ export async function POST(req: Request) {
                       body.chosen,
                       body.meta?.name,
                       context,
+                      situation,
                     ),
                 true,
               ),

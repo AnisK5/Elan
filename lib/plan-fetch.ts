@@ -54,7 +54,7 @@ export async function generatePlanViaApi(opts: {
   threads: Thread[];
   stats: PlanStatsForNotify;
   context?: SessionContext;
-  meta?: { name?: string };
+  meta?: { name?: string; situation?: string };
   chosen?: number;
 }): Promise<{ message: string; pick: string } | null> {
   return postPlan({
@@ -71,7 +71,7 @@ export async function generateNotifyCopyViaApi(opts: {
   threads: Thread[];
   stats: PlanStatsForNotify;
   chosen?: number;
-  meta?: { name?: string };
+  meta?: { name?: string; situation?: string };
   sourceMessage?: string;
 }): Promise<{ message: string; pick: string } | null> {
   return postPlan({

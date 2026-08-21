@@ -208,6 +208,7 @@ Changement logique plan → incrémenter **`PLAN_VERSION`** dans `lib/constants.
 | Réglages | `elan.settings.v1` | `elan_settings` |
 | Séance en cours | `elan.active.v1` | — |
 | Chat accueil | `elan.chat.v1` | — |
+| Cadre de vie | `elan.situation.v1` | — |
 | Cache plan | `elan.plan.v1` | — |
 
 Un **truc** = `Thread` (`open` · `done` · `snoozed`). Contexte séance : `desk` · `sortie` · `courses`.

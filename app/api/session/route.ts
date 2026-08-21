@@ -21,6 +21,7 @@ interface Meta {
   name?: string;
   ending?: boolean;
   context?: SessionContext;
+  situation?: string;
   priorSessionsToday?: SessionLog[];
   /** Conseil déjà lu (accueil, mail ou notif) — même fil en ouverture. */
   ritualBrief?: { message: string };
@@ -131,7 +132,7 @@ LE PROGRAMME DE LA SÉANCE (adapté au temps — TDAH = un truc à la fois) :
 - Séance bureau : EXCLURE tout ce qui exige de sortir. Proposer de préparer (enveloppe près de la porte) ou un créneau Sortie plus tard — ne pas le mettre dans les 15 min assis.
 - Enchaîne UN par UN après chaque pas réussi — ne recharge pas la personne avec plusieurs fronts d'un coup.
 `;
-  return `${socleSession(meta.name)}
+  return `${socleSession(meta.name, meta.situation)}
 
 TU ES EN SÉANCE : tu accompagnes le créneau en cours, en direct, du début à la clôture. Tu fais du body-doubling — ta présence aide à s'y mettre.
 ${deskProgramBlock}

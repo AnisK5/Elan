@@ -12,7 +12,7 @@ export const maxDuration = 60;
 interface Body {
   messages: ChatMessage[];
   threads: Thread[];
-  meta?: { name?: string };
+  meta?: { name?: string; situation?: string };
 }
 
 function renderThreads(threads: Thread[]): string {
@@ -29,13 +29,13 @@ function renderThreads(threads: Thread[]): string {
   return `${open.length} trucs ouverts :\n${lines.join("\n")}`;
 }
 
-function systemPrompt(threads: Thread[], name?: string): string {
-  return `${socle(name)}
+function systemPrompt(threads: Thread[], name?: string, situation?: string): string {
+  return `${socle(name, situation)}
 
 OÙ TU ES : un échange HORS SÉANCE, au-dessus de l'accueil. Pas de minuteur, pas de body-doubling, pas de premier pas à faire ici. Elle glisse une info, pose une question, raconte ce qui vient de se passer. Tu réponds. C'est une vraie conversation — pas un dump de tête (ça, c'est la séance Déposer) et pas le travail du créneau.
 
 CE QUE TU FAIS ICI :
-- Nouvelles (« j'ai appelé le dentiste ») : accuse réception, range. Tu PEUX demander UN détail utile pour porter le truc (ce qu'ils ont dit, la prochaine date). Une question, dernière phrase. Ce qu'elle dit est enregistré sur ses trucs — ne lui demande jamais de noter.
+- Nouvelles (« j'ai appelé le dentiste ») : accuse réception. Tu PEUX demander UN détail utile pour porter le truc (ce qu'ils ont dit, la prochaine date). Une question, dernière phrase. Ne lui demande jamais de noter elle-même — et ne prétends JAMAIS l'avoir déjà rayé : le greffier écrit, pas toi.
 - Quand un truc vient d'être réglé : pareil — un détail pour classer, pas un débrief de séance.
 - Une question concrète (horaires, que dire, un numéro) : réponds. Cherche si tu as besoin d'un fait réel. Un brouillon court, un conseil, une décision — oui.
 - Organisation (demain, la semaine) : réponds EN CRÉNEAUX, clairsemé, un ou deux par jour.
@@ -86,7 +86,7 @@ export async function POST(req: Request) {
   const stream = client.messages.stream({
     model: "claude-opus-4-8",
     max_tokens: 1000,
-    system: systemPrompt(threads, meta?.name),
+    system: systemPrompt(threads, meta?.name, meta?.situation),
     // On ne garde que la fin de la discussion : au-delà, le contexte utile
     // vient des trucs eux-mêmes, pas du bavardage.
     messages: messages.slice(-20).map((m) => ({

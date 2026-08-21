@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { resolveAnthropicKey } from "@/lib/anthropic";
 import type { ChatMessage, Thread } from "@/lib/types";
 import { mergeRegulierWrites, reguliersWriteNote, upsertRegulierOps, extractReguliersFromConvo } from "@/lib/reguliers-write";
+import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,10 +48,12 @@ AUJOURD'HUI : ${today}. Sers-t'en pour dater et ancrer tout repère temporel.
 RÈGLES (tu es CONSERVATEUR) :
 - EXCEPTION RÉGULIERS — passe AVANT le conservatisme : si l'échange parle d'un rythme de vie (linge, draps, loyer, URSSAF…) AVEC une fréquence — même seulement recommandée par Élan et non refusée — tu DOIS l'écrire dans le fil "Réguliers". Un « c'est déjà noté » d'Élan ne compte PAS : vérifie LES TRUCS ACTUELS. Fil absent ou ligne absente → add/note. Elle qui dit que le fil est vide = tu écris MAINTENANT.
 - N'agis QUE sur ce qui est clairement dit ou confirmé dans l'échange. Dans le doute, ne fais rien.
-- HORS SÉANCE (« j'ai appelé », « c'est envoyé », « c'est fait », un détail, une date) : elle a parlé POUR que tu ranges. C'est aussi net qu'une séance. Écris les ops. Ne reste pas les bras croisés parce que l'échange est court.
+- HORS SÉANCE (« j'ai appelé », « c'est envoyé », « c'est fait », « c'est rendu », un détail, une date) : elle a parlé POUR que tu ranges. C'est aussi net qu'une séance. Écris les ops. Ne reste pas les bras croisés parce que l'échange est court. Si elle nomme un truc ouvert et dit que c'est fait / rendu / réglé / plus à faire — "done" sur CET id, tout de suite.
+- CONTEXTE DE VIE : si elle dit où elle est, jusqu'à quand, ce qui change ce qui est faisable (« je suis à Vienne », « pas chez moi », « je reviens le 28 ») — écris-le dans le champ "situation" (une phrase factuelle, date ancrée). Ce n'est PAS un truc : ne snooze pas tout le lot. Le conseil du matin lira ce cadre.
 - N'invente jamais un truc qui n'a pas été évoqué.
 - Ne supprime jamais. Pour un truc terminé, utilise "done" (réversible), pas une suppression.
-- Ne marque "done" que si la personne a clairement dit que c'était fait.
+- Ne marque "done" que si la personne a clairement dit que c'était fait (« c'est fait », « c'est rendu », « c'est réglé », « plus besoin »). Un « oui » à « c'est fait, le coffre ? » compte. Un « oui » à « le salaire est arrivé ? » ne clot PAS le déplacement : note la condition, ne "done" pas.
+- L'id d'une op, c'est le champ id= de la ligne, PAS le libellé. Si tu vises « Rendre argent au coffre », copie l'id tel quel.
 - ENVOYÉ / CONTACTÉ / RELANCÉ = ACTION FAITE. Si la personne dit qu'elle a envoyé un mail, passé un appel, fait une relance, posté, soumis, commandé — l'action correspondante EST faite. Ne laisse JAMAIS un truc « relancer X » / « contacter X » / « envoyer X » ouvert et inchangé alors qu'elle vient de le faire (sinon le conseil du matin lui re-proposera de le refaire — confiance brisée). Deux cas, et tu DOIS écrire les ops dans les DEUX :
   · Si l'action clôt le truc (rien de plus à attendre) → "done".
   · Si ça met le truc EN ATTENTE d'une réponse d'un tiers → OBLIGATOIREMENT les trois à la fois : (1) kind "suivi", (2) "note" qui commence par « relancé le [date d'aujourd'hui JJ/MM] » ou « envoyé le [JJ/MM] », en attente de réponse, (3) "due" pour la PROCHAINE relance (typiquement dans ~1 semaine si aucun délai dit), PAS aujourd'hui. Sans la note datée du jour, le plan du lendemain croira que ce n'est pas fait.
@@ -84,7 +87,7 @@ RÈGLES (tu es CONSERVATEUR) :
 - ANCRE LE TEMPS. Ne laisse JAMAIS un repère temporel relatif tel quel dans une note (« cette semaine », « demain », « dans 3 jours », « lundi prochain ») — il perdrait son sens relu plus tard. Convertis-le en repère ABSOLU à partir de la date d'aujourd'hui, ex. « aimerait s'en occuper d'ici dimanche 19/07 » plutôt que « cette semaine ». Idem pour toute vraie échéance déduite (« set » due) : calcule la date réelle à partir d'aujourd'hui.
 
 FORMAT DE SORTIE : uniquement un objet JSON, rien d'autre :
-{"updates": [ ... ], "note": "..."}
+{"updates": [ ... ], "note": "...", "situation": "..."}
 
 Chaque update est un de ces objets :
 - {"op":"done","id":"<id>"}
@@ -95,6 +98,7 @@ Chaque update est un de ces objets :
 - {"op":"add","text":"<nom>","kind":"action|suivi","due":"YYYY-MM-DD","effort":"S|M|L","note":"<contexte>"}  (due/effort/note optionnels)
 
 "note" : un résumé TRÈS court et humain de ce que tu as changé, en français, pour l'afficher à la personne (ex. "impôts ✓ · Paul repoussé à vendredi"). Si tu ne changes rien, renvoie {"updates": [], "note": ""}.
+"situation" : seulement si l'échange pose ou met à jour le cadre de vie (où elle est, jusqu'à quand). Une phrase. Sinon omets le champ.
 
 LES TRUCS ACTUELS (avec leur id) :
 ${renderThreads(threads)}
@@ -106,7 +110,11 @@ ${renderConvo(messages)}`;
 const CUE =
   "[Mets à jour mes trucs si — et seulement si — l'échange le justifie clairement. Réponds uniquement avec le JSON.]";
 
-function safeParse(text: string): { updates: unknown[]; note: string } | null {
+function safeParse(text: string): {
+  updates: unknown[];
+  note: string;
+  situation?: string;
+} | null {
   const cleaned = text
     .trim()
     .replace(/^```(?:json)?/i, "")
@@ -115,7 +123,14 @@ function safeParse(text: string): { updates: unknown[]; note: string } | null {
   try {
     const o = JSON.parse(cleaned);
     if (Array.isArray(o.updates)) {
-      return { updates: o.updates, note: typeof o.note === "string" ? o.note : "" };
+      return {
+        updates: o.updates,
+        note: typeof o.note === "string" ? o.note : "",
+        situation:
+          typeof o.situation === "string" && o.situation.trim()
+            ? o.situation.trim()
+            : undefined,
+      };
     }
   } catch {
     // ignore
@@ -126,8 +141,8 @@ function safeParse(text: string): { updates: unknown[]; note: string } | null {
 function withReguliers(
   threads: Thread[],
   messages: ChatMessage[],
-  greffier: { updates: unknown[]; note: string },
-): { updates: unknown[]; note: string } {
+  greffier: { updates: unknown[]; note: string; situation?: string },
+): { updates: unknown[]; note: string; situation?: string } {
   const ours = upsertRegulierOps(
     threads,
     extractReguliersFromConvo(messages),
@@ -140,7 +155,28 @@ function withReguliers(
       ? greffier.note
       : `${greffier.note} · ${extra}`
     : extra;
-  return { updates, note };
+  return { ...greffier, updates, note };
+}
+
+function withWrites(
+  threads: Thread[],
+  messages: ChatMessage[],
+  greffier: { updates: unknown[]; note: string; situation?: string },
+): { updates: unknown[]; note: string; situation?: string } {
+  const after = withReguliers(threads, messages, greffier);
+  const extracted = extractSituationFromConvo(messages);
+  const fromModel = after.situation?.trim()
+    ? { text: after.situation.trim() }
+    : null;
+  const situation = mergeSituation(extracted, fromModel);
+  if (!situation) return after;
+  const extra = "cadre de vie retenu";
+  const note = after.note?.trim()
+    ? after.note.includes("cadre de vie")
+      ? after.note
+      : `${after.note} · ${extra}`
+    : extra;
+  return { ...after, note, situation: situation.text };
 }
 
 export async function POST(req: Request) {
@@ -159,7 +195,7 @@ export async function POST(req: Request) {
   const empty = { updates: [] as unknown[], note: "" };
   const apiKey = resolveAnthropicKey(req);
   if (!apiKey) {
-    return Response.json(withReguliers(threads, messages, empty));
+    return Response.json(withWrites(threads, messages, empty));
   }
 
   const client = new Anthropic({ apiKey });
@@ -173,8 +209,8 @@ export async function POST(req: Request) {
     const block = res.content.find((b) => b.type === "text");
     const text = block && block.type === "text" ? block.text : "";
     const parsed = safeParse(text) ?? empty;
-    return Response.json(withReguliers(threads, messages, parsed));
+    return Response.json(withWrites(threads, messages, parsed));
   } catch {
-    return Response.json(withReguliers(threads, messages, empty));
+    return Response.json(withWrites(threads, messages, empty));
   }
 }

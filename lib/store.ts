@@ -12,6 +12,8 @@ import type {
   Thread,
   ThreadKind,
 } from "./types";
+import type { Situation } from "./situation";
+import { activeSituation } from "./situation";
 import { getSupabase } from "./supabase";
 import { apiFetch } from "./anthropic";
 
@@ -22,6 +24,7 @@ const SETTINGS_KEY = "elan.settings.v1";
 const ACTIVE_KEY = "elan.active.v1";
 const CHAT_KEY = "elan.chat.v1";
 const PLAN_KEY = "elan.plan.v1";
+const SITUATION_KEY = "elan.situation.v1";
 
 const SYNC_EVENT = "elan:sync";
 
@@ -702,6 +705,23 @@ export function clearChat() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(CHAT_KEY);
   window.dispatchEvent(new CustomEvent(SYNC_EVENT, { detail: CHAT_KEY }));
+}
+
+/** Cadre de vie actuel (Vienne, pas chez soi…) — pas un truc, un contexte. */
+export function readSituation(): Situation | null {
+  const raw = read<Situation | null>(SITUATION_KEY, null);
+  return activeSituation(raw);
+}
+
+export function writeSituation(s: Situation | null) {
+  if (typeof window === "undefined") return;
+  const next = activeSituation(s);
+  if (!next) {
+    window.localStorage.removeItem(SITUATION_KEY);
+    window.dispatchEvent(new CustomEvent(SYNC_EVENT, { detail: SITUATION_KEY }));
+    return;
+  }
+  writeLocalOnly(SITUATION_KEY, next);
 }
 
 export function clearActiveSession() {

@@ -9,6 +9,26 @@ describe("parseThreadOps — la porte d'entrée des écritures du modèle", () =
     expect(parseThreadOps([{ op: "done", id: "inconnu" }], known)).toEqual([]);
   });
 
+  it("rattache un libellé unique (« coffre ») à l'id réel", () => {
+    const threads = [
+      { id: "a", text: "Rendre l'argent au coffre", status: "open" },
+      { id: "b", text: "Appeler Sonia", status: "open" },
+    ];
+    expect(
+      parseThreadOps([{ op: "done", id: "coffre" }], known, threads),
+    ).toEqual([{ op: "done", id: "a" }]);
+  });
+
+  it("ne rattache pas un mot qui matche deux trucs", () => {
+    const threads = [
+      { id: "a", text: "Rendre l'argent au coffre", status: "open" },
+      { id: "b", text: "Changer le code du coffre", status: "open" },
+    ];
+    expect(
+      parseThreadOps([{ op: "done", id: "coffre" }], known, threads),
+    ).toEqual([]);
+  });
+
   it("laisse passer une opération valide", () => {
     expect(parseThreadOps([{ op: "done", id: "a" }], known)).toEqual([
       { op: "done", id: "a" },

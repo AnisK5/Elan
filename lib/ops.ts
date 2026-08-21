@@ -22,6 +22,36 @@ function str(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
 }
 
+function fold(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * Le modèle envoie souvent le libellé (« coffre ») au lieu de l'id.
+ * On ne rattache que s'il n'y a qu'UN truc ouvert qui matche.
+ */
+export function resolveThreadId(
+  raw: string,
+  threads: { id: string; text: string; status?: string }[],
+): string | undefined {
+  const id = raw.trim();
+  if (!id) return undefined;
+  if (threads.some((t) => t.id === id)) return id;
+  const n = fold(id);
+  if (n.length < 4) return undefined;
+  const open = threads.filter((t) => !t.status || t.status === "open");
+  const hits = open.filter((t) => {
+    const tN = fold(t.text);
+    return tN.includes(n) || (n.length >= 12 && n.includes(tN));
+  });
+  return hits.length === 1 ? hits[0].id : undefined;
+}
+
 /** Une date n'est retenue que si elle est réelle et pas délirante. */
 function date(v: unknown): string | undefined {
   const s = str(v);
@@ -38,7 +68,11 @@ function date(v: unknown): string | undefined {
  * champs bien typés. Tout le reste est écarté silencieusement — une opération
  * douteuse ne vaut jamais le risque de l'appliquer.
  */
-export function parseThreadOps(raw: unknown, knownIds: Set<string>): ThreadOp[] {
+export function parseThreadOps(
+  raw: unknown,
+  knownIds: Set<string>,
+  threads?: { id: string; text: string; status?: string }[],
+): ThreadOp[] {
   if (!Array.isArray(raw)) return [];
   const out: ThreadOp[] = [];
 
@@ -69,8 +103,16 @@ export function parseThreadOps(raw: unknown, knownIds: Set<string>): ThreadOp[] 
     }
 
     // Toutes les autres opérations ciblent un truc existant. Un id inconnu
-    // signifie que le modèle l'a inventé : on ne devine pas ce qu'il visait.
-    const id = str(item.id);
+    // est d'abord recalé sur le libellé s'il n'y a qu'une cible ; sinon on
+    // jette — on ne devine pas entre deux trucs.
+    const rawId = str(item.id);
+    const id = rawId
+      ? knownIds.has(rawId)
+        ? rawId
+        : threads
+          ? resolveThreadId(rawId, threads)
+          : undefined
+      : undefined;
     if (!id || !knownIds.has(id)) continue;
 
     switch (op) {
