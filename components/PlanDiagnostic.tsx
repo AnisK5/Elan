@@ -26,9 +26,17 @@ export default function PlanDiagnostic({ data }: { data: PlanDiagnosticData }) {
       `message: ${data.message}`,
       data.why ? `why: ${data.why}` : "why: (pas encore)",
       "",
-      "CANDIDATS:",
+      "CANDIDATS BUREAU:",
       ...(data.view.candidates.length
         ? data.view.candidates
+        : ["(aucun)"]),
+      "",
+      "CANDIDATS SORTIE:",
+      ...(data.view.outdoor.length ? data.view.outdoor : ["(aucun)"]),
+      "",
+      "CONDITIONS JAMAIS POSÉES:",
+      ...(data.view.conditions.length
+        ? data.view.conditions
         : ["(aucun)"]),
       "",
       "EN ATTENTE:",
@@ -72,13 +80,29 @@ export default function PlanDiagnostic({ data }: { data: PlanDiagnosticData }) {
           </p>
         )}
         <div>
-          <p className="text-faint">Candidats</p>
+          <p className="text-faint">Candidats bureau</p>
           <pre className="mt-0.5 whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-ink/80">
             {data.view.candidates.length
               ? data.view.candidates.join("\n")
               : "(aucun)"}
           </pre>
         </div>
+        {data.view.outdoor.length > 0 ? (
+          <div>
+            <p className="text-faint">Candidats sortie</p>
+            <pre className="mt-0.5 whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-ink/80">
+              {data.view.outdoor.join("\n")}
+            </pre>
+          </div>
+        ) : null}
+        {data.view.conditions.length > 0 ? (
+          <div>
+            <p className="text-faint">Conditions jamais posées</p>
+            <pre className="mt-0.5 whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-ink/80">
+              {data.view.conditions.join("\n")}
+            </pre>
+          </div>
+        ) : null}
         <div>
           <p className="text-faint">En attente</p>
           <pre className="mt-0.5 whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-ink/80">

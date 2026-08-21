@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   hasRecentContactNote,
   hasFutureSoftTiming,
+  hasUnverifiedCondition,
   isDeskPlanCandidate,
+  isOutdoorNeed,
   isRelanceStyleText,
+  splitDeskBuckets,
   splitPlanThreads,
 } from "./plan-candidates";
 import type { Thread } from "./types";
@@ -160,5 +163,76 @@ describe("splitPlanThreads", () => {
     const { candidates, waiting } = splitPlanThreads([claire, linge]);
     expect(candidates.map((t) => t.id)).toEqual(["l"]);
     expect(waiting.map((t) => t.id)).toEqual(["c"]);
+  });
+});
+
+describe("sorties et conditions jamais posées", () => {
+  it("repère une sortie magasin / coffre / nager", () => {
+    expect(
+      isOutdoorNeed(
+        thread({ text: "Faire du shopping chaussures", note: "Avec mon bon d'achat" }),
+      ),
+    ).toBe(true);
+    expect(
+      isOutdoorNeed(
+        thread({
+          text: "Rendre argent au coffre",
+          note: "À faire dès réception du salaire. Nécessite un déplacement en journée.",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isOutdoorNeed(
+        thread({ text: "Nager dans la Seine à Paris (en face de chez moi)" }),
+      ),
+    ).toBe(true);
+  });
+
+  it("n'invente pas une sortie si papa imprime lui-même", () => {
+    expect(
+      isOutdoorNeed(
+        thread({
+          text: "Imprimer le doc de papa",
+          note: "Papa prend en charge l'impression lui-même. Plus de sortie papeterie nécessaire.",
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("repère une condition jamais posée", () => {
+    expect(
+      hasUnverifiedCondition(
+        thread({
+          text: "Changer les patins des chaises",
+          note: "À vérifier : patins déjà disponibles ou à acheter.",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      hasUnverifiedCondition(
+        thread({ text: "mettre le linge", note: "dans le bac" }),
+      ),
+    ).toBe(false);
+  });
+
+  it("sépare bureau / sortie / condition", () => {
+    const linge = thread({ id: "l", text: "mettre le linge" });
+    const chaussures = thread({
+      id: "s",
+      text: "Faire du shopping chaussures",
+    });
+    const patins = thread({
+      id: "p",
+      text: "Changer les patins des chaises",
+      note: "À vérifier : patins déjà disponibles ou à acheter.",
+    });
+    const { sitting, outdoor, conditions } = splitDeskBuckets([
+      linge,
+      chaussures,
+      patins,
+    ]);
+    expect(sitting.map((t) => t.id)).toEqual(["l"]);
+    expect(outdoor.map((t) => t.id)).toEqual(["s"]);
+    expect(conditions.map((t) => t.id)).toEqual(["p"]);
   });
 });

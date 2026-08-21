@@ -216,6 +216,52 @@ export function splitPlanThreads(threads: Thread[]): {
   return { candidates, waiting };
 }
 
+/** La note dit qu'on n'a plus à sortir (en ligne, quelqu'un d'autre, déjà réglé). */
+const NO_LONGER_OUTDOOR =
+  /plus de sortie|sans (?:avoir à )?bouger|en ligne uniquement|papa (?:prend|gère)|faisable à distance|pas (?:une |de )?sortie/i;
+
+const OUTDOOR_CUE =
+  /\b(magasin|papeterie|pharmacie|poste|banque|coffre|shopping|chaussures|supermarch[ée]|courses|d[ée]placement|sortir|sortie|sur place|en magasin|nager|baignade|piscine|place d['’]italie)\b/i;
+
+const OUTDOOR_NOTE =
+  /d[ée]placement|sortie physique|pas faisable à distance|en magasin|sur le trajet|n[ée]cessite un d[ée]placement/i;
+
+/** Condition posée dans la note, jamais tranchée — pas un mur, une question. */
+const UNVERIFIED_CONDITION =
+  /d[èe]s r[ée]ception|d[èe]s que|à v[ée]rifier|une fois arriv[ée]e?|pas encore ouverte|quand j['’]aurai|condition salaire/i;
+
+/** Ce truc exige de sortir : le 15 min bureau ne le portera jamais. */
+export function isOutdoorNeed(t: Thread): boolean {
+  const blob = `${t.text}\n${t.note ?? ""}`;
+  if (NO_LONGER_OUTDOOR.test(blob)) return false;
+  if (t.text.trim().toLowerCase() === "courses") return true;
+  return OUTDOOR_CUE.test(blob) || OUTDOOR_NOTE.test(t.note ?? "");
+}
+
+/** Une condition bloque le truc sur le papier, mais on ne l'a jamais demandée. */
+export function hasUnverifiedCondition(t: Thread): boolean {
+  if (hasFutureSoftTiming(t.note)) return false;
+  return UNVERIFIED_CONDITION.test(`${t.note ?? ""}\n${t.text}`);
+}
+
+export function splitDeskBuckets(candidates: Thread[]): {
+  sitting: Thread[];
+  outdoor: Thread[];
+  conditions: Thread[];
+} {
+  const outdoor = candidates.filter(isOutdoorNeed);
+  const outdoorIds = new Set(outdoor.map((t) => t.id));
+  const conditions = candidates.filter(
+    (t) => hasUnverifiedCondition(t) && !outdoorIds.has(t.id),
+  );
+  const parked = new Set([
+    ...outdoor.map((t) => t.id),
+    ...conditions.map((t) => t.id),
+  ]);
+  const sitting = candidates.filter((t) => !parked.has(t.id));
+  return { sitting, outdoor, conditions };
+}
+
 /** Ligne telle que le prompt plan la voit (diagnostic + render serveur). */
 export function formatDeskPlanLine(t: Thread): string {
   const kind = t.kind === "suivi" ? "À SUIVRE" : "ACTION";
@@ -230,14 +276,36 @@ export function formatDeskPlanLine(t: Thread): string {
 export interface PlanViewSnapshot {
   candidates: string[];
   waiting: string[];
+  outdoor: string[];
+  conditions: string[];
+}
+
+export function planViewFromDebug(d: {
+  candidates?: unknown;
+  waiting?: unknown;
+  outdoor?: unknown;
+  conditions?: unknown;
+}): PlanViewSnapshot | null {
+  if (!Array.isArray(d.candidates) || !Array.isArray(d.waiting)) return null;
+  const strs = (v: unknown) =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  return {
+    candidates: strs(d.candidates),
+    waiting: strs(d.waiting),
+    outdoor: strs(d.outdoor),
+    conditions: strs(d.conditions),
+  };
 }
 
 /** Snapshot déterministe — ce que le filtre met sous les yeux de l'IA. */
 export function buildPlanViewSnapshot(threads: Thread[]): PlanViewSnapshot {
   const open = threads.filter((t) => t.status === "open");
   const { candidates, waiting } = splitPlanThreads(open);
+  const { sitting, outdoor, conditions } = splitDeskBuckets(candidates);
   return {
-    candidates: candidates.map(formatDeskPlanLine),
+    candidates: sitting.map(formatDeskPlanLine),
+    outdoor: outdoor.map(formatDeskPlanLine),
+    conditions: conditions.map(formatDeskPlanLine),
     waiting: waiting.map(formatDeskPlanLine),
   };
 }

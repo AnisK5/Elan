@@ -25,7 +25,7 @@ import SettingsSheet from "@/components/SettingsSheet";
 import { useRitualReminder } from "@/components/useRitualReminder";
 import { isNotifyPromptDismissed } from "@/lib/notifications";
 import { isDiagnosticEnabled } from "@/lib/diagnostic";
-import { buildPlanViewSnapshot } from "@/lib/plan-candidates";
+import { buildPlanViewSnapshot, planViewFromDebug } from "@/lib/plan-candidates";
 import PlanDiagnostic, {
   type PlanDiagnosticData,
 } from "@/components/PlanDiagnostic";
@@ -384,14 +384,8 @@ export default function Home() {
           }
           if (wantDebug) {
             const view =
-              j?.debug &&
-              Array.isArray(j.debug.candidates) &&
-              Array.isArray(j.debug.waiting)
-                ? {
-                    candidates: j.debug.candidates as string[],
-                    waiting: j.debug.waiting as string[],
-                  }
-                : buildPlanViewSnapshot(openThreads);
+              (j?.debug && planViewFromDebug(j.debug)) ||
+              buildPlanViewSnapshot(openThreads);
             setPlanDiag({
               view,
               why: typeof j?.debug?.why === "string" ? j.debug.why : undefined,
@@ -596,14 +590,8 @@ export default function Home() {
             setPlan({ message: msg, pick });
             if (wantDebug) {
               const view =
-                j.debug &&
-                Array.isArray(j.debug.candidates) &&
-                Array.isArray(j.debug.waiting)
-                  ? {
-                      candidates: j.debug.candidates,
-                      waiting: j.debug.waiting,
-                    }
-                  : buildPlanViewSnapshot(openThreads);
+                (j.debug && planViewFromDebug(j.debug)) ||
+                buildPlanViewSnapshot(openThreads);
               setPlanDiag({
                 view,
                 why: j.debug?.why,

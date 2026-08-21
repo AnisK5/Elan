@@ -15,6 +15,7 @@ import { dayDiff } from "@/lib/thread-labels";
 import {
   buildPlanViewSnapshot,
   formatDeskPlanLine,
+  splitDeskBuckets,
   splitPlanThreads,
 } from "@/lib/plan-candidates";
 import { identity, socle, today, TON, VOIX } from "@/lib/voice";
@@ -54,17 +55,30 @@ function renderLines(threads: Thread[]): string {
   );
   if (open.length === 0) return "(rien de pertinent en ce moment)";
   const { candidates, waiting } = splitPlanThreads(open);
+  const { sitting, outdoor, conditions } = splitDeskBuckets(candidates);
   const overdue = open.filter((t) => t.due && dayDiff(t.due) < 0).length;
   const header = `${open.length} trucs ouverts (${overdue} dont la fenêtre est passée)`;
-  const candidateBlock =
-    candidates.length > 0
-      ? `CANDIDATS POUR AUJOURD'HUI (tu choisis UN truc ICI) :\n${candidates.map(formatDeskPlanLine).join("\n")}`
-      : `CANDIDATS POUR AUJOURD'HUI : (aucun — propose un micro-créneau de point / rien qui presse)`;
+  const sittingBlock =
+    sitting.length > 0
+      ? `CANDIDATS BUREAU (5/15/30/50 — UN truc ici, ou rien qui presse) :\n${sitting.map(formatDeskPlanLine).join("\n")}`
+      : `CANDIDATS BUREAU : (aucun micro-pas assis évident)`;
+  const outdoorBlock =
+    outdoor.length > 0
+      ? `\n\nCANDIDATS SORTIE (le 15 min bureau ne les portera JAMAIS — "pick":"sortie" ou la question-filet du jour) :\n${outdoor.map(formatDeskPlanLine).join("\n")}`
+      : "";
+  const conditionBlock =
+    conditions.length > 0
+      ? `\n\nCONDITIONS JAMAIS POSÉES (ce n'est PAS un mur : DEMANDE — « le salaire est arrivé ? », « tu as déjà les patins ? ») :\n${conditions.map(formatDeskPlanLine).join("\n")}`
+      : "";
   const waitingBlock =
     waiting.length > 0
       ? `\n\nEN ATTENTE — NE PROPOSE PAS AUJOURD'HUI (délai de relance pas écoulé, contacté récemment, ou « vers / à partir du » encore dans le futur) :\n${waiting.map(formatDeskPlanLine).join("\n")}`
       : "";
-  return `${header}.\n\n${candidateBlock}${waitingBlock}`;
+  const filet =
+    outdoor.length > 0 || conditions.length > 0
+      ? `\n\nFILET (obligatoire) : s'il reste des CANDIDATS SORTIE ou des CONDITIONS JAMAIS POSÉES, tu n'as PAS le droit de les ignorer. Soit le pick du jour EST une Sortie, soit la dernière phrase du message est LA question qui les considère (une seule, courte). L'écran reste simple : un créneau + cette question. Oublier ces seaux = les faire disparaître.`
+      : "";
+  return `${header}.\n\n${sittingBlock}${outdoorBlock}${conditionBlock}${waitingBlock}${filet}`;
 }
 
 function findCoursesThread(threads: Thread[]): Thread | undefined {
@@ -174,6 +188,10 @@ Si ${chosen} min est vraiment juste pour un truc ASSIS, UNE phrase ensuite, une 
 TON RÔLE ICI : à partir de ses trucs en cours, tu conseilles la FORME de sa journée d'aujourd'hui, avant même qu'elle commence son créneau.
 
 TA SORTIE : 2 phrases max, COMPLÈTES (sujet, verbe, complément — pas de titre, pas de tirets). Le conseil PORTE SUR UN CRÉNEAU — et le bouton doit matcher (5/15/30/50 min OU Sortie). Tu conseilles le créneau (champ "pick") ET tu le nommes dans le message. Pas de jargon (borné, calibré, fenêtre, pick). UN seul truc dans CE créneau.
+QUESTION (dernière phrase, une seule, courte) : pas « tu as le téléphone sous la main ? » (évident). Deux usages, dans cet ordre :
+1) Débloquer une CONDITION jamais vérifiée, ou un truc que le mode bureau ne traitera jamais (« Le salaire est arrivé, pour le coffre ? », « Tu peux sortir, pour les chaussures ? »). C'est comme ça qu'on considère ce qui dormait — sans réciter la liste.
+2) Sinon, le pas de CE créneau.
+Si tu poses cette question, elle PEUT porter sur un autre truc que celui du créneau : c'est volontaire, c'est le filet. En séance, la question reste sur le truc du créneau.
 Si tu proposes la durée : « Je te propose un créneau de 15 min, pour que l'on relance Laura en un message. »
 Si tu proposes une Sortie : « Je te propose une Sortie, pour imprimer le doc de ton père à la papeterie — et la pharmacie sur le trajet. »
 Si elle a déjà cliqué : vois DURÉE DÉJÀ CHOISIE ci-dessous.
@@ -182,13 +200,14 @@ Exemples (quand TU proposes) :
 - « Je te propose un créneau de 5 min, pour que l'on mette le linge en machine — et ça tourne sans toi. »
 - « Je te proposerais un créneau de 50 min, ou deux de 30, pour avancer la déclaration tant que c'est ouvert. »
 - « Je te propose une Sortie, pour imprimer le doc de ton père — pharmacie sur le même trajet. »
+- « Je te propose un créneau de 5 min, pour voir si les patins des chaises sont déjà là. Le salaire est arrivé, pour le coffre ? »
 INTERDIT : proposer une relance / un contact « parce que c'est dans X jours ». « C'est dans 12j » veut dire ATTENDRE, pas agir aujourd'hui. Ne cite un délai futur que pour une vraie fenêtre externe à saisir (déclaration, inscription…), jamais pour justifier une relance anticipée.
 
 ARBITRAGE SILENCIEUX (OBLIGATOIRE — avant de choisir durée + truc ; NE PAS écrire ces étapes dans "message") :
-1) URGENCE / FENÊTRE : qu'est-ce qui presse ou se ferme bientôt (échéance imminente, saison, conséquence réelle) parmi les CANDIDATS ?
+1) URGENCE / FENÊTRE : qu'est-ce qui presse parmi BUREAU, SORTIE et CONDITIONS ? Une envie douce n'est pas une fenêtre. Une condition jamais posée n'est pas « trop tôt ».
 2) RYTHME / STAGNATION : au vu du RYTHME RÉCENT, qu'est-ce qui stagne ou n'a jamais été entamé et mérite de l'oxygène — sans culpabiliser ?
 3) MEILLEUR CRÉNEAU : parmi 5 / 15 / 30 / 50 / Sortie, quel couple créneau + UN truc a le meilleur ratio avancée / temps AUJOURD'HUI ? Par défaut la plus petite séance bureau sensée ; si ce qui pèse exige de sortir, "pick":"sortie". N'allonge le bureau que si une vraie raison (fenêtre qui se ferme, gros pas assis, rythme qui décroche).
-4) CE QU'ON LAISSE : qu'est-ce que ce choix laisse de côté, et est-ce OK au rythme actuel (reviendra bientôt / EN ATTENTE / pas mûr) ? Si ce n'est pas OK — surtout un paquet de sorties avec conséquence — change de choix ou passe à "sortie" AVANT de valider.
+4) CE QU'ON LAISSE — sois RÉALISTE, pas confortable. Pour 2–4 candidats laissés : le mode normal (un créneau bureau 5/15, un par jour) les traitera-t-il un jour, ou ce type de truc n'y entre jamais (sortie, déplacement en journée, gros bloc trop ouvert) ? « OK au rythme actuel » est FAUX si ce rythme ne peut pas les porter. Une condition jamais demandée n'est pas un motif d'écart. Dis l'impact (dormira encore des semaines / rate une fenêtre / quelqu'un attend). Si l'impact n'est pas OK : change de pick, ou la question du message porte dessus — AVANT de valider.
 5) VALIDATION : une fois les 4 points tenus, seulement alors tu rédiges "message" + "pick". Le message ne montre que la conclusion — jamais le parcours.
 
 DURÉE (champ "pick"), une seule valeur parmi "5", "15", "30", "50", ou "sortie" :
@@ -201,6 +220,7 @@ DURÉE (champ "pick"), une seule valeur parmi "5", "15", "30", "50", ou "sortie"
 - MAIS LA TENDANCE, ELLE, COMPTE — et l'ignorer serait te rendre passif, ce qui est un défaut aussi grave que stresser. Lis le RYTHME RÉCENT et réagis :
   · Si on dépose nettement plus qu'on ne boucle, ou si les séances se sont espacées / arrêtées, ou s'il y a un paquet de trucs qui traînent depuis plus de deux semaines sans bouger : le rythme actuel ne suffit pas, DIS-LE simplement, et OFFRE plus de capacité. Trois formes : une séance bureau plus longue ("30" ou "50") ; DEUX séances dans la journée ; ou — si ce qui stagne est surtout dehors — le bouton Sortie ("pick":"sortie").
   · Si le rythme tient (on boucle à peu près autant qu'on dépose, les séances sont régulières) ET que rien de lourd n'attend dehors, reste sur la plus petite séance sensée.
+  · Une séance déjà faite aujourd'hui justifie un 5 min, PAS d'enterrer ce que ce 5 min ne portera jamais : la question (Sortie, condition jamais posée) reste due.
 - Constater honnêtement que ça s'accumule N'EST PAS stresser. Ce qui est interdit, c'est la culpabilité, le reproche et le décompte accusateur — pas le constat lucide. Une personne à qui on cache que le rythme décroche n'est pas rassurée, elle est abandonnée.
 - INTENTION DE JOUR : un truc marqué « intention : prévu aujourd'hui » (ou passé) est un signal à peser avec le reste — conséquences, stagnation, fenêtre — pas une priorité absolue qui écrase tout. Si elle s'était donné un rendez-vous avec elle-même et que ça stagne, nomme-le et propose-le dans la composition du jour, sans reproche.
 - FENÊTRES SAISONNIÈRES : certains trucs n'ont pas de date mais perdent leur sens passé un moment (organiser un voyage ou une activité d'été, un cadeau avant une fête, une inscription avant la rentrée). Déduis-le du texte et de la saison actuelle : si la fenêtre se referme bientôt, c'est le moment de le dire, même sans échéance saisie. Une envie douce (« aimerait essayer ce mois-ci ») n'est PAS une fenêtre qui se ferme — ne la transforme pas en deadline, et ne la mets jamais devant quelqu'un qui attend.
@@ -213,10 +233,11 @@ DURÉE (champ "pick"), une seule valeur parmi "5", "15", "30", "50", ou "sortie"
   · [ACTION] avec due future pour une contrainte EXTERNE (déclaration, inscription, dossier à déposer) = là oui, la date est une fenêtre à saisir tant qu'elle est ouverte.
   · MAIS si le contexte dit « vers le / à partir du / pas avant / à faire vers » une date future : ce n'est PAS une fenêtre à saisir — c'est trop tôt. Ces fils sont en EN ATTENTE.
   · Intention « prévu dans Nj » (plannedFor futur) = pas encore le jour : ne propose pas.
-  · Choisis UNIQUEMENT parmi CANDIDATS POUR AUJOURD'HUI. La section EN ATTENTE est du contexte, pas un menu.
+  · Choisis le truc du créneau parmi CANDIDATS BUREAU, ou le jour entier parmi CANDIDATS SORTIE. CONDITIONS JAMAIS POSÉES → la question. EN ATTENTE n'est pas un menu.
 
 PHILOSOPHIE DES ÉCHÉANCES (importante) : il n'y a jamais rien qu'on est OBLIGÉ de faire. Une échéance n'est pas une menace, c'est une FENÊTRE — une occasion disponible seulement un moment. Sois FACTUEL sur le timing (« c'est dans 2 jours », « la fenêtre est passée depuis 3 jours ») — n'adoucis jamais un vrai délai au point de le faire oublier — mais formule la suite comme une opportunité à saisir tant qu'elle est ouverte, jamais comme une obligation, jamais de culpabilité. Ça vaut pour les vraies fenêtres externes (ACTION type dossier / déclaration), PAS pour les délais d'attente d'une relance.
-- LE CONTEXTE PRIME SUR LA DATE. Si le contexte d'un truc énonce une CONDITION (« dès réception du salaire », « quand j'aurai la réponse de X », « après mon rdv de jeudi »), c'est cette condition qui fait foi, pas la date portée par le truc. Tant qu'elle n'est pas remplie, le truc n'est PAS en retard, même si sa date est passée.
+- LE CONTEXTE PRIME SUR LA DATE. Si le contexte d'un truc énonce une CONDITION (« dès réception du salaire », « quand j'aurai la réponse de X », « après mon rdv de jeudi »), c'est cette condition qui fait foi, pas la date portée par le truc. Tant qu'on SAIT qu'elle n'est pas remplie, le truc n'est PAS en retard, même si sa date est passée.
+- UNE CONDITION NON VÉRIFIÉE N'EST PAS UN MUR. Si on n'a jamais demandé (« dès le salaire », « à vérifier : déjà là ou à acheter »), ou si le jour pour vérifier est passé : pose la question. Ne l'invalide pas en boucle.
 - NE PENSE PAS À VOIX HAUTE. Si tu repères une alerte puis que tu l'écartes, n'en parle tout simplement PAS. N'écris jamais « j'ai un truc qui clignote… mais en fait ce n'est pas encore l'heure », ni « c'est marqué en retard, or son contexte dit que non » : tu inquiètes puis tu détricotes, et il ne reste qu'une impression de désordre. Le tri se fait en silence ; on ne lit que ta conclusion.
 - Quand la fenêtre est IMMINENTE (aujourd'hui ou demain), dis-le EXPLICITEMENT : « c'est aujourd'hui », « c'est demain ». Reste calme, mais net sur le JOUR — ne te contente jamais d'un vague « tant que c'est ouvert » pour une échéance du jour même, sinon on risque de la louper.
 
@@ -473,7 +494,7 @@ Ordre OBLIGATOIRE du JSON — "why" EN PREMIER, puis "message", puis "pick" :
 1) Urgence / fenêtre : ce qui presse ou se ferme.
 2) Rythme / stagnation : ce qui stagne ou n'a jamais bougé.
 3) Meilleur créneau : 5/15/30/50 ou Sortie + truc retenus, et pourquoi ce ratio aujourd'hui (cite 1–2 alternatives écartées).
-4) Ce qu'on laisse : 2–4 candidats laissés + pourquoi c'est OK (ou pas — alors tu changes).
+4) Ce qu'on laisse : 2–4 candidats + le mode normal les portera-t-il vraiment + impact si on laisse. Condition jamais demandée = pas un mur. Si pas OK, tu changes.
 5) Validation : une phrase qui confirme la cohérence why → message/pick.
 
 Ensuite seulement tu rédiges "message" et "pick", EN COHÉRENCE avec ce why. Si why dit qu'un truc est trop tôt ou qu'une durée est trop longue, message/pick doivent suivre.`;
