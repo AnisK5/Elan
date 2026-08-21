@@ -68,6 +68,31 @@ describe("emphasize-truc", () => {
     });
   });
 
+  it("met en gras tous les trucs nommés, pas un seul", () => {
+    const runs = speechRuns("On relance Laura et on imprime le doc de papa.", [
+      "Relancer Laura Kici",
+      "Imprimer le doc de papa sur la donation en Espagne",
+    ]);
+    const strong = runs.filter((r) => r.strong).map((r) => r.text);
+    expect(strong.some((s) => /Laura/i.test(s))).toBe(true);
+    expect(strong.some((s) => /doc de papa/i.test(s) || /imprime/i.test(s))).toBe(
+      true,
+    );
+  });
+
+  it("garde les libellés des trucs déjà réglés", () => {
+    const threads = [
+      {
+        id: "1",
+        text: "le coffre",
+        kind: "action",
+        status: "done",
+        createdAt: "2026-01-01",
+      },
+    ] as Thread[];
+    expect(trucLabels(threads)).toEqual(["le coffre"]);
+  });
+
   it("gras sur un prénom même sans libellé de fil", () => {
     const runs = speechRuns("On relance Laura en un message.", []);
     expect(runs.some((r) => r.strong && r.text === "Laura")).toBe(true);

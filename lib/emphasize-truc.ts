@@ -112,6 +112,28 @@ function significantTokens(label: string): string[] {
     .filter((w) => w.length >= MIN && !STOP.has(fold(w)));
 }
 
+function indexOfPrefixWord(
+  text: string,
+  stem: string,
+  from: number,
+): { start: number; end: number } | null {
+  const hay = text.toLowerCase();
+  const needle = stem.toLowerCase();
+  if (needle.length < MIN) return null;
+  let pos = Math.max(0, from);
+  while (pos <= hay.length - needle.length) {
+    const i = hay.indexOf(needle, pos);
+    if (i === -1) return null;
+    if (!isLetter(hay[i - 1])) {
+      let end = i + needle.length;
+      while (end < hay.length && isLetter(hay[end])) end++;
+      if (end - i >= MIN) return { start: i, end };
+    }
+    pos = i + 1;
+  }
+  return null;
+}
+
 function fuzzyTrucSpan(
   text: string,
   label: string,
@@ -121,14 +143,23 @@ function fuzzyTrucSpan(
   const hits: { start: number; end: number }[] = [];
   let from = 0;
   for (const tok of tokens) {
-    const i = indexOfTruc(text, tok, from);
-    if (i === -1) continue;
-    hits.push({ start: i, end: i + tok.length });
-    from = i + tok.length;
+    const exact = indexOfTruc(text, tok, from);
+    if (exact !== -1) {
+      hits.push({ start: exact, end: exact + tok.length });
+      from = exact + tok.length;
+      continue;
+    }
+    if (tok.length >= 6) {
+      const pre = indexOfPrefixWord(text, tok.slice(0, -2), from);
+      if (pre) {
+        hits.push(pre);
+        from = pre.end;
+      }
+    }
   }
   if (hits.length === 0) return null;
   if (hits.length === 1) {
-    if (tokens.length > 1 && hits[0].end - hits[0].start < 6) return null;
+    if (hits[0].end - hits[0].start < MIN) return null;
     return {
       start: hits[0].start,
       match: text.slice(hits[0].start, hits[0].end),
@@ -148,11 +179,11 @@ function fuzzyTrucSpan(
   return { start, match: text.slice(start, end) };
 }
 
-/** Libellés à chercher : trucs ouverts + réguliers retenus. */
+/** Libellés à chercher : trucs ouverts, réguliers, et ceux déjà réglés. */
 export function trucLabels(threads: Thread[]): string[] {
   const labels: string[] = [];
   for (const t of threads) {
-    if (t.status !== "open") continue;
+    if (t.status === "snoozed") continue;
     if (isContainerThread(t)) {
       for (const item of parseReguliers(t.note)) {
         const label = item.label.trim();
@@ -213,28 +244,83 @@ function properNamesInText(text: string): string[] {
 
 export type TextRun = { text: string; strong: boolean };
 
-/** Gras visible : d'abord **markdown**, sinon le nom du truc. */
-export function speechRuns(text: string, labels: string[] = []): TextRun[] {
-  const runs: TextRun[] = [];
+type Span = { start: number; end: number };
+
+function markdownSpans(text: string): { inner: string; start: number; end: number }[] {
+  const hits: { inner: string; start: number; end: number }[] = [];
   const re = /\*\*([^*]+)\*\*/g;
-  let last = 0;
   let m: RegExpExecArray | null;
-  let foundMd = false;
   while ((m = re.exec(text)) !== null) {
-    foundMd = true;
-    if (m.index > last) runs.push({ text: text.slice(last, m.index), strong: false });
-    runs.push({ text: m[1], strong: true });
-    last = m.index + m[0].length;
+    hits.push({ inner: m[1], start: m.index, end: m.index + m[0].length });
   }
-  if (foundMd) {
-    if (last < text.length) runs.push({ text: text.slice(last), strong: false });
-    return runs.filter((r) => r.text);
+  return hits;
+}
+
+function labelSpans(text: string, labels: string[]): Span[] {
+  const hits: Span[] = [];
+  for (const label of labels) {
+    const start = indexOfTruc(text, label);
+    if (start !== -1) {
+      hits.push({ start, end: start + label.trim().length });
+      continue;
+    }
+    const fuzzy = fuzzyTrucSpan(text, label);
+    if (fuzzy) hits.push({ start: fuzzy.start, end: fuzzy.start + fuzzy.match.length });
   }
-  const hit = splitAroundTruc(text, [...labels, ...properNamesInText(text)]);
-  if (!hit) return text ? [{ text, strong: false }] : [];
-  return [
-    { text: hit.before, strong: false },
-    { text: hit.match, strong: true },
-    { text: hit.after, strong: false },
-  ].filter((r) => r.text);
+  for (const name of properNamesInText(text)) {
+    const i = indexOfTruc(text, name);
+    if (i !== -1) hits.push({ start: i, end: i + name.length });
+  }
+  return hits;
+}
+
+function mergeSpans(spans: Span[]): Span[] {
+  const sorted = [...spans].sort(
+    (a, b) => a.start - b.start || b.end - b.start - (a.end - a.start),
+  );
+  const out: Span[] = [];
+  for (const s of sorted) {
+    if (out.some((o) => s.start < o.end && s.end > o.start)) continue;
+    out.push(s);
+  }
+  return out.sort((a, b) => a.start - b.start);
+}
+
+function runsFromSpans(text: string, spans: Span[]): TextRun[] {
+  if (spans.length === 0) return text ? [{ text, strong: false }] : [];
+  const runs: TextRun[] = [];
+  let last = 0;
+  for (const s of spans) {
+    if (s.start > last) runs.push({ text: text.slice(last, s.start), strong: false });
+    runs.push({ text: text.slice(s.start, s.end), strong: true });
+    last = s.end;
+  }
+  if (last < text.length) runs.push({ text: text.slice(last), strong: false });
+  return runs.filter((r) => r.text);
+}
+
+/** Gras visible : **markdown** et TOUS les trucs nommés, pas un seul. */
+export function speechRuns(text: string, labels: string[] = []): TextRun[] {
+  const md = markdownSpans(text);
+  if (md.length === 0) {
+    return runsFromSpans(
+      text,
+      mergeSpans(labelSpans(text, [...labels, ...properNamesInText(text)])),
+    );
+  }
+
+  const runs: TextRun[] = [];
+  let last = 0;
+  const extra = [...labels, ...properNamesInText(text)];
+  for (const hit of md) {
+    if (hit.start > last) {
+      runs.push(...runsFromSpans(text.slice(last, hit.start), mergeSpans(labelSpans(text.slice(last, hit.start), extra))));
+    }
+    runs.push({ text: hit.inner, strong: true });
+    last = hit.end;
+  }
+  if (last < text.length) {
+    runs.push(...runsFromSpans(text.slice(last), mergeSpans(labelSpans(text.slice(last), extra))));
+  }
+  return runs.filter((r) => r.text);
 }

@@ -123,11 +123,6 @@ export default function ChatBubble({
   const [open, setOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const pointRef = useRef<HTMLTextAreaElement>(null);
-  const lastReply = [...chat]
-    .reverse()
-    .find((m) => m.role === "assistant" && m.content.trim())
-    ?.content.replace(/\s+/g, " ")
-    .trim();
 
   useEffect(() => {
     if (open) chatEndRef.current?.scrollIntoView({ block: "end" });
@@ -269,14 +264,12 @@ export default function ChatBubble({
             className="pointer-events-auto flex w-full items-center gap-3 rounded-full border border-line bg-surface px-4 py-3 text-left shadow-[0_-6px_24px_-12px_rgba(38,35,29,0.35)] transition hover:border-teal/40"
           >
             <ChatIcon />
-            <span
-              className={`min-w-0 flex-1 truncate text-[15px] ${
-                lastReply ? "text-teal-ink" : "text-faint"
-              }`}
-            >
-              {busy && !lastReply
+            <span className="min-w-0 flex-1 truncate text-[15px] text-faint">
+              {busy
                 ? "Élan range ça…"
-                : lastReply || "Une info en passant…"}
+                : chat.length > 0
+                  ? "Continuer avec Élan"
+                  : "Une info en passant…"}
             </span>
           </button>
         )}

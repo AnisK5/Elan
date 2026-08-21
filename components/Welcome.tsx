@@ -3,6 +3,7 @@
 import { useState } from "react";
 import SignIn from "./SignIn";
 import { ExplainerBody } from "./Explainer";
+import { Logo } from "@/components/home/Branding";
 
 /**
  * Premier écran pour qui débarque sans rien savoir.
@@ -17,9 +18,7 @@ export default function Welcome() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-xl flex-col px-5 pb-12">
       <header className="flex items-center gap-2 py-6">
-        <span className="grid h-7 w-7 place-items-center rounded-lg bg-teal">
-          <span className="h-2.5 w-2.5 animate-breathe rounded-full bg-white" />
-        </span>
+        <Logo />
         <span className="font-display text-lg font-semibold text-ink">Élan</span>
       </header>
 

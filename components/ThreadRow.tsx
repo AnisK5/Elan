@@ -20,6 +20,9 @@ export default function ThreadRow({
 
   const dueValue = thread.due ? thread.due.slice(0, 10) : "";
 
+  function reopen() {
+    patch(thread.id, { status: "open", snoozedUntil: undefined });
+  }
   function markDone() {
     const now = new Date().toISOString();
     patch(thread.id, {
@@ -54,7 +57,13 @@ export default function ThreadRow({
         >
           {thread.kind === "suivi" ? "SUIVI" : "ACTION"}
         </span>
-        <span className="flex-1 truncate text-sm text-ink">{thread.text}</span>
+        <span
+          className={`flex-1 truncate text-sm ${
+            thread.status === "done" ? "text-muted line-through" : "text-ink"
+          }`}
+        >
+          {thread.text}
+        </span>
 
         {thread.due && (
           <span className="shrink-0 text-[11px] text-muted">
@@ -74,7 +83,7 @@ export default function ThreadRow({
         >
           {editing ? "fermer" : "modifier"}
         </button>
-        {showSnooze && (
+        {showSnooze && thread.status !== "done" && (
           <button
             onClick={snooze}
             className="shrink-0 rounded-md px-2 py-1 text-xs text-muted transition hover:text-ink"
@@ -82,12 +91,21 @@ export default function ThreadRow({
             plus tard
           </button>
         )}
-        <button
-          onClick={markDone}
-          className="shrink-0 rounded-md bg-teal px-2 py-1 text-xs font-medium text-white transition hover:bg-teal-ink"
-        >
-          ✓ fait
-        </button>
+        {thread.status === "done" ? (
+          <button
+            onClick={reopen}
+            className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-teal transition hover:bg-teal-soft"
+          >
+            rouvrir
+          </button>
+        ) : (
+          <button
+            onClick={markDone}
+            className="shrink-0 rounded-md bg-teal px-2 py-1 text-xs font-medium text-white transition hover:bg-teal-ink"
+          >
+            ✓ fait
+          </button>
+        )}
       </div>
 
       {thread.note && !editing && (

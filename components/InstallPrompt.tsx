@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Logo } from "@/components/home/Branding";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -67,9 +68,7 @@ export default function InstallPrompt() {
   return (
     <div className="animate-rise mt-6 rounded-2xl border border-teal-soft bg-teal-soft/50 p-4">
       <div className="flex items-start gap-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-teal">
-          <span className="h-3.5 w-3.5 rounded-full bg-white" />
-        </span>
+        <Logo className="h-9 w-9 rounded-xl" />
         <div className="flex-1">
           <p className="text-sm font-medium text-ink">
             Installe Élan sur ton écran d&apos;accueil

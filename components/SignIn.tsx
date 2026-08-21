@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useAuth } from "./AuthProvider";
+import { Logo } from "@/components/home/Branding";
 
 export default function SignIn({ onBack }: { onBack?: () => void }) {
   const { signIn, verifyOtp, signInWithGoogle, configured } = useAuth();
@@ -49,9 +50,7 @@ export default function SignIn({ onBack }: { onBack?: () => void }) {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center px-6">
       <div className="mb-8 flex items-center gap-2">
-        <span className="grid h-9 w-9 place-items-center rounded-xl bg-teal">
-          <span className="h-3.5 w-3.5 animate-breathe rounded-full bg-white" />
-        </span>
+        <Logo className="h-9 w-9 rounded-xl" />
         <span className="font-display text-xl font-semibold text-ink">Élan</span>
       </div>
 
