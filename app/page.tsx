@@ -424,10 +424,19 @@ export default function Home() {
           setPlan(null);
           if (wantDebug) {
             setPlanDiag({
-              view: buildPlanViewSnapshot(openThreads),
-              source: "offline",
-              message: "",
-              pick: "15",
+              view:
+                (j?.debug && planViewFromDebug(j.debug)) ||
+                buildPlanViewSnapshot(openThreads),
+              why: typeof j?.debug?.why === "string" ? j.debug.why : undefined,
+              system:
+                typeof j?.debug?.system === "string"
+                  ? j.debug.system
+                  : undefined,
+              user:
+                typeof j?.debug?.user === "string" ? j.debug.user : undefined,
+              source: j ? "api" : "offline",
+              message: msg,
+              pick: j?.pick ?? "15",
             });
           }
         }

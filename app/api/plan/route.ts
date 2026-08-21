@@ -19,6 +19,7 @@ import {
   splitPlanThreads,
 } from "@/lib/plan-candidates";
 import { extractSituationFromConvo } from "@/lib/situation";
+import { CONSEIL_TOOL, extractPlanFromContent } from "@/lib/plan-json";
 import { identity, socle, today, TON, VOIX } from "@/lib/voice";
 import { DEPOSER_PLAN_MESSAGE } from "@/lib/session-mode";
 import { buildOfflinePlanHint } from "@/lib/notifications";
@@ -466,48 +467,6 @@ function cue(context?: SessionContext): string {
   return "[Regarde mes trucs et conseille-moi la forme de ma journée. Réponds seulement avec le JSON demandé.]";
 }
 
-function safeParse(
-  text: string,
-): { message: string; pick: string; why?: string } | null {
-  const cleaned = text
-    .trim()
-    .replace(/^```(?:json)?/i, "")
-    .replace(/```$/, "")
-    .trim();
-  try {
-    const o = JSON.parse(cleaned);
-    if (typeof o.message === "string" && typeof o.pick === "string") {
-      return {
-        message: o.message,
-        pick: o.pick,
-        why: typeof o.why === "string" ? o.why.trim() : undefined,
-      };
-    }
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
-function withDebugPrompt(prompt: string, debug: boolean): string {
-  if (!debug) return prompt;
-  return `${prompt}
-
-DIAGNOSTIC ACTIVÉ : tu DOIS écrire le parcours d'ARBITRAGE SILENCIEUX AVANT de choisir.
-Ordre OBLIGATOIRE du JSON — "why" EN PREMIER, puis "message", puis "pick" :
-{"why":"...","message":"...","pick":"15"}
-
-"why" reprend EXPLICITEMENT les points d'ARBITRAGE SILENCIEUX (phrases courtes, factuelles, pour le développeur — JAMAIS repris dans "message") :
-1) Contexte de vie : d'où elle est, ce qui n'est pas faisable aujourd'hui.
-2) Urgence / fenêtre : ce qui presse ou se ferme, parmi le reste.
-3) Rythme / stagnation : ce qui stagne ou n'a jamais bougé.
-4) Meilleur créneau : 5/15/30/50 ou Sortie + truc retenus, et pourquoi (cite 1–2 alternatives écartées).
-5) Ce qu'on laisse : 2–4 candidats + reportés par le contexte vs vraiment laissés + impact. Question infaisable d'où elle est = pas un filet.
-6) Validation : une phrase qui confirme la cohérence why → message/pick.
-
-Ensuite seulement tu rédiges "message" et "pick", EN COHÉRENCE avec ce why. Si why dit qu'un truc est trop tôt ou qu'une durée est trop longue, message/pick doivent suivre.`;
-}
-
 function debugPayload(
   threads: Thread[],
   opts?: {
@@ -584,11 +543,12 @@ export async function POST(req: Request) {
           context,
           situation,
         );
-    const system = withDebugPrompt(baseSystem, debug);
     const res = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: forNotify ? 120 : debug ? 800 : 400,
-      system,
+      max_tokens: forNotify ? 200 : 400,
+      system: baseSystem,
+      tools: [CONSEIL_TOOL],
+      tool_choice: { type: "tool", name: CONSEIL_TOOL.name },
       messages: [
         {
           role: "user",
@@ -596,30 +556,40 @@ export async function POST(req: Request) {
         },
       ],
     });
-    const text =
-      res.content.find((b) => b.type === "text")?.type === "text"
-        ? (res.content.find((b) => b.type === "text") as { text: string }).text
-        : "";
-    const parsed = safeParse(text);
-    const plan = parsed?.message.trim()
-      ? parsed
-      : forNotify
-        ? fallbackNotifyPlan(open, body.sourceMessage)
-        : fallbackPlan(context, open, body.chosen);
-    let pick = ["5", "15", "30", "50", "sortie"].includes(plan.pick)
-      ? plan.pick
+    const parsed = extractPlanFromContent(res.content);
+    if (!parsed?.message.trim()) {
+      if (forNotify) {
+        const plan = fallbackNotifyPlan(open, body.sourceMessage);
+        return Response.json({ message: plan.message, pick: plan.pick });
+      }
+      return Response.json({
+        message: "",
+        pick: "15",
+        unreachable: true,
+        ...(debug
+          ? {
+              debug: debugPayload(open, {
+                why: "réponse illisible — pas de repli à l'écran",
+                system: baseSystem,
+                user: userCue,
+              }),
+            }
+          : {}),
+      });
+    }
+    let pick = ["5", "15", "30", "50", "sortie"].includes(parsed.pick)
+      ? parsed.pick
       : "15";
     if (body.chosen && [5, 15, 30, 50].includes(body.chosen)) {
       pick = String(body.chosen);
     }
     return Response.json({
-      message: plan.message,
+      message: parsed.message,
       pick,
       ...(debug
         ? {
             debug: debugPayload(open, {
-              why: parsed?.why,
-              system,
+              system: baseSystem,
               user: userCue,
             }),
           }
@@ -637,26 +607,23 @@ export async function POST(req: Request) {
       ...(debug
         ? {
             debug: debugPayload(open, {
-              system: withDebugPrompt(
-                forNotify
-                  ? notifyPlanPrompt(
-                      open,
-                      body.stats,
-                      body.meta?.name,
-                      body.chosen,
-                      body.sourceMessage,
-                      situation,
-                    )
-                  : systemPrompt(
-                      open,
-                      body.stats,
-                      body.chosen,
-                      body.meta?.name,
-                      context,
-                      situation,
-                    ),
-                true,
-              ),
+              system: forNotify
+                ? notifyPlanPrompt(
+                    open,
+                    body.stats,
+                    body.meta?.name,
+                    body.chosen,
+                    body.sourceMessage,
+                    situation,
+                  )
+                : systemPrompt(
+                    open,
+                    body.stats,
+                    body.chosen,
+                    body.meta?.name,
+                    context,
+                    situation,
+                  ),
               user: userCue,
             }),
           }

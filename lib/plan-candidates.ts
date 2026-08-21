@@ -1,4 +1,5 @@
 import type { Thread } from "./types";
+import { isContainerThread } from "./entretiens";
 import { ageLabel, dayDiff, dueLabel, intentionLabel } from "./thread-labels";
 
 /** Formulations de relance / prise de nouvelles — pas une 1ʳᵉ action avec échéance externe. */
@@ -299,7 +300,9 @@ export function planViewFromDebug(d: {
 
 /** Snapshot déterministe — ce que le filtre met sous les yeux de l'IA. */
 export function buildPlanViewSnapshot(threads: Thread[]): PlanViewSnapshot {
-  const open = threads.filter((t) => t.status === "open");
+  const open = threads.filter(
+    (t) => t.status === "open" && !isContainerThread(t),
+  );
   const { candidates, waiting } = splitPlanThreads(open);
   const { sitting, outdoor, conditions } = splitDeskBuckets(candidates);
   return {
