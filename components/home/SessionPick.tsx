@@ -3,6 +3,13 @@ import { DURATIONS } from "@/lib/constants";
 
 /** Boutons durée (bureau) + contextes Déposer / Sortie / Courses / Régulier. */
 
+const CONTEXTS = [
+  { id: "deposer" as const, label: "Déposer" },
+  { id: "sortie" as const, label: "Sortie" },
+  { id: "courses" as const, label: "Courses" },
+  { id: "regulier" as const, label: "Régulier" },
+];
+
 export default function SessionPick({
   duration,
   context,
@@ -15,36 +22,30 @@ export default function SessionPick({
   onPickContext: (c: "sortie" | "courses" | "regulier" | "deposer") => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="inline-flex rounded-xl bg-sink p-1">
+    <div className="flex min-w-0 w-full flex-col gap-1.5">
+      <div className="flex min-w-0 w-full rounded-xl bg-sink p-1">
         {DURATIONS.map((d) => (
           <button
             key={d}
+            type="button"
             onClick={() => onPickDuration(d)}
-            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${
+            className={`min-w-0 flex-1 rounded-lg px-1 py-1.5 text-center text-[13px] font-medium tabular-nums transition sm:px-3 sm:text-sm ${
               context === "desk" && duration === d
                 ? "bg-surface text-ink shadow-sm"
                 : "text-muted hover:text-ink"
             }`}
           >
-            {d} min
+            {d}&nbsp;min
           </button>
         ))}
       </div>
-      <span className="text-xs text-faint">·</span>
-      <div className="inline-flex rounded-xl bg-sink p-1">
-        {(
-          [
-            { id: "deposer" as const, label: "Déposer" },
-            { id: "sortie" as const, label: "Sortie" },
-            { id: "courses" as const, label: "Courses" },
-            { id: "regulier" as const, label: "Régulier" },
-          ] as const
-        ).map(({ id, label }) => (
+      <div className="flex min-w-0 w-full rounded-xl bg-sink p-1">
+        {CONTEXTS.map(({ id, label }) => (
           <button
             key={id}
+            type="button"
             onClick={() => onPickContext(id)}
-            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${
+            className={`min-w-0 flex-1 rounded-lg px-1 py-1.5 text-center text-[13px] font-medium transition sm:px-2 sm:text-sm ${
               context === id
                 ? "bg-surface text-ink shadow-sm"
                 : "text-muted hover:text-ink"

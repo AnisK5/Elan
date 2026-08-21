@@ -115,6 +115,7 @@ export default function Home() {
   const [pointNote, setPointNote] = useState("");
   const [pointError, setPointError] = useState("");
   const lastPointRef = useRef("");
+  const pointNoteTimer = useRef(0);
   const [pointUndo, setPointUndo] = useState<Thread[] | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([]);
 
@@ -724,15 +725,52 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function showPointNote(text: string, undo: Thread[] | null) {
+    window.clearTimeout(pointNoteTimer.current);
+    setPointNote(text);
+    setPointUndo(undo);
+    pointNoteTimer.current = window.setTimeout(() => {
+      setPointNote("");
+      setPointUndo(null);
+    }, 10000);
+  }
+
+  async function applyReconcile(messages: ChatMessage[]): Promise<boolean> {
+    try {
+      const res = await apiFetch("/api/reconcile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threads: snapshotThreads(),
+          messages: messages.slice(-12).map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+        }),
+      });
+      if (!res.ok) return false;
+      const j = (await res.json()) as { updates?: unknown; note?: string };
+      const before = snapshotThreads();
+      const ops = parseThreadOps(j.updates, new Set(before.map((t) => t.id)));
+      if (ops.length === 0) return false;
+      applyThreadOps(ops);
+      showPointNote(j.note || "trucs mis à jour", before);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function sendPoint(retryText?: string) {
     const t = (retryText ?? pointText).trim();
     if (!t || pointBusy) return;
     setPointBusy(true);
     setPointError("");
     setPointText("");
+    window.clearTimeout(pointNoteTimer.current);
     setPointNote("");
+    setPointUndo(null);
     lastPointRef.current = t;
-    // La dernière réplique s'affiche dans la bulle ; on n'ouvre pas l'historique.
 
     const last = chat[chat.length - 1];
     const withUser: ChatMessage[] =
@@ -745,8 +783,10 @@ export default function Home() {
     setChat(withUser);
     writeChat(withUser);
 
+    // Ranger tout de suite : n'attend pas la réplique d'Élan.
+    const clerkP = applyReconcile(withUser);
+
     let answer = "";
-    let full: ChatMessage[] | null = null;
     try {
       const res = await apiFetch("/api/chat", {
         method: "POST",
@@ -772,6 +812,8 @@ export default function Home() {
           setChat(withUser);
           writeChat(withUser);
           setPointBusy(false);
+          const wrote = await clerkP;
+          if (!wrote) keepAnyway(t);
           return;
         }
         if (answer.includes("⟦elan-error")) continue;
@@ -784,10 +826,12 @@ export default function Home() {
         setChat(withUser);
         writeChat(withUser);
         setPointBusy(false);
+        const wrote = await clerkP;
+        if (!wrote) keepAnyway(t);
         return;
       }
 
-      full = [
+      const full: ChatMessage[] = [
         ...withUser,
         {
           role: "assistant",
@@ -798,7 +842,8 @@ export default function Home() {
       setChat(full);
       writeChat(full);
     } catch {
-      keepAnyway(t);
+      const wrote = await clerkP;
+      if (!wrote) keepAnyway(t);
       setPointError(anthropicFailMessage("unknown"));
       setChat(withUser);
       writeChat(withUser);
@@ -807,45 +852,16 @@ export default function Home() {
     }
 
     setPointBusy(false);
-    if (!full) return;
-
-    try {
-      const res = await apiFetch("/api/reconcile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          threads: snapshotThreads(),
-          messages: full.slice(-12).map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-        }),
-      });
-      if (!res.ok) return;
-      const j = (await res.json()) as { updates?: unknown; note?: string };
-      const before = snapshotThreads();
-      const ops = parseThreadOps(j.updates, new Set(before.map((t) => t.id)));
-      if (ops.length > 0) {
-        applyThreadOps(ops);
-        setPointUndo(before);
-        setPointNote(j.note || "trucs mis à jour");
-        window.setTimeout(() => {
-          setPointNote("");
-          setPointUndo(null);
-        }, 10000);
-      }
-    } catch {
-      // la discussion a eu lieu, c'est l'essentiel
-    }
+    await clerkP;
   }
 
   function keepAnyway(text: string) {
     add(text, "action");
-    setPointNote("Noté tel quel (je n'ai pas pu joindre Élan).");
-    window.setTimeout(() => setPointNote(""), 5000);
+    showPointNote("Noté tel quel (je n'ai pas pu joindre Élan).", null);
   }
 
   function resetChat() {
+    window.clearTimeout(pointNoteTimer.current);
     clearChat();
     setChat([]);
     setPointNote("");
@@ -955,7 +971,7 @@ export default function Home() {
 
             {/* La durée est au-dessus du conseil : c'est elle qui le
                 détermine, la lire après serait lire l'effet avant la cause. */}
-            <div className="mt-4 flex items-center gap-2">
+            <div className="mt-4 min-w-0">
               <SessionPick
                 duration={duration}
                 context={context}
