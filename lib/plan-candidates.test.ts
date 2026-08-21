@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   hasRecentContactNote,
+  hasFutureSoftTiming,
   isDeskPlanCandidate,
   isRelanceStyleText,
   splitPlanThreads,
@@ -18,6 +19,7 @@ function thread(partial: Partial<Thread> & { text: string }): Thread {
     note: partial.note,
     touchedAt: partial.touchedAt,
     effort: partial.effort,
+    plannedFor: partial.plannedFor,
   };
 }
 
@@ -111,6 +113,34 @@ describe("isDeskPlanCandidate — cas Claire", () => {
     expect(isRelanceStyleText("prendre des nouvelles de Paul")).toBe(true);
     expect(isRelanceStyleText("envoyer le devis à Paul")).toBe(false);
     expect(isRelanceStyleText("déclaration URSSAF")).toBe(false);
+  });
+
+  it("exclut Claire « à faire vers le 1er septembre » (timing doux)", () => {
+    const t = thread({
+      text: "MP LinkedIn à Claire Ducreux (Saegus)",
+      kind: "action",
+      due: daysFromNow(11),
+      note: "Claire Ducreux, contact Saegus sur LinkedIn. À faire vers le 1er septembre 2026.",
+    });
+    expect(isDeskPlanCandidate(t)).toBe(false);
+  });
+
+  it("exclut « à partir du 30/08 » même sans due", () => {
+    const t = thread({
+      text: "Appeler Orange pour éligibilité fibre",
+      kind: "action",
+      note: "À faire à partir du lundi 30/08/2026 (en semaine uniquement).",
+    });
+    expect(isDeskPlanCandidate(t)).toBe(false);
+  });
+
+  it("exclut plannedFor encore dans le futur", () => {
+    const t = thread({
+      text: "organiser le kayak",
+      kind: "action",
+      plannedFor: daysFromNow(3),
+    });
+    expect(isDeskPlanCandidate(t)).toBe(false);
   });
 });
 

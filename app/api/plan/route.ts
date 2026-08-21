@@ -62,7 +62,7 @@ function renderLines(threads: Thread[]): string {
       : `CANDIDATS POUR AUJOURD'HUI : (aucun — propose un micro-créneau de point / rien qui presse)`;
   const waitingBlock =
     waiting.length > 0
-      ? `\n\nEN ATTENTE — NE PROPOSE PAS AUJOURD'HUI (délai de relance pas écoulé, ou contacté récemment) :\n${waiting.map(formatDeskPlanLine).join("\n")}`
+      ? `\n\nEN ATTENTE — NE PROPOSE PAS AUJOURD'HUI (délai de relance pas écoulé, contacté récemment, ou « vers / à partir du » encore dans le futur) :\n${waiting.map(formatDeskPlanLine).join("\n")}`
       : "";
   return `${header}.\n\n${candidateBlock}${waitingBlock}`;
 }
@@ -200,6 +200,8 @@ DURÉE (champ "pick"), une seule valeur parmi "5", "15", "30", "50" — par DÉF
   · [À SUIVRE] + « fenêtre ouverte encore Nj » / échéance future = PROCHAINE relance : c'est trop tôt. Ces fils sont listés sous EN ATTENTE — ne les propose JAMAIS dans le créneau du jour.
   · [ACTION] dont le texte est une relance / un contact / un envoi, avec due encore future = même règle : trop tôt, laisse tranquille.
   · [ACTION] avec due future pour une contrainte EXTERNE (déclaration, inscription, dossier à déposer) = là oui, la date est une fenêtre à saisir tant qu'elle est ouverte.
+  · MAIS si le contexte dit « vers le / à partir du / pas avant / à faire vers » une date future : ce n'est PAS une fenêtre à saisir — c'est trop tôt. Ces fils sont en EN ATTENTE.
+  · Intention « prévu dans Nj » (plannedFor futur) = pas encore le jour : ne propose pas.
   · Choisis UNIQUEMENT parmi CANDIDATS POUR AUJOURD'HUI. La section EN ATTENTE est du contexte, pas un menu.
 
 PHILOSOPHIE DES ÉCHÉANCES (importante) : il n'y a jamais rien qu'on est OBLIGÉ de faire. Une échéance n'est pas une menace, c'est une FENÊTRE — une occasion disponible seulement un moment. Sois FACTUEL sur le timing (« c'est dans 2 jours », « la fenêtre est passée depuis 3 jours ») — n'adoucis jamais un vrai délai au point de le faire oublier — mais formule la suite comme une opportunité à saisir tant qu'elle est ouverte, jamais comme une obligation, jamais de culpabilité. Ça vaut pour les vraies fenêtres externes (ACTION type dossier / déclaration), PAS pour les délais d'attente d'une relance.

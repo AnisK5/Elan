@@ -28,6 +28,28 @@ const CONTACT_NOTE_RELATIVE = new RegExp(
   "i",
 );
 
+/** « vers le / à partir du / pas avant » — timing doux, PAS une fenêtre à saisir. */
+const SOFT_TIMING_CUE =
+  /(?:à\s+faire\s+)?(?:vers|autour\s+de|à\s+partir\s+(?:du|de)|pas\s+avant(?:\s+le)?|d['']ici|semaine\s+du)\b/i;
+
+const FR_MONTHS: Record<string, number> = {
+  janvier: 1,
+  fevrier: 2,
+  février: 2,
+  mars: 3,
+  avril: 4,
+  mai: 5,
+  juin: 6,
+  juillet: 7,
+  aout: 8,
+  août: 8,
+  septembre: 9,
+  octobre: 10,
+  novembre: 11,
+  decembre: 12,
+  décembre: 12,
+};
+
 function startOfToday(): Date {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -105,6 +127,54 @@ export function hasRecentContactNote(
   });
 }
 
+/**
+ * Date « pas avant / vers » extraite d'une note, si le cue de timing doux
+ * précède une date absolue. Null si pas de cue ou date illisible.
+ */
+export function softTimingNotBefore(note: string | undefined): Date | null {
+  if (!note?.trim()) return null;
+  const cue = note.match(SOFT_TIMING_CUE);
+  if (!cue || cue.index == null) return null;
+  const after = note.slice(cue.index + cue[0].length);
+
+  const slash = after.match(
+    /^\s*(?:le\s+|lundi\s+|mardi\s+|mercredi\s+|jeudi\s+|vendredi\s+|samedi\s+|dimanche\s+)?(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i,
+  );
+  if (slash) {
+    return parseFrDayMonth(
+      Number(slash[1]),
+      Number(slash[2]),
+      slash[3] ? Number(slash[3]) : undefined,
+    );
+  }
+
+  const iso = after.match(/^\s*(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    return parseFrDayMonth(Number(iso[3]), Number(iso[2]), Number(iso[1]));
+  }
+
+  const named = after.match(
+    /^\s*(?:le\s+)?(\d{1,2}|1er)\s+([a-zéûôà]+)\s+(\d{4})/i,
+  );
+  if (named) {
+    const dayRaw = named[1].toLowerCase() === "1er" ? 1 : Number(named[1]);
+    const month = FR_MONTHS[named[2].toLowerCase()];
+    if (month) return parseFrDayMonth(dayRaw, month, Number(named[3]));
+  }
+
+  return null;
+}
+
+/** Timing doux encore dans le futur → trop tôt pour le conseil du jour. */
+export function hasFutureSoftTiming(note: string | undefined): boolean {
+  const d = softTimingNotBefore(note);
+  if (!d) return false;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return dayDiff(`${y}-${m}-${day}`) > 0;
+}
+
 export function isRelanceStyleText(text: string): boolean {
   return RELANCE_TEXT.test(text);
 }
@@ -114,10 +184,14 @@ export function isRelanceStyleText(text: string): boolean {
  * - Suivi dont la prochaine relance est encore dans le futur → non
  * - Contacté récemment (note) → non
  * - Libellé type relance + due encore future → trop tôt (due = prochain check)
+ * - Intention plannedFor encore future → non (ce n'est pas le jour J)
+ * - Note « vers / à partir du / pas avant » avec date future → non
  */
 export function isDeskPlanCandidate(t: Thread): boolean {
   if (t.status !== "open") return false;
   if (hasRecentContactNote(t.note)) return false;
+  if (hasFutureSoftTiming(t.note)) return false;
+  if (t.plannedFor && dayDiff(t.plannedFor) > 0) return false;
 
   if (t.due) {
     const n = dayDiff(t.due);
