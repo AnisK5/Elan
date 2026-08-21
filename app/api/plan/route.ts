@@ -450,7 +450,13 @@ function withDebugPrompt(prompt: string, debug: boolean): string {
   if (!debug) return prompt;
   return `${prompt}
 
-DIAGNOSTIC ACTIVÉ : ajoute un champ JSON "why" (1–2 phrases, pour le développeur — JAMAIS dans "message"). Dis pourquoi tu as choisi CE truc et ce que tu as écarté. Forme exacte : {"message":"...","pick":"15","why":"..."}`;
+DIAGNOSTIC ACTIVÉ : ajoute un champ JSON "why" (pour le développeur — JAMAIS dans "message"). Structure en 4–6 phrases courtes, factuelles, dans cet ordre :
+1) Signaux retenus pour LE truc choisi (texte, kind, due/intention, note, effort, âge, rythme).
+2) Pourquoi CE truc plutôt qu'un autre candidat aujourd'hui.
+3) Ce que tu as écarté parmi les CANDIDATS (nomme 2–4 exemples + la raison pour chacun).
+4) Ce qui était déjà en EN ATTENTE et pourquoi tu n'y as pas touché (une phrase).
+5) La règle / sémantique qui a tranché (ex. timing doux, suivi trop tôt, sortie hors bureau, fenêtre externe…).
+Pas de blabla, pas de reformulation du message utilisateur. Forme exacte : {"message":"...","pick":"15","why":"..."}`;
 }
 
 function debugPayload(
