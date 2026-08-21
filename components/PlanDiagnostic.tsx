@@ -61,7 +61,7 @@ export default function PlanDiagnostic({ data }: { data: PlanDiagnosticData }) {
         </p>
         {data.why ? (
           <div>
-            <p className="text-faint">Pourquoi (trace)</p>
+            <p className="text-faint">Pourquoi (avant le conseil)</p>
             <p className="mt-0.5 whitespace-pre-wrap text-[12px] leading-relaxed text-ink/85">
               {data.why}
             </p>

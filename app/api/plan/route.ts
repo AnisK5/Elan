@@ -450,13 +450,18 @@ function withDebugPrompt(prompt: string, debug: boolean): string {
   if (!debug) return prompt;
   return `${prompt}
 
-DIAGNOSTIC ACTIVÉ : ajoute un champ JSON "why" (pour le développeur — JAMAIS dans "message"). Structure en 4–6 phrases courtes, factuelles, dans cet ordre :
-1) Signaux retenus pour LE truc choisi (texte, kind, due/intention, note, effort, âge, rythme).
+DIAGNOSTIC ACTIVÉ : tu DOIS raisonner AVANT de choisir.
+Ordre OBLIGATOIRE du JSON — le champ "why" EN PREMIER, puis "message", puis "pick" :
+{"why":"...","message":"...","pick":"15"}
+
+"why" (4–6 phrases courtes, factuelles, pour le développeur — JAMAIS repris dans "message") :
+1) Signaux retenus pour LE truc que tu vas choisir (texte, kind, due/intention, note, effort, âge, rythme).
 2) Pourquoi CE truc plutôt qu'un autre candidat aujourd'hui.
-3) Ce que tu as écarté parmi les CANDIDATS (nomme 2–4 exemples + la raison pour chacun).
-4) Ce qui était déjà en EN ATTENTE et pourquoi tu n'y as pas touché (une phrase).
-5) La règle / sémantique qui a tranché (ex. timing doux, suivi trop tôt, sortie hors bureau, fenêtre externe…).
-Pas de blabla, pas de reformulation du message utilisateur. Forme exacte : {"message":"...","pick":"15","why":"..."}`;
+3) Ce que tu écartes parmi les CANDIDATS (nomme 2–4 exemples + la raison pour chacun).
+4) Ce qui est déjà en EN ATTENTE et pourquoi tu n'y touches pas (une phrase).
+5) La règle / sémantique qui tranche (timing doux, suivi trop tôt, sortie hors bureau, fenêtre externe…).
+
+Ensuite seulement tu rédiges "message" et "pick", EN COHÉRENCE avec ce why. Si why dit qu'un truc est trop tôt, il ne doit PAS apparaître dans message.`;
 }
 
 function debugPayload(
