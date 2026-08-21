@@ -70,7 +70,7 @@ export async function generatePlanViaApi(opts: {
 export async function generateNotifyCopyViaApi(opts: {
   threads: Thread[];
   stats: PlanStatsForNotify;
-  chosen: number;
+  chosen?: number;
   meta?: { name?: string };
   sourceMessage?: string;
 }): Promise<{ message: string; pick: string } | null> {

@@ -9,6 +9,8 @@ const FROM_PLAN = [
   /^pour ce créneau de \d+ min, je propose /i,
 ];
 
+const FROM_SORTIE = /^je te propose(?:rais)? une sortie, pour (?:que l['’]on )?/i;
+
 function alreadyGreets(text: string): boolean {
   return /^(salut|hello|coucou|hey|content de)\b/i.test(text.trim());
 }
@@ -17,6 +19,10 @@ function alreadyGreets(text: string): boolean {
 export function sessionBodyFromBrief(brief: string): string {
   let t = brief.trim();
   if (!t) return "";
+  if (FROM_SORTIE.test(t)) {
+    t = t.replace(FROM_SORTIE, "");
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
   for (const re of FROM_PLAN) {
     if (re.test(t)) {
       t = t.replace(re, "On ");

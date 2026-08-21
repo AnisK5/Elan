@@ -1,6 +1,7 @@
 import type { SessionContext, Settings, Thread } from "./types";
 import { getSupabase, isSupabaseConfigured } from "./supabase";
 import { apiFetch } from "./anthropic";
+import { OUTDOOR_DURATION } from "./constants";
 
 export const DEFAULT_NOTIFY_TIME = "09:00";
 export const NOTIFY_FIRED_KEY = "elan.notify.fired.v1";
@@ -14,6 +15,11 @@ const NOTIFY_MESSAGE_MAX = 95;
 /** Retire la durée du corps si elle est déjà dans le titre. */
 export function polishNotifyMessage(text: string): string {
   let m = text.replace(/\s+/g, " ").trim();
+  m = m.replace(
+    /^je te propose une sortie, pour (?:que l['’]on )?/i,
+    "",
+  );
+  m = m.replace(/^je te propose une sortie(?:\s*[—,-]\s*)?/i, "");
   m = m.replace(
     /^je te propose \d+\s*min(?:utes?)?(?: aujourd'?hui)?(?:\s*[—,-]\s*)?/i,
     "",
@@ -87,13 +93,15 @@ export function buildOfflinePlanHint(
   };
 }
 
-/** Titre + corps notif : durée, contenu du plan, invitation à ajuster. */
+/** Titre + corps notif : durée ou Sortie, contenu du plan, invitation à ajuster. */
 export function buildRitualNotification(opts: {
   minutes: number;
   planMessage: string;
   openCount: number;
+  slot?: "sortie";
 }): RitualNotificationPayload {
-  const title = `Élan · ${opts.minutes} min`;
+  const title =
+    opts.slot === "sortie" ? "Élan · Sortie" : `Élan · ${opts.minutes} min`;
   const room = MAX_BODY - ADJUST_SUFFIX.length;
 
   let core: string;
@@ -112,7 +120,7 @@ export function buildRitualNotification(opts: {
     title,
     body: core + ADJUST_SUFFIX,
     tag: RITUAL_TAG,
-    pick: String(opts.minutes),
+    pick: opts.slot === "sortie" ? "sortie" : String(opts.minutes),
     planMessage: opts.planMessage.trim()
       ? polishNotifyMessage(opts.planMessage)
       : core,
@@ -407,6 +415,7 @@ export async function fetchPlanForNotification(
       pick?: string;
     };
     const pick = desk.pick ?? "15";
+    const isSortie = pick === "sortie";
     const chosen = Number(pick);
     const notifyRes = await apiFetch("/api/plan", {
       method: "POST",
@@ -417,7 +426,7 @@ export async function fetchPlanForNotification(
         context: "desk",
         meta,
         forNotify: true,
-        chosen: Number.isFinite(chosen) ? chosen : 15,
+        chosen: isSortie ? undefined : Number.isFinite(chosen) ? chosen : 15,
         sourceMessage: desk.message,
       }),
     });
@@ -457,9 +466,10 @@ export async function fireRitualNotification(
       { name: opts.name },
       "desk",
     )) ?? buildOfflinePlanHint(opts.threads);
-  const minutes = plan?.pick ? Number(plan.pick) : 15;
+  const minutes = plan?.pick === "sortie" ? OUTDOOR_DURATION : Number(plan?.pick);
   const payload = buildRitualNotification({
     minutes: Number.isFinite(minutes) && minutes > 0 ? minutes : 15,
+    slot: plan?.pick === "sortie" ? "sortie" : undefined,
     planMessage: plan.message ?? "",
     openCount: open.length,
   });

@@ -50,6 +50,20 @@ describe("buildRitualNotification", () => {
     expect(n.body).toContain("planification voyage");
   });
 
+  it("titre Sortie si le créneau du jour est dehors", () => {
+    const n = buildRitualNotification({
+      minutes: 30,
+      slot: "sortie",
+      planMessage:
+        "Je te propose une Sortie, pour imprimer le doc de ton père à la papeterie.",
+      openCount: 4,
+    });
+    expect(n.title).toBe("Élan · Sortie");
+    expect(n.pick).toBe("sortie");
+    expect(n.body).toContain("imprimer");
+    expect(n.body).not.toMatch(/je te propose une sortie/i);
+  });
+
   it("backlog vide, ton léger", () => {
     const n = buildRitualNotification({
       minutes: 5,

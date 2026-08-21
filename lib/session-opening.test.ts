@@ -20,6 +20,14 @@ describe("sessionOpeningFromBrief", () => {
     );
   });
 
+  it("reprend une Sortie sans re-proposer le bouton", () => {
+    expect(
+      sessionBodyFromBrief(
+        "Je te propose une Sortie, pour imprimer le doc de ton père à la papeterie.",
+      ),
+    ).toBe("Imprimer le doc de ton père à la papeterie.");
+  });
+
   it("garde un brief de notif tel quel", () => {
     expect(
       sessionOpeningFromBrief("Relance Laura — je prépare le brouillon mail."),

@@ -23,7 +23,7 @@ import InstallPrompt from "@/components/InstallPrompt";
 import RitualNotify from "@/components/RitualNotify";
 import SettingsSheet from "@/components/SettingsSheet";
 import { useRitualReminder } from "@/components/useRitualReminder";
-import { isNotifyPromptDismissed, buildOfflinePlanHint } from "@/lib/notifications";
+import { isNotifyPromptDismissed } from "@/lib/notifications";
 import Welcome from "@/components/Welcome";
 import HelpButton from "@/components/HelpButton";
 import BacklogPeek from "@/components/home/BacklogPeek";
@@ -98,6 +98,8 @@ export default function Home() {
   const sessionBriefRef = useRef<string | null>(null);
   /** Bloque le plan auto tant que l'ouverture vient de la notif matin. */
   const ritualLockRef = useRef(false);
+  /** Après un pick "sortie" du conseil : ne pas recharger le plan Sortie. */
+  const planSkipFetchRef = useRef(false);
 
   // Discussion libre hors séance : déposer, donner des nouvelles, réfléchir
   // à un truc, demander comment s'organiser demain.
@@ -263,7 +265,16 @@ export default function Home() {
   });
 
   function applyPick(pick: string, sig: string) {
-    if (appliedSig.current === sig || context !== "desk") return;
+    if (appliedSig.current === sig) return;
+    if (pick === "sortie") {
+      appliedSig.current = sig;
+      durationSettled.current = true;
+      planSkipFetchRef.current = true;
+      planCtxRef.current = "sortie";
+      setContext("sortie");
+      return;
+    }
+    if (context !== "desk") return;
     appliedSig.current = sig;
     durationSettled.current = true;
     const n = Number(pick);
@@ -289,6 +300,10 @@ export default function Home() {
   // Mise en cache par jour + signature du backlog pour ne pas rappeler l'IA sans raison.
   useEffect(() => {
     if (!ready || view !== "home" || ritualLockRef.current) return;
+    if (planSkipFetchRef.current) {
+      planSkipFetchRef.current = false;
+      return;
+    }
     if (context === "deposer") {
       planCtxRef.current = "deposer";
       planReq.current += 1;
@@ -338,21 +353,18 @@ export default function Home() {
         if (cancelled) return;
         if (planReq.current !== reqId || planCtxRef.current !== context) return;
         const msg = (j?.message ?? "").trim();
-        setPlanUnreachable(Boolean(j?.unreachable) || !msg);
-        if (msg) {
+        const unreachable = Boolean(j?.unreachable) || !msg;
+        setPlanUnreachable(unreachable);
+        if (msg && !unreachable) {
           setPlan({ message: msg, pick: j?.pick ?? "15" });
           if (manualPickSig.current !== planSig) {
             applyPick(j?.pick ?? "15", planSig);
           }
         } else {
-          const hint = buildOfflinePlanHint(openThreads, duration);
-          setPlan(hint);
-          if (manualPickSig.current !== planSig) {
-            applyPick(hint.pick, planSig);
-          }
+          setPlan(null);
         }
         try {
-          if (msg) {
+          if (msg && !unreachable) {
             localStorage.setItem(
               "elan.plan.v1",
               JSON.stringify({
@@ -373,7 +385,6 @@ export default function Home() {
         if (cancelled) return;
         if (planReq.current !== reqId || planCtxRef.current !== context) return;
         setPlanUnreachable(true);
-        setPlan(buildOfflinePlanHint(openThreads, duration));
       })
       .finally(() => {
         if (!cancelled && planReq.current === reqId) setPlanLoading(false);
@@ -421,7 +432,9 @@ export default function Home() {
     const msg =
       opts && "brief" in opts
         ? (opts.brief?.trim() ?? "")
-        : (plan?.message ?? "").trim();
+        : planUnreachable
+          ? ""
+          : (plan?.message ?? "").trim();
     sessionBriefRef.current = msg || null;
     setRitualBrief(msg ? { message: msg } : null);
     setView("session");
@@ -432,6 +445,7 @@ export default function Home() {
   async function pickDuration(d: number) {
     ritualLockRef.current = false;
     setRitualBrief(null);
+    planSkipFetchRef.current = true;
     planCtxRef.current = "desk";
     setContext("desk");
     setDuration(d);
@@ -500,28 +514,23 @@ export default function Home() {
         };
         if (planReq.current === reqId && planCtxRef.current === ctx) {
           const msg = (j.message ?? "").trim();
-          setPlanUnreachable(Boolean(j.unreachable) || !msg);
-          if (msg) {
+          const unreachable = Boolean(j.unreachable) || !msg;
+          setPlanUnreachable(unreachable);
+          if (msg && !unreachable) {
             setPlan({
               message: msg,
               pick: opts?.chosen ? String(opts.chosen) : (j.pick ?? "15"),
             });
-          } else {
-            const hint = buildOfflinePlanHint(
-              openThreads,
-              opts?.chosen ?? duration,
-            );
-            setPlan(hint);
+          } else if (!msg) {
+            setPlan(null);
           }
         }
       } else if (planReq.current === reqId && planCtxRef.current === ctx) {
         setPlanUnreachable(true);
-        setPlan(buildOfflinePlanHint(openThreads, opts?.chosen ?? duration));
       }
     } catch {
       if (planReq.current === reqId && planCtxRef.current === ctx) {
         setPlanUnreachable(true);
-        setPlan((prev) => prev ?? buildOfflinePlanHint(openThreads, opts?.chosen ?? duration));
       }
     } finally {
       if (planReq.current === reqId) setPlanLoading(false);
@@ -529,20 +538,25 @@ export default function Home() {
   }
 
   function applyRitualLaunch(launch: RitualLaunch) {
-    const d = normalizeDuration(launch.pick);
+    const ctx = launch.context ?? "desk";
+    const d = ctx === "sortie" ? OUTDOOR_DURATION : normalizeDuration(launch.pick);
+    const pick = ctx === "sortie" ? "sortie" : String(d);
+    const fallback =
+      ctx === "sortie"
+        ? "Je te propose une Sortie — on regarde ce qui se fait dehors."
+        : `Ton créneau de ${d} min est prêt.`;
     ritualLockRef.current = true;
     stashRitualLaunch(launch);
-    setContext("desk");
+    planSkipFetchRef.current = true;
+    planCtxRef.current = ctx;
+    setContext(ctx);
     setDuration(d);
     durationSettled.current = true;
     appliedSig.current = planSig;
     manualPickSig.current = planSig;
-    const msg = launch.message.trim();
-    setPlan({
-      message: msg || `Ton créneau de ${d} min est prêt.`,
-      pick: String(d),
-    });
-    if (msg) setRitualBrief({ message: msg });
+    const msg = launch.message.trim() || fallback;
+    setPlan({ message: msg, pick });
+    if (launch.message.trim()) setRitualBrief({ message: launch.message.trim() });
     try {
       localStorage.setItem(
         "elan.plan.v1",
@@ -550,9 +564,9 @@ export default function Home() {
           v: PLAN_VERSION,
           date: new Date().toDateString(),
           sig: planSig,
-          context: "desk",
-          message: msg || `Ton créneau de ${d} min est prêt.`,
-          pick: String(d),
+          context: ctx,
+          message: msg,
+          pick,
         }),
       );
     } catch {

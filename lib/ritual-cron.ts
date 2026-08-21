@@ -1,3 +1,4 @@
+import { OUTDOOR_DURATION } from "./constants";
 import {
   buildRitualNotification,
   buildOfflinePlanHint,
@@ -191,18 +192,24 @@ export async function runRitualPushCron(options?: {
       })) ?? buildOfflinePlanHint(threads);
 
     const open = threads.filter((t) => t.status === "open");
-    const minutes = plan?.pick ? Number(plan.pick) : 15;
+    const isSortie = plan?.pick === "sortie";
+    const minutes = isSortie
+      ? OUTDOOR_DURATION
+      : plan?.pick
+        ? Number(plan.pick)
+        : 15;
     const mins = Number.isFinite(minutes) && minutes > 0 ? minutes : 15;
     const notifyCopy =
       (await generateNotifyCopyViaApi({
         threads,
         stats,
-        chosen: mins,
+        chosen: isSortie ? undefined : mins,
         meta: { name: raw.name ?? undefined },
         sourceMessage: plan.message,
       })) ?? null;
     const payload = buildRitualNotification({
       minutes: mins,
+      slot: isSortie ? "sortie" : undefined,
       planMessage: notifyCopy?.message ?? plan.message ?? "",
       openCount: open.length,
     });
