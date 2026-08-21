@@ -378,6 +378,12 @@ export default function Home() {
             setPlanDiag({
               view,
               why: typeof j?.debug?.why === "string" ? j.debug.why : undefined,
+              system:
+                typeof j?.debug?.system === "string"
+                  ? j.debug.system
+                  : undefined,
+              user:
+                typeof j?.debug?.user === "string" ? j.debug.user : undefined,
               source: "api",
               message: msg,
               pick: j?.pick ?? "15",
@@ -561,6 +567,8 @@ export default function Home() {
             candidates?: string[];
             waiting?: string[];
             why?: string;
+            system?: string;
+            user?: string;
           };
         };
         if (planReq.current === reqId && planCtxRef.current === ctx) {
@@ -584,6 +592,8 @@ export default function Home() {
               setPlanDiag({
                 view,
                 why: j.debug?.why,
+                system: j.debug?.system,
+                user: j.debug?.user,
                 source: "api",
                 message: msg,
                 pick,

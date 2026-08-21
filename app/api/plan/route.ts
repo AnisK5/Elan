@@ -48,10 +48,6 @@ interface Body {
   debug?: boolean;
 }
 
-function formatPlanLine(t: Thread): string {
-  return formatDeskPlanLine(t);
-}
-
 function renderLines(threads: Thread[]): string {
   const open = threads.filter(
     (t) => t.status === "open" && !isContainerThread(t),
@@ -455,10 +451,15 @@ function withDebugPrompt(prompt: string, debug: boolean): string {
 DIAGNOSTIC ACTIVÉ : ajoute un champ JSON "why" (1–2 phrases, pour le développeur — JAMAIS dans "message"). Dis pourquoi tu as choisi CE truc et ce que tu as écarté. Forme exacte : {"message":"...","pick":"15","why":"..."}`;
 }
 
-function debugPayload(threads: Thread[], why?: string) {
+function debugPayload(
+  threads: Thread[],
+  opts?: { why?: string; system?: string; user?: string },
+) {
   return {
     ...buildPlanViewSnapshot(threads),
-    ...(why ? { why } : {}),
+    ...(opts?.why ? { why: opts.why } : {}),
+    ...(opts?.system ? { system: opts.system } : {}),
+    ...(opts?.user ? { user: opts.user } : {}),
   };
 }
 
@@ -493,6 +494,9 @@ export async function POST(req: Request) {
 
   const client = new Anthropic({ apiKey });
   const forNotify = body.forNotify === true;
+  const userCue = forNotify
+    ? "[Notif matin — JSON seulement, message max 90 caractères.]"
+    : cue(context);
 
   try {
     const baseSystem = forNotify
@@ -510,16 +514,15 @@ export async function POST(req: Request) {
           body.meta?.name,
           context,
         );
+    const system = withDebugPrompt(baseSystem, debug);
     const res = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: forNotify ? 120 : debug ? 520 : 400,
-      system: withDebugPrompt(baseSystem, debug),
+      system,
       messages: [
         {
           role: "user",
-          content: forNotify
-            ? "[Notif matin — JSON seulement, message max 90 caractères.]"
-            : cue(context),
+          content: userCue,
         },
       ],
     });
@@ -542,7 +545,15 @@ export async function POST(req: Request) {
     return Response.json({
       message: plan.message,
       pick,
-      ...(debug ? { debug: debugPayload(open, parsed?.why) } : {}),
+      ...(debug
+        ? {
+            debug: debugPayload(open, {
+              why: parsed?.why,
+              system,
+              user: userCue,
+            }),
+          }
+        : {}),
     });
   } catch (e) {
     console.error("[plan] échec:", e instanceof Error ? e.message : e);
@@ -553,7 +564,31 @@ export async function POST(req: Request) {
       message: plan.message,
       pick: plan.pick,
       unreachable: !plan.message,
-      ...(debug ? { debug: debugPayload(open) } : {}),
+      ...(debug
+        ? {
+            debug: debugPayload(open, {
+              system: withDebugPrompt(
+                forNotify
+                  ? notifyPlanPrompt(
+                      open,
+                      body.stats,
+                      body.meta?.name,
+                      body.chosen,
+                      body.sourceMessage,
+                    )
+                  : systemPrompt(
+                      open,
+                      body.stats,
+                      body.chosen,
+                      body.meta?.name,
+                      context,
+                    ),
+                true,
+              ),
+              user: userCue,
+            }),
+          }
+        : {}),
     });
   }
 }

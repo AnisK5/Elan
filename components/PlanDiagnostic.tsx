@@ -6,6 +6,10 @@ import type { PlanViewSnapshot } from "@/lib/plan-candidates";
 export interface PlanDiagnosticData {
   view: PlanViewSnapshot;
   why?: string;
+  /** Prompt system exact envoyé au modèle (diagnostic only). */
+  system?: string;
+  /** Message user / cue envoyé avec le system. */
+  user?: string;
   source: "api" | "cache" | "offline";
   message: string;
   pick: string;
@@ -29,6 +33,12 @@ export default function PlanDiagnostic({ data }: { data: PlanDiagnosticData }) {
       "",
       "EN ATTENTE:",
       ...(data.view.waiting.length ? data.view.waiting : ["(aucun)"]),
+      "",
+      "--- USER ---",
+      data.user ?? "(pas de cue)",
+      "",
+      "--- SYSTEM ---",
+      data.system ?? "(pas de prompt — offline ou cache)",
     ].join("\n");
     try {
       await navigator.clipboard.writeText(text);
@@ -74,6 +84,34 @@ export default function PlanDiagnostic({ data }: { data: PlanDiagnosticData }) {
               : "(aucun)"}
           </pre>
         </div>
+        <details className="rounded-md border border-line/50 bg-sink/40 px-2 py-1.5">
+          <summary className="cursor-pointer select-none text-faint hover:text-ink">
+            Instructions envoyées à l&apos;IA
+            {data.system ? ` · ${data.system.length} car.` : ""}
+          </summary>
+          <div className="mt-2 max-h-64 space-y-2 overflow-y-auto">
+            {data.user ? (
+              <div>
+                <p className="text-faint">User</p>
+                <pre className="mt-0.5 whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-ink/80">
+                  {data.user}
+                </pre>
+              </div>
+            ) : null}
+            {data.system ? (
+              <div>
+                <p className="text-faint">System</p>
+                <pre className="mt-0.5 whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-ink/80">
+                  {data.system}
+                </pre>
+              </div>
+            ) : (
+              <p className="text-faint">
+                Pas de prompt (réponse offline / sans appel API).
+              </p>
+            )}
+          </div>
+        </details>
         <button
           type="button"
           onClick={() => void copy()}
