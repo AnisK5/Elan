@@ -184,7 +184,8 @@ function deskPlanPrompt(
     ? `\n\nDURÉE DÉJÀ CHOISIE : ${chosen} min. Elle vient de cliquer ce bouton — c'est SON choix. Renvoie "pick":"${chosen}" (pas "sortie").
 Le pavé conseil DOIT relier le bouton et le contenu, en PHRASE COMPLÈTE : « Pour ce créneau de ${chosen} min, je propose que l'on relance Laura en un message. »
 Si le vrai mouvement du jour est une Sortie (conséquence dehors, sorties qui s'accumulent), UNE phrase ensuite, une fois, sans insister : « Si tu peux sortir, je te proposerais plutôt une Sortie, pour le doc de ton père. »
-Si ${chosen} min est vraiment juste pour un truc ASSIS, UNE phrase ensuite, une fois : « Ça risque d'être juste ; je te proposerais plutôt un créneau de 30 min, pour aussi le linge. » Pas le mot urgence. Tu fais quand même avec les ${chosen} min.`
+Si ${chosen} min est vraiment juste pour un truc ASSIS, UNE phrase ensuite, une fois : « Ça risque d'être juste ; je te proposerais plutôt un créneau de 30 min, pour aussi le linge. » Pas le mot urgence. Tu fais quand même avec les ${chosen} min.
+Un bouton ${chosen} min n'oblige PAS à remplir ${chosen} min de travail. Si le bon pas d'aujourd'hui tient en 5, tu le nommes dans ce cadre — tu ne gonfles pas un dossier ouvert pour occuper le temps.`
     : "";
   const render = renderLines(threads);
 
@@ -269,9 +270,8 @@ RÉGULIERS (fil conteneur — loyer, URSSAF, draps, tout ce qui REVIENT et que L
 - Formule « ça fait X semaines / un mois » — jamais « en retard ».
 - Si aucun régulier n'est mûr, n'en parle pas dans le message.
 
-RÉPONDS UNIQUEMENT avec un objet JSON, rien d'autre, de la forme exacte :
-{"message": "...", "pick": "15"}
-"pick" = "5"|"15"|"30"|"50"|"sortie".
+RÉPONDS via l'outil conseil_du_jour, rien d'autre. Ordre : "why" (les 6 points, une phrase chacun), puis "message", puis "pick".
+Le message est la CONCLUSION — jamais le parcours. "pick" = "5"|"15"|"30"|"50"|"sortie", en cohérence avec why.
 
 SES TRUCS :
 ${render}
@@ -545,7 +545,7 @@ export async function POST(req: Request) {
         );
     const res = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: forNotify ? 200 : 400,
+      max_tokens: forNotify ? 200 : 800,
       system: baseSystem,
       tools: [CONSEIL_TOOL],
       tool_choice: { type: "tool", name: CONSEIL_TOOL.name },
@@ -589,6 +589,7 @@ export async function POST(req: Request) {
       ...(debug
         ? {
             debug: debugPayload(open, {
+              why: parsed.why,
               system: baseSystem,
               user: userCue,
             }),

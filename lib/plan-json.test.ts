@@ -38,6 +38,7 @@ describe("extractPlanFromContent", () => {
         type: "tool_use",
         name: "conseil_du_jour",
         input: {
+          why: "1) Vienne. 2) Rien qui se ferme. 3) Papa stagne. 4) 15 + rappel. 5) Patins reportés. 6) Cohérent.",
           message: "Je te propose un créneau de 15 min, pour un rappel.",
           pick: "15",
         },
@@ -45,6 +46,7 @@ describe("extractPlanFromContent", () => {
     ]);
     expect(plan?.pick).toBe("15");
     expect(plan?.message).toContain("rappel");
+    expect(plan?.why).toContain("Vienne");
   });
 
   it("retombe sur le JSON texte", () => {

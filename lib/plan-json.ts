@@ -7,25 +7,30 @@ export type PlanJson = { message: string; pick: string; why?: string };
 
 export const CONSEIL_TOOL_NAME = "conseil_du_jour";
 
-/** Force un JSON {message, pick} — plus fiable que du texte libre. */
+/** Force un JSON {why, message, pick} — l'arbitrage écrit guide le conseil. */
 export const CONSEIL_TOOL = {
   name: CONSEIL_TOOL_NAME,
   description:
-    "Le conseil du jour : la phrase à l'écran et la durée du créneau.",
+    "Le conseil du jour. Remplis why EN PREMIER (les 6 points d'arbitrage), puis message et pick, en cohérence avec why.",
   input_schema: {
     type: "object" as const,
     properties: {
+      why: {
+        type: "string",
+        description:
+          "Les 6 points d'ARBITRAGE SILENCIEUX, une phrase courte chacun, numérotés 1) à 6). Factuel, pour le développeur. JAMAIS repris dans message.",
+      },
       message: {
         type: "string",
-        description: "2 à 4 phrases, françaises, sans markdown.",
+        description: "2 à 4 phrases, françaises, sans markdown. La conclusion seulement.",
       },
       pick: {
         type: "string",
         enum: [...PLAN_PICKS],
-        description: "Durée du créneau, ou sortie.",
+        description: "Durée du créneau, ou sortie. Doit suivre why.",
       },
     },
-    required: ["message", "pick"],
+    required: ["why", "message", "pick"],
   },
 };
 
@@ -47,9 +52,11 @@ export function parsePlanJson(text: string): PlanJson | null {
   const msg = blob.match(/"message"\s*:\s*"((?:\\.|[^"\\])*)"/);
   const pick = blob.match(/"pick"\s*:\s*"(5|15|30|50|sortie)"/);
   if (!msg || !pick) return null;
+  const why = blob.match(/"why"\s*:\s*"((?:\\.|[^"\\])*)"/);
   return {
     message: unquote(msg[1]),
     pick: pick[1],
+    why: why ? unquote(why[1]).trim() : undefined,
   };
 }
 
@@ -58,7 +65,11 @@ export function planFromUnknown(input: unknown): PlanJson | null {
   const o = input as Record<string, unknown>;
   if (typeof o.message !== "string" || typeof o.pick !== "string") return null;
   if (!o.message.trim()) return null;
-  return { message: o.message, pick: o.pick };
+  return {
+    message: o.message,
+    pick: o.pick,
+    why: typeof o.why === "string" ? o.why.trim() : undefined,
+  };
 }
 
 /** Prefère l'appel d'outil forcé ; sinon le JSON dans le texte. */

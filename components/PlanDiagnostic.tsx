@@ -76,7 +76,7 @@ export default function PlanDiagnostic({ data }: { data: PlanDiagnosticData }) {
           </div>
         ) : (
           <p className="text-faint">
-            Pourquoi · non demandé au modèle (ça allongeait et cassait le conseil)
+            Pourquoi · absent (le modèle n&apos;a pas rempli why)
           </p>
         )}
         <div>
