@@ -11,7 +11,12 @@ import {
   REGULIERS_DISCOVERY_PROMPT,
   REGULIERS_FOCUS_PROMPT,
 } from "@/lib/entretiens";
-import { ageLabel, dayDiff, dueLabel, intentionLabel } from "@/lib/thread-labels";
+import { dayDiff } from "@/lib/thread-labels";
+import {
+  buildPlanViewSnapshot,
+  formatDeskPlanLine,
+  splitPlanThreads,
+} from "@/lib/plan-candidates";
 import { identity, socle, today, TON, VOIX } from "@/lib/voice";
 import { DEPOSER_PLAN_MESSAGE } from "@/lib/session-mode";
 import { buildOfflinePlanHint } from "@/lib/notifications";
@@ -39,6 +44,8 @@ interface Body {
   forNotify?: boolean;
   /** Conseil déjà composé (accueil / mail) — la notif le raccourcit, elle ne recompose pas. */
   sourceMessage?: string;
+  /** Diagnostic local : demande un champ why + snapshot des lignes vues. */
+  debug?: boolean;
 }
 
 function renderLines(threads: Thread[]): string {
@@ -46,16 +53,18 @@ function renderLines(threads: Thread[]): string {
     (t) => t.status === "open" && !isContainerThread(t),
   );
   if (open.length === 0) return "(rien de pertinent en ce moment)";
+  const { candidates, waiting } = splitPlanThreads(open);
   const overdue = open.filter((t) => t.due && dayDiff(t.due) < 0).length;
-  const lines = open
-    .map((t) => {
-      const kind = t.kind === "suivi" ? "À SUIVRE" : "ACTION";
-      const effort = t.effort ? ` · effort ${t.effort}` : "";
-      const note = t.note ? ` · liste/contexte: ${t.note}` : "";
-      return `- [${kind}] ${t.text}${dueLabel(t.due, "plan")}${intentionLabel(t.plannedFor)}${ageLabel(t.createdAt, "déposé")}${effort}${note}`;
-    })
-    .join("\n");
-  return `${open.length} trucs ouverts (${overdue} dont la fenêtre est passée) :\n${lines}`;
+  const header = `${open.length} trucs ouverts (${overdue} dont la fenêtre est passée)`;
+  const candidateBlock =
+    candidates.length > 0
+      ? `CANDIDATS POUR AUJOURD'HUI (tu choisis UN truc ICI) :\n${candidates.map(formatDeskPlanLine).join("\n")}`
+      : `CANDIDATS POUR AUJOURD'HUI : (aucun — propose un micro-créneau de point / rien qui presse)`;
+  const waitingBlock =
+    waiting.length > 0
+      ? `\n\nEN ATTENTE — NE PROPOSE PAS AUJOURD'HUI (délai de relance pas écoulé, contacté récemment, ou « vers / à partir du » encore dans le futur) :\n${waiting.map(formatDeskPlanLine).join("\n")}`
+      : "";
+  return `${header}.\n\n${candidateBlock}${waitingBlock}`;
 }
 
 function findCoursesThread(threads: Thread[]): Thread | undefined {
@@ -169,10 +178,18 @@ Si tu proposes la durée : « Je te propose un créneau de 15 min, pour que l'on
 Si tu proposes une Sortie : « Je te propose une Sortie, pour imprimer le doc de ton père à la papeterie — et la pharmacie sur le trajet. »
 Si elle a déjà cliqué : vois DURÉE DÉJÀ CHOISIE ci-dessous.
 Exemples (quand TU proposes) :
-- « Je te propose un créneau de 15 min, pour que l'on relance Laura en un message — c'est dans 6 jours. »
+- « Je te propose un créneau de 15 min, pour que l'on relance Laura en un message — son délai est passé. »
 - « Je te propose un créneau de 5 min, pour que l'on mette le linge en machine — et ça tourne sans toi. »
 - « Je te proposerais un créneau de 50 min, ou deux de 30, pour avancer la déclaration tant que c'est ouvert. »
 - « Je te propose une Sortie, pour imprimer le doc de ton père — pharmacie sur le même trajet. »
+INTERDIT : proposer une relance / un contact « parce que c'est dans X jours ». « C'est dans 12j » veut dire ATTENDRE, pas agir aujourd'hui. Ne cite un délai futur que pour une vraie fenêtre externe à saisir (déclaration, inscription…), jamais pour justifier une relance anticipée.
+
+ARBITRAGE SILENCIEUX (OBLIGATOIRE — avant de choisir durée + truc ; NE PAS écrire ces étapes dans "message") :
+1) URGENCE / FENÊTRE : qu'est-ce qui presse ou se ferme bientôt (échéance imminente, saison, conséquence réelle) parmi les CANDIDATS ?
+2) RYTHME / STAGNATION : au vu du RYTHME RÉCENT, qu'est-ce qui stagne ou n'a jamais été entamé et mérite de l'oxygène — sans culpabiliser ?
+3) MEILLEUR CRÉNEAU : parmi 5 / 15 / 30 / 50 / Sortie, quel couple créneau + UN truc a le meilleur ratio avancée / temps AUJOURD'HUI ? Par défaut la plus petite séance bureau sensée ; si ce qui pèse exige de sortir, "pick":"sortie". N'allonge le bureau que si une vraie raison (fenêtre qui se ferme, gros pas assis, rythme qui décroche).
+4) CE QU'ON LAISSE : qu'est-ce que ce choix laisse de côté, et est-ce OK au rythme actuel (reviendra bientôt / EN ATTENTE / pas mûr) ? Si ce n'est pas OK — surtout un paquet de sorties avec conséquence — change de choix ou passe à "sortie" AVANT de valider.
+5) VALIDATION : une fois les 4 points tenus, seulement alors tu rédiges "message" + "pick". Le message ne montre que la conclusion — jamais le parcours.
 
 DURÉE (champ "pick"), une seule valeur parmi "5", "15", "30", "50", ou "sortie" :
 - "sortie" = le créneau du jour EST une Sortie (bouton Sortie). À utiliser quand ce qui pèse vraiment exige de se déplacer.
@@ -189,9 +206,16 @@ DURÉE (champ "pick"), une seule valeur parmi "5", "15", "30", "50", ou "sortie"
 - FENÊTRES SAISONNIÈRES : certains trucs n'ont pas de date mais perdent leur sens passé un moment (organiser un voyage ou une activité d'été, un cadeau avant une fête, une inscription avant la rentrée). Déduis-le du texte et de la saison actuelle : si la fenêtre se referme bientôt, c'est le moment de le dire, même sans échéance saisie. Une envie douce (« aimerait essayer ce mois-ci ») n'est PAS une fenêtre qui se ferme — ne la transforme pas en deadline, et ne la mets jamais devant quelqu'un qui attend.
 - TÂCHE AFFAMÉE : si un truc important est vieux et manifestement toujours doublé (déposé il y a longtemps, jamais avancé), tu peux soit le désigner comme LE pas à faire aujourd'hui dans une séance normale (lui donner de l'oxygène), soit — s'il a besoin d'un vrai bloc — OFFRIR un peu plus de temps. Toujours comme une option calme et bienveillante, jamais une pression ni un reproche de l'avoir laissé traîner.
 - CONTEXTE : si un truc porte un « contexte » (enjeux, qui attend, intention douce, conséquence), tiens-en compte pour juger son importance et pour le formuler avec justesse (« ton père attend toujours ça »). Une intention douce (« aimerait cette semaine ») → un rappel léger si la semaine avance, jamais une urgence artificielle.
-- NE RE-PROPOSE JAMAIS CE QUI VIENT D'ÊTRE FAIT. Si un truc porte une note indiquant qu'il a été fait / envoyé / relancé récemment (« relancé le 17/07, en attente de réponse »), NE suggère PAS de le refaire ni de le relancer. On ne relance un suivi que si son délai d'attente est réellement passé — un truc contacté aujourd'hui se laisse tranquille. Regarde les notes et les échéances avant de proposer quoi que ce soit.
+- NE RE-PROPOSE JAMAIS CE QUI VIENT D'ÊTRE FAIT. Si un truc porte une note indiquant qu'il a été fait / envoyé / relancé récemment (« relancé le 17/07, en attente de réponse »), NE suggère PAS de le refaire ni de le relancer. On ne relance un suivi que si son délai d'attente est réellement passé — un truc contacté aujourd'hui se laisse tranquille. Regarde les notes, « revu aujourd'hui », et les échéances avant de proposer quoi que ce soit.
+- SÉMANTIQUE DES DATES (crucial — ne pas confondre) :
+  · [À SUIVRE] + « fenêtre ouverte encore Nj » / échéance future = PROCHAINE relance : c'est trop tôt. Ces fils sont listés sous EN ATTENTE — ne les propose JAMAIS dans le créneau du jour.
+  · [ACTION] dont le texte est une relance / un contact / un envoi, avec due encore future = même règle : trop tôt, laisse tranquille.
+  · [ACTION] avec due future pour une contrainte EXTERNE (déclaration, inscription, dossier à déposer) = là oui, la date est une fenêtre à saisir tant qu'elle est ouverte.
+  · MAIS si le contexte dit « vers le / à partir du / pas avant / à faire vers » une date future : ce n'est PAS une fenêtre à saisir — c'est trop tôt. Ces fils sont en EN ATTENTE.
+  · Intention « prévu dans Nj » (plannedFor futur) = pas encore le jour : ne propose pas.
+  · Choisis UNIQUEMENT parmi CANDIDATS POUR AUJOURD'HUI. La section EN ATTENTE est du contexte, pas un menu.
 
-PHILOSOPHIE DES ÉCHÉANCES (importante) : il n'y a jamais rien qu'on est OBLIGÉ de faire. Une échéance n'est pas une menace, c'est une FENÊTRE — une occasion disponible seulement un moment. Sois FACTUEL sur le timing (« c'est dans 2 jours », « la fenêtre est passée depuis 3 jours ») — n'adoucis jamais un vrai délai au point de le faire oublier — mais formule la suite comme une opportunité à saisir tant qu'elle est ouverte, jamais comme une obligation, jamais de culpabilité.
+PHILOSOPHIE DES ÉCHÉANCES (importante) : il n'y a jamais rien qu'on est OBLIGÉ de faire. Une échéance n'est pas une menace, c'est une FENÊTRE — une occasion disponible seulement un moment. Sois FACTUEL sur le timing (« c'est dans 2 jours », « la fenêtre est passée depuis 3 jours ») — n'adoucis jamais un vrai délai au point de le faire oublier — mais formule la suite comme une opportunité à saisir tant qu'elle est ouverte, jamais comme une obligation, jamais de culpabilité. Ça vaut pour les vraies fenêtres externes (ACTION type dossier / déclaration), PAS pour les délais d'attente d'une relance.
 - LE CONTEXTE PRIME SUR LA DATE. Si le contexte d'un truc énonce une CONDITION (« dès réception du salaire », « quand j'aurai la réponse de X », « après mon rdv de jeudi »), c'est cette condition qui fait foi, pas la date portée par le truc. Tant qu'elle n'est pas remplie, le truc n'est PAS en retard, même si sa date est passée.
 - NE PENSE PAS À VOIX HAUTE. Si tu repères une alerte puis que tu l'écartes, n'en parle tout simplement PAS. N'écris jamais « j'ai un truc qui clignote… mais en fait ce n'est pas encore l'heure », ni « c'est marqué en retard, or son contexte dit que non » : tu inquiètes puis tu détricotes, et il ne reste qu'une impression de désordre. Le tri se fait en silence ; on ne lit que ta conclusion.
 - Quand la fenêtre est IMMINENTE (aujourd'hui ou demain), dis-le EXPLICITEMENT : « c'est aujourd'hui », « c'est demain ». Reste calme, mais net sur le JOUR — ne te contente jamais d'un vague « tant que c'est ouvert » pour une échéance du jour même, sinon on risque de la louper.
@@ -390,14 +414,14 @@ function fallbackNotifyPlan(
   if (source) {
     return { message: clipForNotify(source), pick: "15" };
   }
-  const open = openThreads(threads);
-  if (open.length === 0) {
+  const { candidates } = splitPlanThreads(openThreads(threads));
+  if (candidates.length === 0) {
     return { message: "Rien qui presse. Un petit point quand tu veux ?", pick: "5" };
   }
   const label =
-    open[0].text.length > 55
-      ? `${open[0].text.slice(0, 54).trim()}…`
-      : open[0].text;
+    candidates[0].text.length > 55
+      ? `${candidates[0].text.slice(0, 54).trim()}…`
+      : candidates[0].text;
   return { message: `${label} — on s'y met ?`, pick: "15" };
 }
 
@@ -414,7 +438,9 @@ function cue(context?: SessionContext): string {
   return "[Regarde mes trucs et conseille-moi la forme de ma journée. Réponds seulement avec le JSON demandé.]";
 }
 
-function safeParse(text: string): { message: string; pick: string } | null {
+function safeParse(
+  text: string,
+): { message: string; pick: string; why?: string } | null {
   const cleaned = text
     .trim()
     .replace(/^```(?:json)?/i, "")
@@ -422,11 +448,47 @@ function safeParse(text: string): { message: string; pick: string } | null {
     .trim();
   try {
     const o = JSON.parse(cleaned);
-    if (typeof o.message === "string" && typeof o.pick === "string") return o;
+    if (typeof o.message === "string" && typeof o.pick === "string") {
+      return {
+        message: o.message,
+        pick: o.pick,
+        why: typeof o.why === "string" ? o.why.trim() : undefined,
+      };
+    }
   } catch {
     // ignore
   }
   return null;
+}
+
+function withDebugPrompt(prompt: string, debug: boolean): string {
+  if (!debug) return prompt;
+  return `${prompt}
+
+DIAGNOSTIC ACTIVÉ : tu DOIS écrire le parcours d'ARBITRAGE SILENCIEUX AVANT de choisir.
+Ordre OBLIGATOIRE du JSON — "why" EN PREMIER, puis "message", puis "pick" :
+{"why":"...","message":"...","pick":"15"}
+
+"why" reprend EXPLICITEMENT les 5 points (phrases courtes, factuelles, pour le développeur — JAMAIS repris dans "message") :
+1) Urgence / fenêtre : ce qui presse ou se ferme.
+2) Rythme / stagnation : ce qui stagne ou n'a jamais bougé.
+3) Meilleur créneau : 5/15/30/50 ou Sortie + truc retenus, et pourquoi ce ratio aujourd'hui (cite 1–2 alternatives écartées).
+4) Ce qu'on laisse : 2–4 candidats laissés + pourquoi c'est OK (ou pas — alors tu changes).
+5) Validation : une phrase qui confirme la cohérence why → message/pick.
+
+Ensuite seulement tu rédiges "message" et "pick", EN COHÉRENCE avec ce why. Si why dit qu'un truc est trop tôt ou qu'une durée est trop longue, message/pick doivent suivre.`;
+}
+
+function debugPayload(
+  threads: Thread[],
+  opts?: { why?: string; system?: string; user?: string },
+) {
+  return {
+    ...buildPlanViewSnapshot(threads),
+    ...(opts?.why ? { why: opts.why } : {}),
+    ...(opts?.system ? { system: opts.system } : {}),
+    ...(opts?.user ? { user: opts.user } : {}),
+  };
 }
 
 export async function POST(req: Request) {
@@ -441,42 +503,54 @@ export async function POST(req: Request) {
   }
 
   const context = body.context ?? "desk";
+  const debug = body.debug === true && body.forNotify !== true;
   if (context === "deposer") {
-    return Response.json({ message: DEPOSER_PLAN_MESSAGE, pick: "15" });
+    return Response.json({
+      message: DEPOSER_PLAN_MESSAGE,
+      pick: "15",
+      ...(debug ? { debug: debugPayload(body.threads ?? []) } : {}),
+    });
   }
   const open = (body.threads ?? []).filter((t) => t.status === "open");
   if (open.length === 0 && context !== "regulier") {
-    return Response.json({ message: "", pick: "15" });
+    return Response.json({
+      message: "",
+      pick: "15",
+      ...(debug ? { debug: debugPayload([]) } : {}),
+    });
   }
 
   const client = new Anthropic({ apiKey });
   const forNotify = body.forNotify === true;
+  const userCue = forNotify
+    ? "[Notif matin — JSON seulement, message max 90 caractères.]"
+    : cue(context);
 
   try {
+    const baseSystem = forNotify
+      ? notifyPlanPrompt(
+          open,
+          body.stats,
+          body.meta?.name,
+          body.chosen,
+          body.sourceMessage,
+        )
+      : systemPrompt(
+          open,
+          body.stats,
+          body.chosen,
+          body.meta?.name,
+          context,
+        );
+    const system = withDebugPrompt(baseSystem, debug);
     const res = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: forNotify ? 120 : 400,
-      system: forNotify
-        ? notifyPlanPrompt(
-            open,
-            body.stats,
-            body.meta?.name,
-            body.chosen,
-            body.sourceMessage,
-          )
-        : systemPrompt(
-            open,
-            body.stats,
-            body.chosen,
-            body.meta?.name,
-            context,
-          ),
+      max_tokens: forNotify ? 120 : debug ? 800 : 400,
+      system,
       messages: [
         {
           role: "user",
-          content: forNotify
-            ? "[Notif matin — JSON seulement, message max 90 caractères.]"
-            : cue(context),
+          content: userCue,
         },
       ],
     });
@@ -496,7 +570,19 @@ export async function POST(req: Request) {
     if (body.chosen && [5, 15, 30, 50].includes(body.chosen)) {
       pick = String(body.chosen);
     }
-    return Response.json({ message: plan.message, pick });
+    return Response.json({
+      message: plan.message,
+      pick,
+      ...(debug
+        ? {
+            debug: debugPayload(open, {
+              why: parsed?.why,
+              system,
+              user: userCue,
+            }),
+          }
+        : {}),
+    });
   } catch (e) {
     console.error("[plan] échec:", e instanceof Error ? e.message : e);
     const plan = forNotify
@@ -506,6 +592,31 @@ export async function POST(req: Request) {
       message: plan.message,
       pick: plan.pick,
       unreachable: true,
+      ...(debug
+        ? {
+            debug: debugPayload(open, {
+              system: withDebugPrompt(
+                forNotify
+                  ? notifyPlanPrompt(
+                      open,
+                      body.stats,
+                      body.meta?.name,
+                      body.chosen,
+                      body.sourceMessage,
+                    )
+                  : systemPrompt(
+                      open,
+                      body.stats,
+                      body.chosen,
+                      body.meta?.name,
+                      context,
+                    ),
+                true,
+              ),
+              user: userCue,
+            }),
+          }
+        : {}),
     });
   }
 }

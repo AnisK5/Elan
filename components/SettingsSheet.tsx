@@ -6,6 +6,7 @@ import type { PlanStatsForNotify } from "@/lib/notifications";
 import RitualNotify from "@/components/RitualNotify";
 import RitualNotifySettings from "@/components/RitualNotifySettings";
 import AnthropicKeySettings from "@/components/AnthropicKeySettings";
+import DiagnosticSettings from "@/components/DiagnosticSettings";
 import ImportData from "@/components/home/ImportData";
 import { useSettings } from "@/lib/store";
 
@@ -100,6 +101,7 @@ export default function SettingsSheet({
                 />
               )}
               <AnthropicKeySettings />
+              <DiagnosticSettings />
               <ImportData />
             </div>
 

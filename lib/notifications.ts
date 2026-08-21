@@ -2,6 +2,7 @@ import type { SessionContext, Settings, Thread } from "./types";
 import { getSupabase, isSupabaseConfigured } from "./supabase";
 import { apiFetch } from "./anthropic";
 import { OUTDOOR_DURATION } from "./constants";
+import { isDeskPlanCandidate } from "./plan-candidates";
 
 export const DEFAULT_NOTIFY_TIME = "09:00";
 export const NOTIFY_FIRED_KEY = "elan.notify.fired.v1";
@@ -66,7 +67,9 @@ export function buildOfflinePlanHint(
   threads: Thread[],
   minutes = 15,
 ): { message: string; pick: string } {
-  const open = threads.filter((t) => t.status === "open");
+  const open = threads.filter(
+    (t) => t.status === "open" && isDeskPlanCandidate(t),
+  );
   if (open.length === 0) {
     return {
       message: "Rien qui presse. Un petit point quand tu veux ?",

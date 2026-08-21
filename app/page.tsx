@@ -24,6 +24,11 @@ import RitualNotify from "@/components/RitualNotify";
 import SettingsSheet from "@/components/SettingsSheet";
 import { useRitualReminder } from "@/components/useRitualReminder";
 import { isNotifyPromptDismissed } from "@/lib/notifications";
+import { isDiagnosticEnabled } from "@/lib/diagnostic";
+import { buildPlanViewSnapshot } from "@/lib/plan-candidates";
+import PlanDiagnostic, {
+  type PlanDiagnosticData,
+} from "@/components/PlanDiagnostic";
 import Welcome from "@/components/Welcome";
 import HelpButton from "@/components/HelpButton";
 import BacklogPeek from "@/components/home/BacklogPeek";
@@ -80,6 +85,8 @@ export default function Home() {
   );
   const [planLoading, setPlanLoading] = useState(false);
   const [planUnreachable, setPlanUnreachable] = useState(false);
+  const [diagnosticOn, setDiagnosticOn] = useState(false);
+  const [planDiag, setPlanDiag] = useState<PlanDiagnosticData | null>(null);
   const appliedSig = useRef("");
   // Deux sources écrivent le conseil : la reco automatique et le choix manuel
   // de durée. Sans numéro de série, une réponse lente écrase une réponse
@@ -243,6 +250,17 @@ export default function Home() {
     [openThreads, planStats],
   );
 
+  useEffect(() => {
+    setDiagnosticOn(isDiagnosticEnabled());
+    function onDiag(e: Event) {
+      const on = Boolean((e as CustomEvent<{ on: boolean }>).detail?.on);
+      setDiagnosticOn(on);
+      if (!on) setPlanDiag(null);
+    }
+    window.addEventListener("elan-diagnostic", onDiag);
+    return () => window.removeEventListener("elan-diagnostic", onDiag);
+  }, []);
+
   // Premier lancement : jamais rien déposé ET jamais fait de séance.
   const isNewcomer = ready && threads.length === 0 && sessions.length === 0;
 
@@ -316,10 +334,12 @@ export default function Home() {
       return;
     }
     const dateKey = new Date().toDateString();
+    const wantDebug = diagnosticOn;
     try {
       const raw = localStorage.getItem("elan.plan.v1");
       const c = raw ? JSON.parse(raw) : null;
       if (
+        !wantDebug &&
         c &&
         c.v === PLAN_VERSION &&
         c.date === dateKey &&
@@ -346,6 +366,7 @@ export default function Home() {
         stats: planStats,
         context,
         meta: { name: settings.name },
+        ...(wantDebug ? { debug: true } : {}),
       }),
     })
       .then((r) => (r.ok ? r.json() : null))
@@ -360,11 +381,45 @@ export default function Home() {
           if (manualPickSig.current !== planSig) {
             applyPick(j?.pick ?? "15", planSig);
           }
+          if (wantDebug) {
+            const view =
+              j?.debug &&
+              Array.isArray(j.debug.candidates) &&
+              Array.isArray(j.debug.waiting)
+                ? {
+                    candidates: j.debug.candidates as string[],
+                    waiting: j.debug.waiting as string[],
+                  }
+                : buildPlanViewSnapshot(openThreads);
+            setPlanDiag({
+              view,
+              why: typeof j?.debug?.why === "string" ? j.debug.why : undefined,
+              system:
+                typeof j?.debug?.system === "string"
+                  ? j.debug.system
+                  : undefined,
+              user:
+                typeof j?.debug?.user === "string" ? j.debug.user : undefined,
+              source: "api",
+              message: msg,
+              pick: j?.pick ?? "15",
+            });
+          } else {
+            setPlanDiag(null);
+          }
         } else {
           setPlan(null);
+          if (wantDebug) {
+            setPlanDiag({
+              view: buildPlanViewSnapshot(openThreads),
+              source: "offline",
+              message: "",
+              pick: "15",
+            });
+          }
         }
         try {
-          if (msg && !unreachable) {
+          if (msg && !unreachable && !wantDebug) {
             localStorage.setItem(
               "elan.plan.v1",
               JSON.stringify({
@@ -385,6 +440,14 @@ export default function Home() {
         if (cancelled) return;
         if (planReq.current !== reqId || planCtxRef.current !== context) return;
         setPlanUnreachable(true);
+        if (wantDebug) {
+          setPlanDiag({
+            view: buildPlanViewSnapshot(openThreads),
+            source: "offline",
+            message: "",
+            pick: "15",
+          });
+        }
       })
       .finally(() => {
         if (!cancelled && planReq.current === reqId) setPlanLoading(false);
@@ -393,7 +456,7 @@ export default function Home() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, view, planSig, context]);
+  }, [ready, view, planSig, context, diagnosticOn]);
 
   function endSession(transcript: ChatMessage[]) {
     if (transcript.length > 1) {
@@ -494,6 +557,7 @@ export default function Home() {
     const reqId = ++planReq.current;
     setPlanLoading(true);
     if (ctx !== "desk") setPlan(null);
+    const wantDebug = isDiagnosticEnabled();
     try {
       const res = await apiFetch("/api/plan", {
         method: "POST",
@@ -504,6 +568,7 @@ export default function Home() {
           chosen: opts?.chosen,
           context: ctx,
           meta: { name: settings.name },
+          ...(wantDebug ? { debug: true } : {}),
         }),
       });
       if (res.ok) {
@@ -511,26 +576,77 @@ export default function Home() {
           message?: string;
           pick?: string;
           unreachable?: boolean;
+          debug?: {
+            candidates?: string[];
+            waiting?: string[];
+            why?: string;
+            system?: string;
+            user?: string;
+          };
         };
         if (planReq.current === reqId && planCtxRef.current === ctx) {
           const msg = (j.message ?? "").trim();
           const unreachable = Boolean(j.unreachable) || !msg;
           setPlanUnreachable(unreachable);
           if (msg && !unreachable) {
-            setPlan({
-              message: msg,
-              pick: opts?.chosen ? String(opts.chosen) : (j.pick ?? "15"),
-            });
-          } else if (!msg) {
+            const pick = opts?.chosen
+              ? String(opts.chosen)
+              : (j.pick ?? "15");
+            setPlan({ message: msg, pick });
+            if (wantDebug) {
+              const view =
+                j.debug &&
+                Array.isArray(j.debug.candidates) &&
+                Array.isArray(j.debug.waiting)
+                  ? {
+                      candidates: j.debug.candidates,
+                      waiting: j.debug.waiting,
+                    }
+                  : buildPlanViewSnapshot(openThreads);
+              setPlanDiag({
+                view,
+                why: j.debug?.why,
+                system: j.debug?.system,
+                user: j.debug?.user,
+                source: "api",
+                message: msg,
+                pick,
+              });
+            }
+          } else {
             setPlan(null);
+            if (wantDebug) {
+              setPlanDiag({
+                view: buildPlanViewSnapshot(openThreads),
+                source: "offline",
+                message: "",
+                pick: "15",
+              });
+            }
           }
         }
       } else if (planReq.current === reqId && planCtxRef.current === ctx) {
         setPlanUnreachable(true);
+        if (wantDebug) {
+          setPlanDiag({
+            view: buildPlanViewSnapshot(openThreads),
+            source: "offline",
+            message: "",
+            pick: "15",
+          });
+        }
       }
     } catch {
       if (planReq.current === reqId && planCtxRef.current === ctx) {
         setPlanUnreachable(true);
+        if (wantDebug) {
+          setPlanDiag({
+            view: buildPlanViewSnapshot(openThreads),
+            source: "offline",
+            message: "",
+            pick: "15",
+          });
+        }
       }
     } finally {
       if (planReq.current === reqId) setPlanLoading(false);
@@ -902,6 +1018,9 @@ export default function Home() {
                     trucs={trucs}
                   />
                 )}
+                {diagnosticOn && planDiag && !planLoading ? (
+                  <PlanDiagnostic data={planDiag} />
+                ) : null}
               </div>
             ) : (
               <p className="mt-3 text-[15px] leading-relaxed text-muted">

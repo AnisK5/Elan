@@ -38,11 +38,11 @@ export function renderThreadLine(
   const energy = t.energy ? ` · énergie ${t.energy}` : "";
   const age = ageLabel(t.createdAt, "déposé");
   const seen =
-    style === "session" ?
-      t.touchedAt ?
-        ageLabel(t.touchedAt, "revu")
-      : " · jamais entamé"
-    : "";
+    t.touchedAt ?
+      ageLabel(t.touchedAt, "revu")
+    : style === "session" ?
+      " · jamais entamé"
+    : " · jamais entamé";
   const note =
     t.note ?
       style === "session" ?
