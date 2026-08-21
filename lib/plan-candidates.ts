@@ -1,5 +1,5 @@
 import type { Thread } from "./types";
-import { dayDiff } from "./thread-labels";
+import { ageLabel, dayDiff, dueLabel, intentionLabel } from "./thread-labels";
 
 /** Formulations de relance / prise de nouvelles — pas une 1ʳᵉ action avec échéance externe. */
 const RELANCE_TEXT =
@@ -140,4 +140,30 @@ export function splitPlanThreads(threads: Thread[]): {
     else waiting.push(t);
   }
   return { candidates, waiting };
+}
+
+/** Ligne telle que le prompt plan la voit (diagnostic + render serveur). */
+export function formatDeskPlanLine(t: Thread): string {
+  const kind = t.kind === "suivi" ? "À SUIVRE" : "ACTION";
+  const effort = t.effort ? ` · effort ${t.effort}` : "";
+  const note = t.note ? ` · liste/contexte: ${t.note}` : "";
+  const seen = t.touchedAt
+    ? ageLabel(t.touchedAt, "revu")
+    : " · jamais entamé";
+  return `- [${kind}] ${t.text}${dueLabel(t.due, "plan")}${intentionLabel(t.plannedFor)}${ageLabel(t.createdAt, "déposé")}${seen}${effort}${note}`;
+}
+
+export interface PlanViewSnapshot {
+  candidates: string[];
+  waiting: string[];
+}
+
+/** Snapshot déterministe — ce que le filtre met sous les yeux de l'IA. */
+export function buildPlanViewSnapshot(threads: Thread[]): PlanViewSnapshot {
+  const open = threads.filter((t) => t.status === "open");
+  const { candidates, waiting } = splitPlanThreads(open);
+  return {
+    candidates: candidates.map(formatDeskPlanLine),
+    waiting: waiting.map(formatDeskPlanLine),
+  };
 }

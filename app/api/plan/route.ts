@@ -11,8 +11,12 @@ import {
   REGULIERS_DISCOVERY_PROMPT,
   REGULIERS_FOCUS_PROMPT,
 } from "@/lib/entretiens";
-import { ageLabel, dayDiff, dueLabel, intentionLabel } from "@/lib/thread-labels";
-import { splitPlanThreads } from "@/lib/plan-candidates";
+import { dayDiff } from "@/lib/thread-labels";
+import {
+  buildPlanViewSnapshot,
+  formatDeskPlanLine,
+  splitPlanThreads,
+} from "@/lib/plan-candidates";
 import { identity, socle, today, TON, VOIX } from "@/lib/voice";
 import { DEPOSER_PLAN_MESSAGE } from "@/lib/session-mode";
 import { buildOfflinePlanHint } from "@/lib/notifications";
@@ -40,16 +44,12 @@ interface Body {
   forNotify?: boolean;
   /** Conseil déjà composé (accueil / mail) — la notif le raccourcit, elle ne recompose pas. */
   sourceMessage?: string;
+  /** Diagnostic local : demande un champ why + snapshot des lignes vues. */
+  debug?: boolean;
 }
 
 function formatPlanLine(t: Thread): string {
-  const kind = t.kind === "suivi" ? "À SUIVRE" : "ACTION";
-  const effort = t.effort ? ` · effort ${t.effort}` : "";
-  const note = t.note ? ` · liste/contexte: ${t.note}` : "";
-  const seen = t.touchedAt
-    ? ageLabel(t.touchedAt, "revu")
-    : " · jamais entamé";
-  return `- [${kind}] ${t.text}${dueLabel(t.due, "plan")}${intentionLabel(t.plannedFor)}${ageLabel(t.createdAt, "déposé")}${seen}${effort}${note}`;
+  return formatDeskPlanLine(t);
 }
 
 function renderLines(threads: Thread[]): string {
@@ -62,11 +62,11 @@ function renderLines(threads: Thread[]): string {
   const header = `${open.length} trucs ouverts (${overdue} dont la fenêtre est passée)`;
   const candidateBlock =
     candidates.length > 0
-      ? `CANDIDATS POUR AUJOURD'HUI (tu choisis UN truc ICI) :\n${candidates.map(formatPlanLine).join("\n")}`
+      ? `CANDIDATS POUR AUJOURD'HUI (tu choisis UN truc ICI) :\n${candidates.map(formatDeskPlanLine).join("\n")}`
       : `CANDIDATS POUR AUJOURD'HUI : (aucun — propose un micro-créneau de point / rien qui presse)`;
   const waitingBlock =
     waiting.length > 0
-      ? `\n\nEN ATTENTE — NE PROPOSE PAS AUJOURD'HUI (délai de relance pas écoulé, ou contacté récemment) :\n${waiting.map(formatPlanLine).join("\n")}`
+      ? `\n\nEN ATTENTE — NE PROPOSE PAS AUJOURD'HUI (délai de relance pas écoulé, ou contacté récemment) :\n${waiting.map(formatDeskPlanLine).join("\n")}`
       : "";
   return `${header}.\n\n${candidateBlock}${waitingBlock}`;
 }
@@ -425,7 +425,9 @@ function cue(context?: SessionContext): string {
   return "[Regarde mes trucs et conseille-moi la forme de ma journée. Réponds seulement avec le JSON demandé.]";
 }
 
-function safeParse(text: string): { message: string; pick: string } | null {
+function safeParse(
+  text: string,
+): { message: string; pick: string; why?: string } | null {
   const cleaned = text
     .trim()
     .replace(/^```(?:json)?/i, "")
@@ -433,11 +435,31 @@ function safeParse(text: string): { message: string; pick: string } | null {
     .trim();
   try {
     const o = JSON.parse(cleaned);
-    if (typeof o.message === "string" && typeof o.pick === "string") return o;
+    if (typeof o.message === "string" && typeof o.pick === "string") {
+      return {
+        message: o.message,
+        pick: o.pick,
+        why: typeof o.why === "string" ? o.why.trim() : undefined,
+      };
+    }
   } catch {
     // ignore
   }
   return null;
+}
+
+function withDebugPrompt(prompt: string, debug: boolean): string {
+  if (!debug) return prompt;
+  return `${prompt}
+
+DIAGNOSTIC ACTIVÉ : ajoute un champ JSON "why" (1–2 phrases, pour le développeur — JAMAIS dans "message"). Dis pourquoi tu as choisi CE truc et ce que tu as écarté. Forme exacte : {"message":"...","pick":"15","why":"..."}`;
+}
+
+function debugPayload(threads: Thread[], why?: string) {
+  return {
+    ...buildPlanViewSnapshot(threads),
+    ...(why ? { why } : {}),
+  };
 }
 
 export async function POST(req: Request) {
@@ -452,36 +474,46 @@ export async function POST(req: Request) {
   }
 
   const context = body.context ?? "desk";
+  const debug = body.debug === true && body.forNotify !== true;
   if (context === "deposer") {
-    return Response.json({ message: DEPOSER_PLAN_MESSAGE, pick: "15" });
+    return Response.json({
+      message: DEPOSER_PLAN_MESSAGE,
+      pick: "15",
+      ...(debug ? { debug: debugPayload(body.threads ?? []) } : {}),
+    });
   }
   const open = (body.threads ?? []).filter((t) => t.status === "open");
   if (open.length === 0 && context !== "regulier") {
-    return Response.json({ message: "", pick: "15" });
+    return Response.json({
+      message: "",
+      pick: "15",
+      ...(debug ? { debug: debugPayload([]) } : {}),
+    });
   }
 
   const client = new Anthropic({ apiKey });
   const forNotify = body.forNotify === true;
 
   try {
+    const baseSystem = forNotify
+      ? notifyPlanPrompt(
+          open,
+          body.stats,
+          body.meta?.name,
+          body.chosen,
+          body.sourceMessage,
+        )
+      : systemPrompt(
+          open,
+          body.stats,
+          body.chosen,
+          body.meta?.name,
+          context,
+        );
     const res = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: forNotify ? 120 : 400,
-      system: forNotify
-        ? notifyPlanPrompt(
-            open,
-            body.stats,
-            body.meta?.name,
-            body.chosen,
-            body.sourceMessage,
-          )
-        : systemPrompt(
-            open,
-            body.stats,
-            body.chosen,
-            body.meta?.name,
-            context,
-          ),
+      max_tokens: forNotify ? 120 : debug ? 520 : 400,
+      system: withDebugPrompt(baseSystem, debug),
       messages: [
         {
           role: "user",
@@ -507,7 +539,11 @@ export async function POST(req: Request) {
     if (forNotify && body.chosen && [5, 15, 30, 50].includes(body.chosen)) {
       pick = String(body.chosen);
     }
-    return Response.json({ message: plan.message, pick });
+    return Response.json({
+      message: plan.message,
+      pick,
+      ...(debug ? { debug: debugPayload(open, parsed?.why) } : {}),
+    });
   } catch (e) {
     console.error("[plan] échec:", e instanceof Error ? e.message : e);
     const plan = forNotify
@@ -517,6 +553,7 @@ export async function POST(req: Request) {
       message: plan.message,
       pick: plan.pick,
       unreachable: !plan.message,
+      ...(debug ? { debug: debugPayload(open) } : {}),
     });
   }
 }
