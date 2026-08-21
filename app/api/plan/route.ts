@@ -525,7 +525,7 @@ export async function POST(req: Request) {
     const system = withDebugPrompt(baseSystem, debug);
     const res = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: forNotify ? 120 : debug ? 520 : 400,
+      max_tokens: forNotify ? 120 : debug ? 800 : 400,
       system,
       messages: [
         {
