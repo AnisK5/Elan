@@ -181,6 +181,13 @@ Exemples (quand TU proposes) :
 - « Je te proposerais un créneau de 50 min, ou deux de 30, pour avancer la déclaration tant que c'est ouvert. »
 INTERDIT : proposer une relance / un contact « parce que c'est dans X jours ». « C'est dans 12j » veut dire ATTENDRE, pas agir aujourd'hui. Ne cite un délai futur que pour une vraie fenêtre externe à saisir (déclaration, inscription…), jamais pour justifier une relance anticipée.
 
+ARBITRAGE SILENCIEUX (OBLIGATOIRE — avant de choisir durée + truc ; NE PAS écrire ces étapes dans "message") :
+1) URGENCE / FENÊTRE : qu'est-ce qui presse ou se ferme bientôt (échéance imminente, saison, conséquence réelle) parmi les CANDIDATS ?
+2) RYTHME / STAGNATION : au vu du RYTHME RÉCENT, qu'est-ce qui stagne ou n'a jamais été entamé et mérite de l'oxygène — sans culpabiliser ?
+3) MEILLEUR CRÉNEAU : parmi 5 / 15 / 30 / 50, quel couple durée + UN truc a le meilleur ratio avancée / temps AUJOURD'HUI (bureau ou sortie selon le contexte) ? Par défaut la plus petite séance sensée ; n'allonge que si une vraie raison (fenêtre qui se ferme, gros pas, rythme qui décroche).
+4) CE QU'ON LAISSE : qu'est-ce que ce choix laisse de côté, et est-ce OK au rythme actuel (reviendra bientôt / EN ATTENTE / pas mûr) ? Si ce n'est pas OK, change de choix ou de durée AVANT de valider.
+5) VALIDATION : une fois les 4 points tenus, seulement alors tu rédiges "message" + "pick". Le message ne montre que la conclusion — jamais le parcours.
+
 DURÉE (champ "pick"), une seule valeur parmi "5", "15", "30", "50" — par DÉFAUT, vise la plus PETITE séance sensée :
 - "5" = ~5 min : quasi rien à faire, ou juste faire le point / poser un truc / un micro-pas pour se lancer.
 - "15" = le défaut pour une journée normale : de quoi débloquer un ou deux trucs tranquilles.
@@ -450,18 +457,18 @@ function withDebugPrompt(prompt: string, debug: boolean): string {
   if (!debug) return prompt;
   return `${prompt}
 
-DIAGNOSTIC ACTIVÉ : tu DOIS raisonner AVANT de choisir.
-Ordre OBLIGATOIRE du JSON — le champ "why" EN PREMIER, puis "message", puis "pick" :
+DIAGNOSTIC ACTIVÉ : tu DOIS écrire le parcours d'ARBITRAGE SILENCIEUX AVANT de choisir.
+Ordre OBLIGATOIRE du JSON — "why" EN PREMIER, puis "message", puis "pick" :
 {"why":"...","message":"...","pick":"15"}
 
-"why" (4–6 phrases courtes, factuelles, pour le développeur — JAMAIS repris dans "message") :
-1) Signaux retenus pour LE truc que tu vas choisir (texte, kind, due/intention, note, effort, âge, rythme).
-2) Pourquoi CE truc plutôt qu'un autre candidat aujourd'hui.
-3) Ce que tu écartes parmi les CANDIDATS (nomme 2–4 exemples + la raison pour chacun).
-4) Ce qui est déjà en EN ATTENTE et pourquoi tu n'y touches pas (une phrase).
-5) La règle / sémantique qui tranche (timing doux, suivi trop tôt, sortie hors bureau, fenêtre externe…).
+"why" reprend EXPLICITEMENT les 5 points (phrases courtes, factuelles, pour le développeur — JAMAIS repris dans "message") :
+1) Urgence / fenêtre : ce qui presse ou se ferme.
+2) Rythme / stagnation : ce qui stagne ou n'a jamais bougé.
+3) Meilleur créneau : durée + truc retenus, et pourquoi ce ratio aujourd'hui (cite 1–2 alternatives écartées).
+4) Ce qu'on laisse : 2–4 candidats laissés + pourquoi c'est OK (ou pas — alors tu changes).
+5) Validation : une phrase qui confirme la cohérence why → message/pick.
 
-Ensuite seulement tu rédiges "message" et "pick", EN COHÉRENCE avec ce why. Si why dit qu'un truc est trop tôt, il ne doit PAS apparaître dans message.`;
+Ensuite seulement tu rédiges "message" et "pick", EN COHÉRENCE avec ce why. Si why dit qu'un truc est trop tôt ou qu'une durée est trop longue, message/pick doivent suivre.`;
 }
 
 function debugPayload(
