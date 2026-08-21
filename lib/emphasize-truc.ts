@@ -77,7 +77,37 @@ const STOP = new Set([
   "seance",
 ]);
 
+const GENERIC = new Set([
+  "avancer",
+  "attendre",
+  "aller",
+  "chercher",
+  "commencer",
+  "donner",
+  "garder",
+  "laisser",
+  "mettre",
+  "ouvrir",
+  "parler",
+  "passer",
+  "penser",
+  "porter",
+  "pouvoir",
+  "prendre",
+  "proposer",
+  "regarder",
+  "rester",
+  "savoir",
+  "trouver",
+  "venir",
+  "voir",
+  "vouloir",
+]);
+
 const ELISION = /^(l|d|n|s|j|c|m|t|qu)'/i;
+
+type Span = { start: number; end: number };
+export type TextRun = { text: string; strong: boolean };
 
 function isLetter(ch: string | undefined): boolean {
   return !!ch && /\p{L}/u.test(ch);
@@ -109,7 +139,7 @@ function significantTokens(label: string): string[] {
     .toLowerCase()
     .split(/[^\p{L}']+/u)
     .map((w) => w.replace(ELISION, "").replace(/'/g, ""))
-    .filter((w) => w.length >= MIN && !STOP.has(fold(w)));
+    .filter((w) => w.length >= MIN && !STOP.has(fold(w)) && !GENERIC.has(fold(w)));
 }
 
 function indexOfPrefixWord(
@@ -134,13 +164,11 @@ function indexOfPrefixWord(
   return null;
 }
 
-function fuzzyTrucSpan(
-  text: string,
-  label: string,
-): { start: number; match: string } | null {
+/** Occurrences distinctes des mots du libellé — sans coller le texte entre deux. */
+function fuzzyTokenSpans(text: string, label: string): Span[] {
   const tokens = significantTokens(label);
-  if (tokens.length === 0) return null;
-  const hits: { start: number; end: number }[] = [];
+  if (tokens.length === 0) return [];
+  const hits: Span[] = [];
   let from = 0;
   for (const tok of tokens) {
     const exact = indexOfTruc(text, tok, from);
@@ -157,26 +185,7 @@ function fuzzyTrucSpan(
       }
     }
   }
-  if (hits.length === 0) return null;
-  if (hits.length === 1) {
-    if (hits[0].end - hits[0].start < MIN) return null;
-    return {
-      start: hits[0].start,
-      match: text.slice(hits[0].start, hits[0].end),
-    };
-  }
-  const start = hits[0].start;
-  const end = hits[hits.length - 1].end;
-  if (end - start > 90) {
-    const longest = hits.reduce((a, b) =>
-      b.end - b.start > a.end - a.start ? b : a,
-    );
-    return {
-      start: longest.start,
-      match: text.slice(longest.start, longest.end),
-    };
-  }
-  return { start, match: text.slice(start, end) };
+  return hits;
 }
 
 /** Libellés à chercher : trucs ouverts, réguliers, et ceux déjà réglés. */
@@ -230,21 +239,31 @@ export function splitAroundTruc(
   };
 }
 
-function properNamesInText(text: string): string[] {
-  const names: string[] = [];
-  const re = /(?<=\s)([A-ZÉÈÊÀÂÎÏÔÙÛÇ][\p{L}'’-]{3,})\b/gu;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const n = m[1];
-    if (STOP.has(fold(n))) continue;
-    names.push(n);
+function fuzzyTrucSpan(
+  text: string,
+  label: string,
+): { start: number; match: string } | null {
+  const hits = fuzzyTokenSpans(text, label);
+  if (hits.length === 0) return null;
+  if (hits.length === 1) {
+    return {
+      start: hits[0].start,
+      match: text.slice(hits[0].start, hits[0].end),
+    };
   }
-  return names;
+  const start = hits[0].start;
+  const end = hits[hits.length - 1].end;
+  if (end - start > 90) {
+    const longest = hits.reduce((a, b) =>
+      b.end - b.start > a.end - a.start ? b : a,
+    );
+    return {
+      start: longest.start,
+      match: text.slice(longest.start, longest.end),
+    };
+  }
+  return { start, match: text.slice(start, end) };
 }
-
-export type TextRun = { text: string; strong: boolean };
-
-type Span = { start: number; end: number };
 
 function markdownSpans(text: string): { inner: string; start: number; end: number }[] {
   const hits: { inner: string; start: number; end: number }[] = [];
@@ -264,12 +283,7 @@ function labelSpans(text: string, labels: string[]): Span[] {
       hits.push({ start, end: start + label.trim().length });
       continue;
     }
-    const fuzzy = fuzzyTrucSpan(text, label);
-    if (fuzzy) hits.push({ start: fuzzy.start, end: fuzzy.start + fuzzy.match.length });
-  }
-  for (const name of properNamesInText(text)) {
-    const i = indexOfTruc(text, name);
-    if (i !== -1) hits.push({ start: i, end: i + name.length });
+    hits.push(...fuzzyTokenSpans(text, label));
   }
   return hits;
 }
@@ -299,28 +313,34 @@ function runsFromSpans(text: string, spans: Span[]): TextRun[] {
   return runs.filter((r) => r.text);
 }
 
-/** Gras visible : **markdown** et TOUS les trucs nommés, pas un seul. */
+/** Gras visible : **markdown** et les mots des trucs, pas les majuscules au hasard. */
 export function speechRuns(text: string, labels: string[] = []): TextRun[] {
   const md = markdownSpans(text);
   if (md.length === 0) {
-    return runsFromSpans(
-      text,
-      mergeSpans(labelSpans(text, [...labels, ...properNamesInText(text)])),
-    );
+    return runsFromSpans(text, mergeSpans(labelSpans(text, labels)));
   }
 
   const runs: TextRun[] = [];
   let last = 0;
-  const extra = [...labels, ...properNamesInText(text)];
   for (const hit of md) {
     if (hit.start > last) {
-      runs.push(...runsFromSpans(text.slice(last, hit.start), mergeSpans(labelSpans(text.slice(last, hit.start), extra))));
+      runs.push(
+        ...runsFromSpans(
+          text.slice(last, hit.start),
+          mergeSpans(labelSpans(text.slice(last, hit.start), labels)),
+        ),
+      );
     }
     runs.push({ text: hit.inner, strong: true });
     last = hit.end;
   }
   if (last < text.length) {
-    runs.push(...runsFromSpans(text.slice(last), mergeSpans(labelSpans(text.slice(last), extra))));
+    runs.push(
+      ...runsFromSpans(
+        text.slice(last),
+        mergeSpans(labelSpans(text.slice(last), labels)),
+      ),
+    );
   }
   return runs.filter((r) => r.text);
 }

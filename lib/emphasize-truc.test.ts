@@ -75,9 +75,20 @@ describe("emphasize-truc", () => {
     ]);
     const strong = runs.filter((r) => r.strong).map((r) => r.text);
     expect(strong.some((s) => /Laura/i.test(s))).toBe(true);
-    expect(strong.some((s) => /doc de papa/i.test(s) || /imprime/i.test(s))).toBe(
-      true,
+    expect(strong.some((s) => /papa/i.test(s) || /imprime/i.test(s))).toBe(true);
+  });
+
+  it("ne gras pas une majuscule ou le texte entre deux mots du libellé", () => {
+    const asie =
+      "Regarder billets et destinations Asie du Sud-Est (voyage solo)";
+    const runs = speechRuns(
+      "Commencer par regarder les destinations — à toi de voir.",
+      [asie],
     );
+    const strong = runs.filter((r) => r.strong).map((r) => r.text);
+    expect(strong.some((s) => /commencer/i.test(s))).toBe(false);
+    expect(strong.join(" ")).not.toMatch(/regarder les destinations/i);
+    expect(strong.some((s) => s === "à" || s === "À")).toBe(false);
   });
 
   it("garde les libellés des trucs déjà réglés", () => {
@@ -93,8 +104,8 @@ describe("emphasize-truc", () => {
     expect(trucLabels(threads)).toEqual(["le coffre"]);
   });
 
-  it("gras sur un prénom même sans libellé de fil", () => {
+  it("ne gras pas un mot juste parce qu'il est capitalisé", () => {
     const runs = speechRuns("On relance Laura en un message.", []);
-    expect(runs.some((r) => r.strong && r.text === "Laura")).toBe(true);
+    expect(runs.some((r) => r.strong)).toBe(false);
   });
 });
