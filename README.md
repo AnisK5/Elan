@@ -19,7 +19,7 @@ app/page.tsx, components/*  ──►  app/api/plan|session|chat|reconcile|tidy
 lib/store.ts  ◄── localStorage      Anthropic Claude
         │         (+ Supabase
         ▼          si connecté)
-elan_threads · elan_sessions · elan_settings
+elan_threads · elan_sessions · elan_settings · elan_events
 ```
 
 | Couche | Dossier | Rôle |
@@ -49,6 +49,7 @@ npm run dev
 |----------|-------------|-------------|
 | `ANTHROPIC_API_KEY` | Oui (repli) | Clé Claude de l'app. Chaque personne peut coller la sienne (réglage **Clé Claude**, stockée sur l'appareil). Les rappels matin côté serveur utilisent encore celle-ci. |
 | `NEXT_PUBLIC_SUPABASE_*` | Non | Compte + sync |
+| `ELAN_ADMIN_EMAILS` | Non | E-mails (virgules) qui voient `/admin` — rétention, DAU, par inscrit. Pas de joker. |
 
 Sans Supabase : **localStorage** uniquement. SQL (tables + cron push) : [docs/supabase-schema.sql](./docs/supabase-schema.sql).
 

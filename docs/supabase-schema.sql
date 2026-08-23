@@ -90,6 +90,27 @@ create policy "own elan_push_subscriptions" on public.elan_push_subscriptions
 create index if not exists elan_push_subscriptions_user_idx
   on public.elan_push_subscriptions(user_id);
 
+-- ── Événements d'usage (passages, séances, dwell) ──────────────────
+-- kind : 'open' | 'session' | 'aside' | 'dwell'
+-- day  : jour calendaire local YYYY-MM-DD (pas UTC)
+create table if not exists public.elan_events (
+  id            text primary key,
+  user_id       uuid not null references auth.users(id) on delete cascade,
+  kind          text not null,
+  at            timestamptz not null default now(),
+  duration_sec  int,
+  day           text not null
+);
+alter table public.elan_events enable row level security;
+create policy "own elan_events" on public.elan_events
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create index if not exists elan_events_user_idx
+  on public.elan_events(user_id, at desc);
+create unique index if not exists elan_events_open_day
+  on public.elan_events(user_id, day) where kind = 'open';
+create unique index if not exists elan_events_dwell_day
+  on public.elan_events(user_id, day) where kind = 'dwell';
+
 -- ── Cron rappel rituel (Supabase pg_cron → API Vercel) ───────────────
 -- Même modèle qu'en-suspens : le timing est côté Supabase, pas Vercel
 -- (plan Hobby Vercel = max 1 cron/jour).

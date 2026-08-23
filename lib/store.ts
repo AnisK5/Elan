@@ -16,6 +16,7 @@ import type { Situation } from "./situation";
 import { activeSituation } from "./situation";
 import { getSupabase } from "./supabase";
 import { apiFetch } from "./anthropic";
+import { EVENTS_KEY, hydrateUsageEvents } from "./usage-log";
 
 const THREADS_KEY = "elan.threads.v1";
 const PROJECTS_KEY = "elan.projects.v1";
@@ -32,6 +33,10 @@ const SYNC_EVENT = "elan:sync";
 let currentUserId: string | null = null;
 export function setSyncUser(id: string | null) {
   currentUserId = id;
+}
+
+export function getSyncUserId(): string | null {
+  return currentUserId;
 }
 
 function read<T>(key: string, fallback: T): T {
@@ -323,13 +328,27 @@ export async function hydrateFromSupabase(userId: string): Promise<void> {
   } catch {
     // silencieux
   }
+
+  try {
+    await hydrateUsageEvents(userId);
+  } catch {
+    // silencieux — table absente tant que le SQL n'est pas passé
+  }
 }
 
 // Efface les données locales (déconnexion), sans toucher à la DB.
 export function clearLocalData(): void {
   currentUserId = null;
   if (typeof window === "undefined") return;
-  for (const k of [THREADS_KEY, PROJECTS_KEY, SESSIONS_KEY, SETTINGS_KEY, ACTIVE_KEY, PLAN_KEY]) {
+  for (const k of [
+    THREADS_KEY,
+    PROJECTS_KEY,
+    SESSIONS_KEY,
+    SETTINGS_KEY,
+    ACTIVE_KEY,
+    PLAN_KEY,
+    EVENTS_KEY,
+  ]) {
     window.localStorage.removeItem(k);
     window.dispatchEvent(new CustomEvent(SYNC_EVENT, { detail: k }));
   }

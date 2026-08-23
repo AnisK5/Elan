@@ -36,12 +36,14 @@ import HelpButton from "@/components/HelpButton";
 import BacklogPeek from "@/components/home/BacklogPeek";
 import SessionPick from "@/components/home/SessionPick";
 import ChatBubble from "@/components/home/ChatBubble";
-import WeekMomentum from "@/components/home/WeekMomentum";
+import UsageWeek from "@/components/home/UsageWeek";
 import { greeting, Logo } from "@/components/home/Branding";
 import { useAuth } from "@/components/AuthProvider";
 import { parseThreadOps } from "@/lib/ops";
 import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
-import { doneCountsThisWeek, completionAt } from "@/lib/week-stats";
+import { completionAt } from "@/lib/week-stats";
+import { computeUsageWeek } from "@/lib/usage";
+import { logUsage, startDwellTracker, useUsageEvents } from "@/lib/usage-log";
 import { sessionsToday } from "@/lib/session-memory";
 import { apiFetch, anthropicFailMessage, parseStreamError } from "@/lib/anthropic";
 import {
@@ -71,6 +73,7 @@ export default function Home() {
   const { threads, add, ready } = useThreads();
   const { log, sessions } = useSessions();
   const { settings } = useSettings();
+  const usageEvents = useUsageEvents();
 
   const [view, setView] = useState<"home" | "session">("home");
   const [duration, setDuration] = useState(15);
@@ -211,11 +214,11 @@ export default function Home() {
 
   const trucs = useMemo(() => trucLabels(threads), [threads]);
 
-  // Avancement : trucs bouclés par jour cette semaine (colonne des victoires, sans dénominateur).
-  const { doneToday, doneWeek, days, todayIdx } = useMemo(
-    () => doneCountsThisWeek(threads, dayStart),
-    [threads, dayStart],
+  const usageWeek = useMemo(
+    () => computeUsageWeek(usageEvents, sessions, threads, dayStart),
+    [usageEvents, sessions, threads, dayStart],
   );
+  const away = /pas chez|à vienne/i.test(situationText);
 
   // Rythme récent. Sans ça, le planificateur ne voit qu'un volume figé et ne
   // peut pas distinguer « beaucoup de trucs mais on suit » de « ça s'accumule
@@ -264,6 +267,12 @@ export default function Home() {
       `#sit:${situationText}`,
     [openThreads, planStats, situationText],
   );
+
+  useEffect(() => {
+    if (!ready) return;
+    logUsage("open", { userId: user?.id ?? null });
+    return startDwellTracker(user?.id ?? null);
+  }, [ready, user?.id]);
 
   useEffect(() => {
     setDiagnosticOn(isDiagnosticEnabled());
@@ -482,11 +491,19 @@ export default function Home() {
 
   function endSession(transcript: ChatMessage[]) {
     if (transcript.length > 1) {
+      const started = Date.parse(sessionStartRef.current);
+      const elapsedMin = Number.isFinite(started)
+        ? Math.max(1, Math.round((Date.now() - started) / 60_000))
+        : duration;
       log({
         id: newId(),
         date: new Date().toISOString(),
-        durationMin: duration,
+        durationMin: elapsedMin,
         transcript,
+      });
+      logUsage("session", {
+        durationSec: elapsedMin * 60,
+        userId: user?.id ?? null,
       });
     }
     // Combien de trucs bouclés pendant CETTE séance (depuis son début).
@@ -813,6 +830,7 @@ export default function Home() {
     setPointNote("");
     setPointUndo(null);
     lastPointRef.current = t;
+    logUsage("aside", { userId: user?.id ?? null });
 
     const last = chat[chat.length - 1];
     const withUser: ChatMessage[] =
@@ -1083,11 +1101,18 @@ export default function Home() {
                 {diagnosticOn && planDiag && !planLoading ? (
                   <PlanDiagnostic data={planDiag} />
                 ) : null}
+                {away ? (
+                  <p className="mt-3 text-[13px] leading-relaxed text-muted">
+                    Si rien d&apos;ici ne colle, tu peux quand même passer :
+                    déposer, glisser une info, ou ajouter un truc.
+                  </p>
+                ) : null}
               </div>
             ) : (
               <p className="mt-3 text-[15px] leading-relaxed text-muted">
-                Rien qui presse aujourd&apos;hui. Présente-toi si tu veux faire
-                le point, ou dépose ce qui te trotte en tête.
+                Rien d&apos;ici aujourd&apos;hui — et c&apos;est ok. Tu peux
+                quand même passer : déposer ce qui te trotte, glisser une info,
+                ou ajouter un truc pour plus tard.
               </p>
             )}
 
@@ -1126,15 +1151,7 @@ export default function Home() {
         />
       )}
 
-      {/* Avancement — colonne des victoires, jamais ce qui reste */}
-      {doneWeek > 0 && (
-        <WeekMomentum
-          days={days}
-          todayIdx={todayIdx}
-          doneToday={doneToday}
-          doneWeek={doneWeek}
-        />
-      )}
+      {!isNewcomer && <UsageWeek week={usageWeek} />}
 
       {/* État, sans liste anxiogène */}
       <section className="mt-8">

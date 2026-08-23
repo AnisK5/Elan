@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { Thread } from "@/lib/types";
 import type { PlanStatsForNotify } from "@/lib/notifications";
@@ -8,6 +9,8 @@ import RitualNotifySettings from "@/components/RitualNotifySettings";
 import AnthropicKeySettings from "@/components/AnthropicKeySettings";
 import DiagnosticSettings from "@/components/DiagnosticSettings";
 import ImportData from "@/components/home/ImportData";
+import { useAuth } from "@/components/AuthProvider";
+import { getSupabase } from "@/lib/supabase";
 import { useSettings } from "@/lib/store";
 
 /** Tiroir des réglages — hors du flux séance. */
@@ -21,7 +24,9 @@ export default function SettingsSheet({
   onSignOut: () => void;
 }) {
   const { settings } = useSettings();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -35,6 +40,30 @@ export default function SettingsSheet({
       document.body.style.overflow = "";
     };
   }, [open]);
+
+  useEffect(() => {
+    if (!user) {
+      setIsAdmin(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const sb = getSupabase();
+      const token = sb
+        ? (await sb.auth.getSession()).data.session?.access_token
+        : null;
+      if (!token) return;
+      const res = await fetch("/api/admin/me", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (cancelled || !res.ok) return;
+      const j = (await res.json()) as { admin?: boolean };
+      if (j.admin) setIsAdmin(true);
+    })().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   return (
     <>
@@ -103,6 +132,15 @@ export default function SettingsSheet({
               <AnthropicKeySettings />
               <DiagnosticSettings />
               <ImportData />
+              {isAdmin ? (
+                <Link
+                  href="/admin"
+                  onClick={() => setOpen(false)}
+                  className="rounded-xl border border-line px-4 py-3 text-[15px] text-muted transition hover:text-ink"
+                >
+                  Stats d&apos;usage
+                </Link>
+              ) : null}
             </div>
 
             <button

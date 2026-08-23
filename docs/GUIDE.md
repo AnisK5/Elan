@@ -58,7 +58,7 @@ Tout l'écran = **`app/page.tsx`** + morceaux dans `components/home/*`.
 |-|-|
 | **Tu vois** | **Élan** · date du jour · pictogramme réglages |
 | **Front** | `app/page.tsx` · `Branding.tsx` · `components/SettingsSheet.tsx` |
-| **Au clic réglages** | Tiroir : rappel matin, clé Claude, import, déconnexion |
+| **Au clic réglages** | Tiroir : rappel matin, clé Claude, import, stats admin (si allowlist), déconnexion |
 | **Données** | — |
 
 ### « Ta séance du jour »
@@ -107,14 +107,14 @@ Tout l'écran = **`app/page.tsx`** + morceaux dans `components/home/*`.
 | **Au clic** | ① **`POST /api/chat`** · ② **`POST /api/reconcile`** · ops : `lib/ops.ts` → `applyThreadOps()` |
 | **Données** | Chat → **`elan.chat.v1`** · trucs → **`elan.threads.v1`** + **`elan_threads`** |
 
-### « ✓ N réglés aujourd'hui » + barres semaine
+### « N passages cette semaine »
 
 | | |
 |-|-|
-| **Tu vois** | Compteurs + graphique L–D |
-| **Front** | `components/home/WeekMomentum.tsx` · `lib/week-stats.ts` |
+| **Tu vois** | Passages · séances · minutes · réglés (barres si réglés) |
+| **Front** | `components/home/UsageWeek.tsx` · `lib/usage.ts` |
 | **Action** | **Aucune API** |
-| **Données** | Trucs `done` avec **`doneAt`** |
+| **Données** | `elan.events.v1` + `elan_events` · séances · trucs `done` |
 
 ### « Je garde N trucs à faire »
 
@@ -191,6 +191,8 @@ Composant **`components/Session.tsx`**.
 | `POST /api/reconcile` | Après chat accueil ou message séance | `app/api/reconcile/route.ts` |
 | `POST /api/session` | Séance · ouverture + messages | `app/api/session/route.ts` |
 | `POST /api/tidy` | Capture verbeuse en séance | `app/api/tidy/route.ts` |
+| `GET /api/admin/me` | Réglages · lien stats | `app/api/admin/me/route.ts` |
+| `GET /api/admin/stats` | Page `/admin` | `app/api/admin/stats/route.ts` |
 
 Ton et règles communes : **`lib/voice.ts`**. Reconcile renvoie des ops (`done`, `add`, `note`…) validées par **`lib/ops.ts`**.  
 Changement logique plan → incrémenter **`PLAN_VERSION`** dans `lib/constants.ts`.
@@ -210,5 +212,6 @@ Changement logique plan → incrémenter **`PLAN_VERSION`** dans `lib/constants.
 | Chat accueil | `elan.chat.v1` | — |
 | Cadre de vie | `elan.situation.v1` | — |
 | Cache plan | `elan.plan.v1` | — |
+| Usage (passages) | `elan.events.v1` | `elan_events` |
 
 Un **truc** = `Thread` (`open` · `done` · `snoozed`). Contexte séance : `desk` · `sortie` · `courses`.

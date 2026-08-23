@@ -68,27 +68,32 @@ describe("emphasize-truc", () => {
     });
   });
 
-  it("met en gras tous les trucs nommés, pas un seul", () => {
-    const runs = speechRuns("On relance Laura et on imprime le doc de papa.", [
-      "Relancer Laura Kici",
-      "Imprimer le doc de papa sur la donation en Espagne",
-    ]);
+  it("met en gras le libellé entier, pas un mot isolé", () => {
+    const runs = speechRuns(
+      "On s'occupe du linge de lit, pas du reste.",
+      ["linge de lit", "Imprimer le doc de papa sur la donation en Espagne"],
+    );
     const strong = runs.filter((r) => r.strong).map((r) => r.text);
-    expect(strong.some((s) => /Laura/i.test(s))).toBe(true);
-    expect(strong.some((s) => /papa/i.test(s) || /imprime/i.test(s))).toBe(true);
+    expect(strong).toEqual(["linge de lit"]);
   });
 
-  it("ne gras pas une majuscule ou le texte entre deux mots du libellé", () => {
+  it("ne saupoudre pas les mots d'un titre long", () => {
     const asie =
       "Regarder billets et destinations Asie du Sud-Est (voyage solo)";
     const runs = speechRuns(
-      "Commencer par regarder les destinations — à toi de voir.",
-      [asie],
+      "Je te propose 30 min pour qu'on commence à explorer les billets et destinations pour l'Asie — l'objectif, pas un billet. Les patins, ou il faut les commander ?",
+      [asie, "Commander les patins des chaises"],
     );
-    const strong = runs.filter((r) => r.strong).map((r) => r.text);
-    expect(strong.some((s) => /commencer/i.test(s))).toBe(false);
-    expect(strong.join(" ")).not.toMatch(/regarder les destinations/i);
-    expect(strong.some((s) => s === "à" || s === "À")).toBe(false);
+    expect(runs.some((r) => r.strong)).toBe(false);
+  });
+
+  it("ignore le **gras** du modèle s'il n'est qu'un mot", () => {
+    const runs = speechRuns(
+      "on **commence** par les **billets** et l'**objectif**.",
+      [],
+    );
+    expect(runs.some((r) => r.strong)).toBe(false);
+    expect(runs.map((r) => r.text).join("")).toContain("commence");
   });
 
   it("garde les libellés des trucs déjà réglés", () => {

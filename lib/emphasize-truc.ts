@@ -275,17 +275,26 @@ function markdownSpans(text: string): { inner: string; start: number; end: numbe
   return hits;
 }
 
+/** Un libellé entier, mot à mot — jamais un mot isolé d'un titre plus long. */
 function labelSpans(text: string, labels: string[]): Span[] {
   const hits: Span[] = [];
   for (const label of labels) {
     const start = indexOfTruc(text, label);
     if (start !== -1) {
       hits.push({ start, end: start + label.trim().length });
-      continue;
     }
-    hits.push(...fuzzyTokenSpans(text, label));
   }
   return hits;
+}
+
+/** Le modèle **saupoudre** : on ne garde que les vrais noms de trucs, ou une phrase. */
+function keepMarkdown(inner: string, labels: string[]): boolean {
+  const t = inner.trim();
+  if (!t) return false;
+  if (labels.some((l) => indexOfTruc(t, l) === 0 && t.length === l.trim().length)) {
+    return true;
+  }
+  return t.split(/\s+/).filter(Boolean).length >= 3 && t.length >= 16;
 }
 
 function mergeSpans(spans: Span[]): Span[] {
@@ -331,7 +340,11 @@ export function speechRuns(text: string, labels: string[] = []): TextRun[] {
         ),
       );
     }
-    runs.push({ text: hit.inner, strong: true });
+    if (keepMarkdown(hit.inner, labels)) {
+      runs.push({ text: hit.inner, strong: true });
+    } else {
+      runs.push({ text: hit.inner, strong: false });
+    }
     last = hit.end;
   }
   if (last < text.length) {
