@@ -19,7 +19,11 @@ import {
   splitPlanThreads,
 } from "@/lib/plan-candidates";
 import { extractSituationFromConvo } from "@/lib/situation";
-import { CONSEIL_TOOL, extractPlanFromContent } from "@/lib/plan-json";
+import {
+  CONSEIL_TOOL,
+  PHRASE_TOOL,
+  extractPlanFromContent,
+} from "@/lib/plan-json";
 import { identity, socle, today, TON, VOIX } from "@/lib/voice";
 import { DEPOSER_PLAN_MESSAGE } from "@/lib/session-mode";
 import { buildOfflinePlanHint } from "@/lib/notifications";
@@ -51,6 +55,8 @@ interface Body {
   debug?: boolean;
   /** Derniers messages du chat accueil — si le contexte de vie n'est pas encore stocké. */
   messages?: ChatMessage[];
+  /** Arbitrage déjà tranché — on ne régénère que le message pour une durée. */
+  why?: string;
 }
 
 function renderLines(threads: Thread[]): string {
@@ -454,6 +460,28 @@ function fallbackNotifyPlan(
   return { message: `${label} — on s'y met ?`, pick: "15" };
 }
 
+function phrasePlanPrompt(
+  why: string,
+  chosen: number | undefined,
+  name?: string,
+  situation?: string,
+): string {
+  const duree = chosen && [5, 15, 30, 50].includes(chosen) ? chosen : null;
+  return `${socle(name, situation)}
+
+ARBITRAGE DU JOUR — DÉJÀ TRANCHÉ. Tu ne le refais pas, tu ne le contredis pas, tu n'en changes pas le truc :
+${why.trim()}
+
+TON RÔLE : rédiger le message d'accueil pour ${duree ? `un créneau de ${duree} min` : "le créneau déjà choisi"}.
+- Même truc que l'arbitrage. Tu CALES le pas sur ce temps (plus court / plus ample), tu ne changes pas de sujet.
+- 2 à 4 phrases complètes, sans markdown. Nomme le créneau. UN truc.
+- "pick" = ${duree ? `"${duree}"` : "la durée que l'arbitrage indique, ou sortie"}.
+- Si l'arbitrage conclut une Sortie et qu'on te demande des minutes assises : prépare CETTE sortie depuis là où elle est (fichier, horaires), toujours le même sujet.
+- QUESTION : une seule, courte, en dernière phrase, seulement si l'arbitrage le prévoit.
+
+RÉPONDS via l'outil conseil_duree, rien d'autre.`;
+}
+
 function cue(context?: SessionContext): string {
   if (context === "courses") {
     return "[J'ai choisi une séance COURSES au super. Conseille-moi sur ma liste, et propose un arrêt en plus seulement si un truc demande clairement de sortir. JSON seulement.]";
@@ -521,9 +549,18 @@ export async function POST(req: Request) {
   const situation = resolveSituation(body);
   const client = new Anthropic({ apiKey });
   const forNotify = body.forNotify === true;
+  const reusedWhy = (body.why ?? "").trim();
+  const phraseOnly =
+    !forNotify &&
+    !debug &&
+    reusedWhy.length > 0 &&
+    typeof body.chosen === "number" &&
+    [5, 15, 30, 50].includes(body.chosen);
   const userCue = forNotify
     ? "[Notif matin — JSON seulement, message max 90 caractères.]"
-    : cue(context);
+    : phraseOnly
+      ? `[Arbitrage déjà fait. Caler le conseil sur ${body.chosen} min. JSON seulement.]`
+      : cue(context);
 
   try {
     const baseSystem = forNotify
@@ -535,20 +572,28 @@ export async function POST(req: Request) {
           body.sourceMessage,
           situation,
         )
-      : systemPrompt(
-          open,
-          body.stats,
-          body.chosen,
-          body.meta?.name,
-          context,
-          situation,
-        );
+      : phraseOnly
+        ? phrasePlanPrompt(
+            reusedWhy,
+            body.chosen,
+            body.meta?.name,
+            situation,
+          )
+        : systemPrompt(
+            open,
+            body.stats,
+            body.chosen,
+            body.meta?.name,
+            context,
+            situation,
+          );
+    const tool = phraseOnly ? PHRASE_TOOL : CONSEIL_TOOL;
     const res = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: forNotify ? 200 : 800,
+      max_tokens: forNotify ? 200 : phraseOnly ? 350 : 800,
       system: baseSystem,
-      tools: [CONSEIL_TOOL],
-      tool_choice: { type: "tool", name: CONSEIL_TOOL.name },
+      tools: [tool],
+      tool_choice: { type: "tool", name: tool.name },
       messages: [
         {
           role: "user",
@@ -583,13 +628,15 @@ export async function POST(req: Request) {
     if (body.chosen && [5, 15, 30, 50].includes(body.chosen)) {
       pick = String(body.chosen);
     }
+    const why = phraseOnly ? reusedWhy : parsed.why;
     return Response.json({
       message: parsed.message,
       pick,
+      ...(why ? { why } : {}),
       ...(debug
         ? {
             debug: debugPayload(open, {
-              why: parsed.why,
+              why,
               system: baseSystem,
               user: userCue,
             }),

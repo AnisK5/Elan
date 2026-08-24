@@ -17,6 +17,7 @@ function planApiBase(): string {
 async function postPlan(body: Record<string, unknown>): Promise<{
   message: string;
   pick: string;
+  why?: string;
 } | null> {
   const base = planApiBase();
   const headers: Record<string, string> = {
@@ -36,13 +37,18 @@ async function postPlan(body: Record<string, unknown>): Promise<{
       console.error("[plan-fetch]", res.status, base, detail.slice(0, 200));
       return null;
     }
-    const j = (await res.json()) as { message?: string; pick?: string };
+    const j = (await res.json()) as {
+      message?: string;
+      pick?: string;
+      why?: string;
+    };
     const message = (j.message ?? "").trim();
     if (!message) {
       console.error("[plan-fetch] empty message from /api/plan");
       return null;
     }
-    return { message, pick: j.pick ?? "15" };
+    const why = (j.why ?? "").trim();
+    return { message, pick: j.pick ?? "15", ...(why ? { why } : {}) };
   } catch (e) {
     console.error("[plan-fetch]", base, e);
     return null;
@@ -56,7 +62,7 @@ export async function generatePlanViaApi(opts: {
   context?: SessionContext;
   meta?: { name?: string; situation?: string };
   chosen?: number;
-}): Promise<{ message: string; pick: string } | null> {
+}): Promise<{ message: string; pick: string; why?: string } | null> {
   return postPlan({
     threads: opts.threads.filter((t) => t.status === "open"),
     stats: opts.stats,

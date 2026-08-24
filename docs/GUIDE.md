@@ -77,8 +77,8 @@ Tout l'écran = **`app/page.tsx`** + morceaux dans `components/home/*`.
 |-|-|
 | **Tu vois** | Boutons durée + **Sortie** / **Courses** |
 | **Front** | `components/home/SessionPick.tsx` · `pickDuration` / `pickContext` dans `page.tsx` |
-| **Au clic** | **`POST /api/plan`** · `app/api/plan/route.ts` · prompts `lib/voice.ts` |
-| **Données** | Lit trucs ouverts · cache **`elan.plan.v1`** (local seulement) |
+| **Au clic** | **`POST /api/plan`** · durée seule = recalage phrase (`why` déjà tranché) · `app/api/plan/route.ts` |
+| **Données** | Trucs ouverts · cache plan **`elan.plan.v1`** + **`elan_settings.day_plan`** (why + slots par contexte) |
 
 ### Bandeau « Élan te conseille pour aujourd'hui »
 
@@ -86,8 +86,8 @@ Tout l'écran = **`app/page.tsx`** + morceaux dans `components/home/*`.
 |-|-|
 | **Tu vois** | Label teal + paragraphe conseil (ou **Élan réfléchit…**) |
 | **Front** | `app/page.tsx` · effet `useEffect` plan |
-| **Au chargement** | **`POST /api/plan`** |
-| **Données** | JSON `{ message, pick }` · trucs depuis `elan.threads.v1` / `elan_threads` |
+| **Au chargement** | Relit le cache si jour + pile + cadre OK · sinon **`POST /api/plan`** (arbitrage complet) |
+| **Données** | JSON `{ message, pick, why? }` · slots `desk` / `sortie` / `courses` / `regulier` |
 
 ### « Commencer la séance »
 
@@ -210,8 +210,8 @@ Changement logique plan → incrémenter **`PLAN_VERSION`** dans `lib/constants.
 | Réglages | `elan.settings.v1` | `elan_settings` |
 | Séance en cours | `elan.active.v1` | — |
 | Chat accueil | `elan.chat.v1` | — |
-| Cadre de vie | `elan.situation.v1` | — |
-| Cache plan | `elan.plan.v1` | — |
+| Cadre de vie | `elan.situation.v1` | `elan_settings.situation` |
+| Cache plan | `elan.plan.v1` | `elan_settings.day_plan` |
 | Usage (passages) | `elan.events.v1` | `elan_events` |
 
 Un **truc** = `Thread` (`open` · `done` · `snoozed`). Contexte séance : `desk` · `sortie` · `courses`.

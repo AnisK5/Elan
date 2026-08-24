@@ -34,6 +34,30 @@ export const CONSEIL_TOOL = {
   },
 };
 
+export const PHRASE_TOOL_NAME = "conseil_duree";
+
+/** Recale le message sur une durée — l'arbitrage (why) est déjà tranché. */
+export const PHRASE_TOOL = {
+  name: PHRASE_TOOL_NAME,
+  description:
+    "Le conseil pour CETTE durée. L'arbitrage est déjà fait : ne le refais pas. Même truc, phrase calée sur le temps demandé.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      message: {
+        type: "string",
+        description: "2 à 4 phrases, françaises, sans markdown. La conclusion seulement.",
+      },
+      pick: {
+        type: "string",
+        enum: [...PLAN_PICKS],
+        description: "La durée demandée, ou sortie si l'arbitrage l'impose.",
+      },
+    },
+    required: ["message", "pick"],
+  },
+};
+
 export function parsePlanJson(text: string): PlanJson | null {
   const cleaned = text
     .trim()
@@ -82,7 +106,10 @@ export function extractPlanFromContent(
   }>,
 ): PlanJson | null {
   for (const b of content) {
-    if (b.type === "tool_use" && b.name === CONSEIL_TOOL_NAME) {
+    if (
+      b.type === "tool_use" &&
+      (b.name === CONSEIL_TOOL_NAME || b.name === PHRASE_TOOL_NAME)
+    ) {
       const plan = planFromUnknown(b.input);
       if (plan) return plan;
     }

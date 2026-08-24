@@ -1,4 +1,6 @@
 import { OUTDOOR_DURATION } from "./constants";
+import { parseDayPlan, upsertDayPlanSlot, whySignature } from "./day-plan";
+import { activeSituation } from "./situation";
 import {
   buildRitualNotification,
   buildOfflinePlanHint,
@@ -24,6 +26,9 @@ interface SettingsCronRow {
   notify_timezone: string | null;
   notify_last_sent: string | null;
   notify_email_enabled: boolean | null;
+  situation: string | null;
+  situation_until: string | null;
+  day_plan: unknown;
 }
 
 interface ThreadRow {
@@ -118,7 +123,7 @@ export async function runRitualPushCron(options?: {
   const { data: settingsRows, error } = await admin
     .from("elan_settings")
     .select(
-      "user_id, name, notify_time, notify_timezone, notify_last_sent, notify_email_enabled",
+      "user_id, name, notify_time, notify_timezone, notify_last_sent, notify_email_enabled, situation, situation_until, day_plan",
     )
     .eq("notify_enabled", true);
 
@@ -179,6 +184,11 @@ export async function runRitualPushCron(options?: {
       continue;
     }
 
+    const sit = activeSituation({
+      text: raw.situation ?? "",
+      until: raw.situation_until ?? undefined,
+    });
+    const sitText = sit?.text ?? "";
     const stats: PlanStatsForNotify = computePlanStats(
       threads,
       sessions,
@@ -188,8 +198,33 @@ export async function runRitualPushCron(options?: {
       (await generatePlanViaApi({
         threads,
         stats,
-        meta: { name: raw.name ?? undefined },
+        meta: {
+          name: raw.name ?? undefined,
+          situation: sitText || undefined,
+        },
       })) ?? buildOfflinePlanHint(threads);
+
+    if (plan && "why" in plan && plan.why?.trim()) {
+      const openForSig = threads.filter((t) => t.status === "open");
+      const nextPlan = upsertDayPlanSlot(
+        parseDayPlan(raw.day_plan),
+        whySignature(openForSig, sitText),
+        "desk",
+        {
+          why: plan.why.trim(),
+          message: plan.message,
+          pick: plan.pick,
+        },
+        todayKey,
+      );
+      await admin
+        .from("elan_settings")
+        .update({
+          day_plan: nextPlan,
+          updated_at: now.toISOString(),
+        })
+        .eq("user_id", uid);
+    }
 
     const open = threads.filter((t) => t.status === "open");
     const isSortie = plan?.pick === "sortie";

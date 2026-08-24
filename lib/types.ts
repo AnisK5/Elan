@@ -1,3 +1,5 @@
+import type { DayPlanCache } from "./day-plan";
+
 // Le "fil" : une chose qui traîne dans ta tête. Capturé sans friction,
 // enrichi seulement si tu en as l'envie. L'IA se débrouille avec le reste.
 
@@ -74,4 +76,8 @@ export interface Settings {
   notifyTimezone?: string;
   /** Rappel matin par mail (conseil complet du jour). */
   notifyEmailEnabled?: boolean;
+  /** Arbitrage du jour (why + conseil), partagé avec le cron. */
+  dayPlan?: DayPlanCache;
+  situation?: string;
+  situationUntil?: string;
 }

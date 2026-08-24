@@ -15,6 +15,8 @@ import {
   clearChat,
   readSituation,
   writeSituation,
+  readDayPlan,
+  writeDayPlan,
   useSessions,
   useSettings,
   useThreads,
@@ -49,7 +51,6 @@ import { apiFetch, anthropicFailMessage, parseStreamError } from "@/lib/anthropi
 import {
   normalizeDuration,
   OUTDOOR_DURATION,
-  PLAN_VERSION,
   RESUME_MAX_AGE_MS,
 } from "@/lib/constants";
 import { AssistantSpeech } from "@/components/HighlightEncart";
@@ -65,6 +66,16 @@ import {
   stashRitualLaunch,
   type RitualLaunch,
 } from "@/lib/ritual-pending";
+import {
+  dayPlanMatches,
+  dayPlanPileMatches,
+  isDayPlanContext,
+  planDateKey,
+  slotOf,
+  upsertDayPlanSlot,
+  whySignature,
+  type DayPlanContext,
+} from "@/lib/day-plan";
 
 // Écran d'accueil — orchestration UI. Doc : docs/GUIDE.md
 
@@ -128,8 +139,10 @@ export default function Home() {
 
   useEffect(() => setChat(readChat()), []);
   useEffect(() => {
-    setSituationText(readSituation()?.text ?? "");
-  }, [ready]);
+    setSituationText(
+      readSituation()?.text ?? settings.situation ?? "",
+    );
+  }, [ready, settings.situation]);
   useEffect(() => {
     const s = extractSituationFromConvo(chat);
     if (!s) return;
@@ -256,17 +269,31 @@ export default function Home() {
   }, [threads, openThreads, sessions, dayStart]);
 
   const planSig = useMemo(
-    () =>
-      openThreads
-        .map(
-          (t) =>
-            `${t.id}:${t.due ?? ""}:${t.effort ?? ""}:${t.kind}:${t.text}:${t.note ?? ""}`,
-        )
-        .join("|") +
-      `#${planStats.doneLast7}:${planStats.sessionsLast7}:${planStats.daysSinceLastSession}` +
-      `#sit:${situationText}`,
-    [openThreads, planStats, situationText],
+    () => whySignature(openThreads, situationText),
+    [openThreads, situationText],
   );
+
+  function cachedPlanSlot(ctx: SessionContext) {
+    const dateKey = planDateKey();
+    const cached = readDayPlan();
+    if (!cached || !isDayPlanContext(ctx)) return null;
+    if (
+      dayPlanMatches(cached, planSig, dateKey) ||
+      dayPlanPileMatches(cached, openThreads, dateKey)
+    ) {
+      return slotOf(cached, ctx);
+    }
+    return null;
+  }
+
+  function persistPlanSlot(
+    ctx: DayPlanContext,
+    slot: { why: string; message: string; pick: string },
+  ) {
+    writeDayPlan(
+      upsertDayPlanSlot(readDayPlan(), planSig, ctx, slot, planDateKey()),
+    );
+  }
 
   useEffect(() => {
     if (!ready) return;
@@ -339,7 +366,7 @@ export default function Home() {
     return "Présente-toi et je prends le pouls de tout ça avec toi, un pas à la fois.";
   }
 
-  // Mise en cache par jour + signature du backlog pour ne pas rappeler l'IA sans raison.
+  // Cache jour + signature pile/cadre — pas de nouvel arbitrage si why encore valide.
   useEffect(() => {
     if (!ready || view !== "home" || ritualLockRef.current) return;
     if (planSkipFetchRef.current) {
@@ -357,26 +384,15 @@ export default function Home() {
       setPlan(null);
       return;
     }
-    const dateKey = new Date().toDateString();
     const wantDebug = diagnosticOn;
-    try {
-      const raw = localStorage.getItem("elan.plan.v1");
-      const c = raw ? JSON.parse(raw) : null;
-      if (
-        !wantDebug &&
-        c &&
-        c.v === PLAN_VERSION &&
-        c.date === dateKey &&
-        c.sig === planSig &&
-        c.context === context
-      ) {
+    if (!wantDebug && isDayPlanContext(context)) {
+      const slot = cachedPlanSlot(context);
+      if (slot) {
         if (manualPickSig.current === planSig) return;
-        setPlan({ message: c.message, pick: c.pick });
-        applyPick(c.pick, planSig);
+        setPlan({ message: slot.message, pick: slot.pick });
+        applyPick(slot.pick, planSig);
         return;
       }
-    } catch {
-      // ignore
     }
 
     let cancelled = false;
@@ -405,9 +421,18 @@ export default function Home() {
         const unreachable = Boolean(j?.unreachable) || !msg;
         setPlanUnreachable(unreachable);
         if (msg && !unreachable) {
-          setPlan({ message: msg, pick: j?.pick ?? "15" });
+          const pick = j?.pick ?? "15";
+          setPlan({ message: msg, pick });
           if (manualPickSig.current !== planSig) {
-            applyPick(j?.pick ?? "15", planSig);
+            applyPick(pick, planSig);
+          }
+          const why = (j?.why ?? "").trim();
+          if (
+            why &&
+            !wantDebug &&
+            isDayPlanContext(context)
+          ) {
+            persistPlanSlot(context, { why, message: msg, pick });
           }
           if (wantDebug) {
             const view =
@@ -415,7 +440,7 @@ export default function Home() {
               buildPlanViewSnapshot(openThreads);
             setPlanDiag({
               view,
-              why: typeof j?.debug?.why === "string" ? j.debug.why : undefined,
+              why: typeof j?.debug?.why === "string" ? j.debug.why : why,
               system:
                 typeof j?.debug?.system === "string"
                   ? j.debug.system
@@ -424,7 +449,7 @@ export default function Home() {
                 typeof j?.debug?.user === "string" ? j.debug.user : undefined,
               source: "api",
               message: msg,
-              pick: j?.pick ?? "15",
+              pick,
             });
           } else {
             setPlanDiag(null);
@@ -448,23 +473,6 @@ export default function Home() {
               pick: j?.pick ?? "15",
             });
           }
-        }
-        try {
-          if (msg && !unreachable && !wantDebug) {
-            localStorage.setItem(
-              "elan.plan.v1",
-              JSON.stringify({
-                v: PLAN_VERSION,
-                date: dateKey,
-                sig: planSig,
-                context,
-                message: msg,
-                pick: j?.pick ?? "15",
-              }),
-            );
-          }
-        } catch {
-          // ignore
         }
       })
       .catch(() => {
@@ -597,6 +605,14 @@ export default function Home() {
     setPlanLoading(true);
     if (ctx !== "desk") setPlan(null);
     const wantDebug = isDiagnosticEnabled();
+    const cached = cachedPlanSlot(ctx);
+    const phraseWhy =
+      !wantDebug &&
+      opts?.chosen &&
+      cached?.why &&
+      isDayPlanContext(ctx)
+        ? cached.why
+        : undefined;
     try {
       const res = await apiFetch("/api/plan", {
         method: "POST",
@@ -611,6 +627,7 @@ export default function Home() {
             role: m.role,
             content: m.content,
           })),
+          ...(phraseWhy ? { why: phraseWhy } : {}),
           ...(wantDebug ? { debug: true } : {}),
         }),
       });
@@ -618,6 +635,7 @@ export default function Home() {
         const j = (await res.json()) as {
           message?: string;
           pick?: string;
+          why?: string;
           unreachable?: boolean;
           debug?: {
             candidates?: string[];
@@ -636,13 +654,17 @@ export default function Home() {
               ? String(opts.chosen)
               : (j.pick ?? "15");
             setPlan({ message: msg, pick });
+            const why = (j.why ?? cached?.why ?? "").trim();
+            if (why && !wantDebug && isDayPlanContext(ctx)) {
+              persistPlanSlot(ctx, { why, message: msg, pick });
+            }
             if (wantDebug) {
               const view =
                 (j.debug && planViewFromDebug(j.debug)) ||
                 buildPlanViewSnapshot(openThreads);
               setPlanDiag({
                 view,
-                why: j.debug?.why,
+                why: j.debug?.why ?? why,
                 system: j.debug?.system,
                 user: j.debug?.user,
                 source: "api",
@@ -707,24 +729,10 @@ export default function Home() {
     durationSettled.current = true;
     appliedSig.current = planSig;
     manualPickSig.current = planSig;
-    const msg = launch.message.trim() || fallback;
-    setPlan({ message: msg, pick });
-    if (launch.message.trim()) setRitualBrief({ message: launch.message.trim() });
-    try {
-      localStorage.setItem(
-        "elan.plan.v1",
-        JSON.stringify({
-          v: PLAN_VERSION,
-          date: new Date().toDateString(),
-          sig: planSig,
-          context: ctx,
-          message: msg,
-          pick,
-        }),
-      );
-    } catch {
-      // ignore
-    }
+    const stored = isDayPlanContext(ctx) ? cachedPlanSlot(ctx) : null;
+    const msg = stored?.message.trim() || launch.message.trim() || fallback;
+    setPlan({ message: msg, pick: stored?.pick ?? pick });
+    if (msg) setRitualBrief({ message: msg });
   }
 
   // Clic notif : appliquer AVANT le plan auto (useLayoutEffect).

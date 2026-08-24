@@ -49,6 +49,23 @@ describe("extractPlanFromContent", () => {
     expect(plan?.why).toContain("Vienne");
   });
 
+  it("lit aussi l'outil de recalage de durée", () => {
+    const plan = extractPlanFromContent([
+      {
+        type: "tool_use",
+        name: "conseil_duree",
+        input: {
+          message: "Pour ce créneau de 30 min, on avance le rappel.",
+          pick: "30",
+        },
+      },
+    ]);
+    expect(plan).toMatchObject({
+      message: "Pour ce créneau de 30 min, on avance le rappel.",
+      pick: "30",
+    });
+  });
+
   it("retombe sur le JSON texte", () => {
     const plan = extractPlanFromContent([
       {

@@ -72,6 +72,9 @@ alter table public.elan_settings add column if not exists notify_time text not n
 alter table public.elan_settings add column if not exists notify_timezone text not null default 'Europe/Paris';
 alter table public.elan_settings add column if not exists notify_last_sent date;
 alter table public.elan_settings add column if not exists notify_email_enabled boolean not null default false;
+alter table public.elan_settings add column if not exists day_plan jsonb;
+alter table public.elan_settings add column if not exists situation text;
+alter table public.elan_settings add column if not exists situation_until text;
 
 -- ── Web Push (notifs rituel, app fermée) ───────────────────────────
 create table if not exists public.elan_push_subscriptions (

@@ -17,6 +17,11 @@ import { activeSituation } from "./situation";
 import { getSupabase } from "./supabase";
 import { apiFetch } from "./anthropic";
 import { EVENTS_KEY, hydrateUsageEvents } from "./usage-log";
+import {
+  mergeDayPlans,
+  parseDayPlan,
+  type DayPlanCache,
+} from "./day-plan";
 
 const THREADS_KEY = "elan.threads.v1";
 const PROJECTS_KEY = "elan.projects.v1";
@@ -111,6 +116,9 @@ interface SettingsRow {
   notify_timezone?: string | null;
   notify_last_sent?: string | null;
   notify_email_enabled?: boolean;
+  day_plan?: DayPlanCache | null;
+  situation?: string | null;
+  situation_until?: string | null;
 }
 
 function threadToRow(t: Thread, userId: string) {
@@ -208,6 +216,9 @@ function settingsToRow(s: Settings, userId: string) {
     notify_time: s.notifyTime ?? "09:00",
     notify_timezone: s.notifyTimezone ?? "Europe/Paris",
     notify_email_enabled: s.notifyEmailEnabled ?? false,
+    day_plan: s.dayPlan ?? null,
+    situation: s.situation ?? null,
+    situation_until: s.situationUntil ?? null,
     updated_at: new Date().toISOString(),
   };
 }
@@ -219,6 +230,9 @@ function rowToSettings(r: SettingsRow): Settings {
     notifyTime: r.notify_time ?? "09:00",
     notifyTimezone: r.notify_timezone ?? "Europe/Paris",
     notifyEmailEnabled: r.notify_email_enabled ?? false,
+    dayPlan: parseDayPlan(r.day_plan) ?? undefined,
+    situation: r.situation ?? undefined,
+    situationUntil: r.situation_until ?? undefined,
   };
 }
 
@@ -303,7 +317,22 @@ export async function hydrateFromSupabase(userId: string): Promise<void> {
       // Sinon la DB fait foi.
       writeLocalOnly(THREADS_KEY, dbThreads);
       writeLocalOnly(SESSIONS_KEY, dbSessions);
-      if (settingsRow) writeLocalOnly(SETTINGS_KEY, rowToSettings(settingsRow));
+      if (settingsRow) {
+        const st = rowToSettings(settingsRow);
+        writeLocalOnly(SETTINGS_KEY, st);
+        const remotePlan = parseDayPlan(settingsRow.day_plan);
+        if (remotePlan) {
+          const localPlan = parseDayPlan(read<unknown>(PLAN_KEY, null));
+          const merged = mergeDayPlans(localPlan, remotePlan);
+          if (merged) writeLocalOnly(PLAN_KEY, merged);
+        }
+        if (st.situation && !read<Situation | null>(SITUATION_KEY, null)) {
+          writeLocalOnly(SITUATION_KEY, {
+            text: st.situation,
+            until: st.situationUntil,
+          });
+        }
+      }
     }
   } catch {
     // silencieux
@@ -735,12 +764,33 @@ export function readSituation(): Situation | null {
 export function writeSituation(s: Situation | null) {
   if (typeof window === "undefined") return;
   const next = activeSituation(s);
+  const cur = read<Settings>(SETTINGS_KEY, { defaultDurationMin: 15 });
   if (!next) {
     window.localStorage.removeItem(SITUATION_KEY);
     window.dispatchEvent(new CustomEvent(SYNC_EVENT, { detail: SITUATION_KEY }));
+    write(SETTINGS_KEY, {
+      ...cur,
+      situation: undefined,
+      situationUntil: undefined,
+    });
     return;
   }
   writeLocalOnly(SITUATION_KEY, next);
+  write(SETTINGS_KEY, {
+    ...cur,
+    situation: next.text,
+    situationUntil: next.until,
+  });
+}
+
+export function readDayPlan(): DayPlanCache | null {
+  return parseDayPlan(read<unknown>(PLAN_KEY, null));
+}
+
+export function writeDayPlan(plan: DayPlanCache): void {
+  writeLocalOnly(PLAN_KEY, plan);
+  const cur = read<Settings>(SETTINGS_KEY, { defaultDurationMin: 15 });
+  write(SETTINGS_KEY, { ...cur, dayPlan: plan });
 }
 
 export function clearActiveSession() {
