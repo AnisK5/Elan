@@ -1,5 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { resolveAnthropicKey, encodeStreamError } from "@/lib/anthropic";
+import {
+  resolveConversationModel,
+  resolveModelPreference,
+} from "@/lib/models";
 import type { ChatMessage, SessionContext, SessionLog, Thread } from "@/lib/types";
 import { renderReguliersForPlan, REGULIERS_DISCOVERY_PROMPT, REGULIERS_FOCUS_PROMPT } from "@/lib/entretiens";
 import {
@@ -113,9 +117,10 @@ function systemPrompt(meta: Meta, threads: Thread[]): string {
       } — pas de contrainte de minuteur. Ne mentionne pas le temps écoulé ni restant.`
     : `DURÉE : séance de ${meta.durationMin} min. Écoulé : ${Math.floor(meta.elapsedSec / 60)} min. Restant : ${Math.max(0, Math.floor(meta.remainingSec / 60))} min.
 - Ce temps restant FAIT FOI. Ne l'invente jamais, ne le contredis jamais.
-- UNE TÂCHE FAITE ≠ SÉANCE FINIE. C'est l'erreur à ne PAS commettre. Après avoir bouclé un truc, s'il reste du temps utile (plus de ~1-2 min) ET des trucs ouverts, ta réaction PAR DÉFAUT est d'enchaîner : félicite en une phrase, puis propose le PROCHAIN petit pas. Tu ne clôtures pas.
+- UNE TÂCHE FAITE ≠ SÉANCE FINIE. C'est l'erreur à ne PAS commettre. Après avoir bouclé un truc, s'il reste du temps utile (plus de ~1-2 min) ET des trucs ouverts FAISABLES ICI ET MAINTENANT, ta réaction PAR DÉFAUT est d'enchaîner : félicite en une phrase, puis propose le PROCHAIN petit pas. Tu ne clôtures pas.
 - N'emploie PAS le langage de clôture (« belle séance », « on se refait ça demain », « va profiter de ta journée », récap final) tant qu'il reste du temps utile. Ce langage est réservé à la VRAIE fin (Restant proche de 0), qui te sera signalée explicitement.
-- Tu ne décides JAMAIS d'arrêter à la place de la personne tant qu'il reste du temps. Si tu penses que c'est peut-être un bon moment pour souffler, tu le lui DEMANDES sans clôturer : « il te reste ${Math.max(0, Math.floor(meta.remainingSec / 60))} min — on attaque un dernier petit truc, ou tu préfères t'arrêter là ? ». C'est elle qui tranche.
+- Tu ne décides JAMAIS d'arrêter à la place de la personne tant qu'il reste du temps ET qu'il reste un pas faisable. Si tu penses que c'est peut-être un bon moment pour souffler, tu le lui DEMANDES sans clôturer : « il te reste ${Math.max(0, Math.floor(meta.remainingSec / 60))} min — on attaque un dernier petit truc, ou tu préfères t'arrêter là ? ». C'est elle qui tranche.
+- QUAND IL NE RESTE RIEN DE FAISABLE MAINTENANT (tout en attente d'un tiers, condition pas remplie, hors contexte, trop tôt / trop loin, demande d'être ailleurs ou un matériel qu'elle n'a pas) : NE REMPLIS PAS LE TEMPS. Dis-le franchement, propose d'arrêter ou un micro-pas vraiment possible ici (trier, lâcher un truc). INTERDIT d'inventer un truc pas mûr, pas faisable ici, ou trop en avance sur son délai juste pour occuper les minutes.
 - Si vous avez vraiment fait le tour de TOUT (plus de trucs ouverts pertinents) avant la fin, dis-le honnêtement et propose le choix ci-dessus — sans prétendre que le chrono est fini.
 - Dans les VRAIES dernières minutes (Restant proche de 0) : arrête d'ouvrir de nouveaux fronts, fais un point doux, célèbre ce qui a bougé, propose une toute petite intention pour la prochaine fois, et invite à revenir demain.`;
   const deskProgramBlock = untimed
@@ -274,8 +279,12 @@ export async function POST(req: Request) {
 
   const client = new Anthropic({ apiKey });
 
+  const model = resolveConversationModel(
+    "session",
+    resolveModelPreference(req),
+  );
   const stream = client.messages.stream({
-    model: "claude-opus-4-8",
+    model,
     max_tokens: 1500,
     system: systemPrompt(meta, threads),
     messages: apiMessages,

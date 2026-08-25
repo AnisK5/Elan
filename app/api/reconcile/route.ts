@@ -11,6 +11,8 @@ export const maxDuration = 60;
 interface Body {
   threads: Thread[];
   messages: ChatMessage[];
+  /** Cadre de vie déjà retenu — évite de re-notifier à chaque message. */
+  situation?: string | null;
 }
 
 function renderThreads(threads: Thread[]): string {
@@ -28,9 +30,19 @@ function renderThreads(threads: Thread[]): string {
 }
 
 function renderConvo(messages: ChatMessage[]): string {
-  return messages
-    .slice(-8)
-    .map((m) => `${m.role === "user" ? "MOI" : "ÉLAN"}: ${m.content}`)
+  const recent = messages.slice(-8);
+  if (recent.length === 0) return "(vide)";
+  const lastUserIdx = [...recent]
+    .map((m, i) => (m.role === "user" ? i : -1))
+    .filter((i) => i >= 0)
+    .pop();
+  return recent
+    .map((m, i) => {
+      const who = m.role === "user" ? "MOI" : "ÉLAN";
+      const tag =
+        lastUserIdx !== undefined && i >= lastUserIdx ? " ← TOUR ACTUEL" : "";
+      return `${who}${tag}: ${m.content}`;
+    })
     .join("\n");
 }
 
@@ -46,8 +58,9 @@ function systemPrompt(threads: Thread[], messages: ChatMessage[]): string {
 AUJOURD'HUI : ${today}. Sers-t'en pour dater et ancrer tout repère temporel.
 
 RÈGLES (tu es CONSERVATEUR) :
+- TOUR ACTUEL SEULEMENT : les messages marqués « ← TOUR ACTUEL » (dernier message utilisateur + éventuelle réplique) sont ce que tu ranges MAINTENANT. Le reste de l'échange est du CONTEXTE déjà traité — ne le re-range pas, ne le re-résume pas.
 - EXCEPTION RÉGULIERS — passe AVANT le conservatisme : si l'échange parle d'un rythme de vie (linge, draps, loyer, URSSAF…) AVEC une fréquence — même seulement recommandée par Élan et non refusée — tu DOIS l'écrire dans le fil "Réguliers". Un « c'est déjà noté » d'Élan ne compte PAS : vérifie LES TRUCS ACTUELS. Fil absent ou ligne absente → add/note. Elle qui dit que le fil est vide = tu écris MAINTENANT.
-- N'agis QUE sur ce qui est clairement dit ou confirmé dans l'échange. Dans le doute, ne fais rien.
+- N'agis QUE sur ce qui est clairement dit ou confirmé dans le TOUR ACTUEL. Dans le doute, ne fais rien.
 - HORS SÉANCE (« j'ai appelé », « c'est envoyé », « c'est fait », « c'est rendu », un détail, une date) : elle a parlé POUR que tu ranges. C'est aussi net qu'une séance. Écris les ops. Ne reste pas les bras croisés parce que l'échange est court. Si elle nomme un truc ouvert et dit que c'est fait / rendu / réglé / plus à faire — "done" sur CET id, tout de suite.
 - CONTEXTE DE VIE : si elle dit où elle est, jusqu'à quand, ce qui change ce qui est faisable (« je suis à Vienne », « pas chez moi », « je reviens le 28 ») — écris-le dans le champ "situation" (une phrase factuelle, date ancrée). Ce n'est PAS un truc : ne snooze pas tout le lot. Le conseil du matin lira ce cadre.
 - N'invente jamais un truc qui n'a pas été évoqué.
@@ -97,8 +110,8 @@ Chaque update est un de ces objets :
 - {"op":"set","id":"<id>","due":"YYYY-MM-DD","effort":"S|M|L","kind":"action|suivi","plannedFor":"YYYY-MM-DD"}  (mets seulement les champs concernés ; plannedFor = jour où elle veut s'en occuper, null pour l'annuler)
 - {"op":"add","text":"<nom>","kind":"action|suivi","due":"YYYY-MM-DD","effort":"S|M|L","note":"<contexte>"}  (due/effort/note optionnels)
 
-"note" : un résumé TRÈS court et humain de ce que tu as changé, en français, pour l'afficher à la personne (ex. "impôts ✓ · Paul repoussé à vendredi"). Si tu ne changes rien, renvoie {"updates": [], "note": ""}.
-"situation" : seulement si l'échange pose ou met à jour le cadre de vie (où elle est, jusqu'à quand). Une phrase. Sinon omets le champ.
+"note" : un résumé TRÈS court et humain de ce que tu as changé DANS CE TOUR SEULEMENT, en français, pour l'afficher à la personne (ex. "impôts ✓ · Paul repoussé à vendredi"). Jamais un récap de l'historique ni des tours précédents. Si tu ne changes rien, renvoie {"updates": [], "note": ""}.
+"situation" : seulement si le TOUR ACTUEL pose ou met à jour le cadre de vie (où elle est, jusqu'à quand). Une phrase. Sinon omets le champ.
 
 LES TRUCS ACTUELS (avec leur id) :
 ${renderThreads(threads)}
@@ -162,6 +175,7 @@ function withWrites(
   threads: Thread[],
   messages: ChatMessage[],
   greffier: { updates: unknown[]; note: string; situation?: string },
+  previousSituation?: string | null,
 ): { updates: unknown[]; note: string; situation?: string } {
   const after = withReguliers(threads, messages, greffier);
   const extracted = extractSituationFromConvo(messages);
@@ -170,6 +184,13 @@ function withWrites(
     : null;
   const situation = mergeSituation(extracted, fromModel);
   if (!situation) return after;
+  const prev = previousSituation?.trim() ?? "";
+  const changed = situation.text.trim() !== prev;
+  // Ne recolle pas « cadre de vie » à chaque message si c'est déjà retenu.
+  if (!changed) {
+    const { situation: _drop, ...rest } = after;
+    return rest;
+  }
   const extra = "cadre de vie retenu";
   const note = after.note?.trim()
     ? after.note.includes("cadre de vie")
@@ -189,13 +210,16 @@ export async function POST(req: Request) {
 
   const threads = body.threads ?? [];
   const messages = body.messages ?? [];
+  const previousSituation = body.situation ?? null;
   if (threads.length === 0 && messages.length === 0)
     return Response.json({ updates: [], note: "" });
 
   const empty = { updates: [] as unknown[], note: "" };
   const apiKey = resolveAnthropicKey(req);
   if (!apiKey) {
-    return Response.json(withWrites(threads, messages, empty));
+    return Response.json(
+      withWrites(threads, messages, empty, previousSituation),
+    );
   }
 
   const client = new Anthropic({ apiKey });
@@ -209,8 +233,12 @@ export async function POST(req: Request) {
     const block = res.content.find((b) => b.type === "text");
     const text = block && block.type === "text" ? block.text : "";
     const parsed = safeParse(text) ?? empty;
-    return Response.json(withWrites(threads, messages, parsed));
+    return Response.json(
+      withWrites(threads, messages, parsed, previousSituation),
+    );
   } catch {
-    return Response.json(withWrites(threads, messages, empty));
+    return Response.json(
+      withWrites(threads, messages, empty, previousSituation),
+    );
   }
 }

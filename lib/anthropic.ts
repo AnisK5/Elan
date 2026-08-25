@@ -1,5 +1,7 @@
 /** Clé Claude : celle de la personne si elle en a une, sinon celle de l'app. */
 
+import { MODEL_PREF_HEADER, readModelPreference } from "@/lib/models";
+
 export const ANTHROPIC_KEY_HEADER = "x-elan-anthropic-key";
 const STORAGE_KEY = "elan.anthropic.v1";
 
@@ -103,7 +105,7 @@ export function writeUserAnthropicKey(key: string): void {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ key: trimmed }));
 }
 
-/** fetch vers /api/* avec la clé perso si elle est là. */
+/** fetch vers /api/* avec la clé perso et la préférence de modèle si elles sont là. */
 export function apiFetch(input: string, init?: RequestInit): Promise<Response> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
@@ -113,5 +115,6 @@ export function apiFetch(input: string, init?: RequestInit): Promise<Response> {
   if (looksLikeAnthropicKey(key)) {
     headers.set(ANTHROPIC_KEY_HEADER, key);
   }
+  headers.set(MODEL_PREF_HEADER, readModelPreference());
   return fetch(input, { ...init, headers });
 }

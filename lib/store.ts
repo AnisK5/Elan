@@ -535,6 +535,29 @@ export function clean(s: string | undefined): string {
     .trim();
 }
 
+/**
+ * Le greffier doit fusionner, mais il renvoie souvent une note courte qui
+ * écrase le contexte. On garde l'ancien dès que le nouveau ne le contient pas.
+ * Les listes structurées (Courses / Réguliers avec « · » ou lignes) remplacent.
+ */
+export function mergeThreadNotes(
+  prev: string | undefined,
+  next: string | undefined,
+): string {
+  const a = clean(prev);
+  const b = clean(next);
+  if (!b) return a;
+  if (!a) return b;
+  if (a === b) return a;
+  if (b.includes(a)) return b;
+  if (a.includes(b)) return a;
+  const listLike =
+    b.includes("\n") ||
+    (b.includes(" · ") && (b.match(/ · /g) || []).length >= 1);
+  if (listLike && b.length >= a.length * 0.6) return b;
+  return `${a} · ${b}`;
+}
+
 // Un truc mis en pause doit revenir tout seul le jour dit — sinon la promesse
 // « le truc, lui, reviendra » est fausse et il disparaît pour de bon.
 export function wakeSnoozed(): number {
@@ -606,7 +629,11 @@ export function applyThreadOps(ops: ThreadOp[]): void {
         case "rename":
           return { ...t, text: clean(op.text) || t.text, ...touch };
         case "note":
-          return { ...t, note: clean(op.note) || undefined, ...touch };
+          return {
+            ...t,
+            note: mergeThreadNotes(t.note, op.note) || undefined,
+            ...touch,
+          };
         case "set":
           return {
             ...t,
@@ -746,7 +773,7 @@ export function readChat(): ChatMessage[] {
 
 export function writeChat(messages: ChatMessage[]) {
   // On coupe la queue : au-delà, le contexte utile vient des trucs eux-mêmes.
-  writeLocalOnly(CHAT_KEY, messages.slice(-40));
+  writeLocalOnly(CHAT_KEY, messages.slice(-60));
 }
 
 export function clearChat() {

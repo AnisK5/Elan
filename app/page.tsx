@@ -41,7 +41,7 @@ import ChatBubble from "@/components/home/ChatBubble";
 import UsageWeek from "@/components/home/UsageWeek";
 import { greeting, Logo } from "@/components/home/Branding";
 import { useAuth } from "@/components/AuthProvider";
-import { parseThreadOps } from "@/lib/ops";
+import { filterEffectiveOps, parseThreadOps } from "@/lib/ops";
 import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
 import { completionAt } from "@/lib/week-stats";
 import { computeUsageWeek } from "@/lib/usage";
@@ -781,15 +781,18 @@ export default function Home() {
 
   async function applyReconcile(messages: ChatMessage[]): Promise<boolean> {
     try {
+      const prevSit = readSituation();
       const res = await apiFetch("/api/reconcile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           threads: snapshotThreads(),
-          messages: messages.slice(-12).map((m) => ({
+          // Assez de contexte pour le greffier, sans ruminer tout le fil.
+          messages: messages.slice(-8).map((m) => ({
             role: m.role,
             content: m.content,
           })),
+          situation: prevSit?.text ?? null,
         }),
       });
       if (!res.ok) return false;
@@ -798,23 +801,29 @@ export default function Home() {
         note?: string;
         situation?: string;
       };
-      const extracted = extractSituationFromConvo(messages);
+      const extracted = extractSituationFromConvo(messages.slice(-4));
       const fromApi = j.situation?.trim()
         ? { text: j.situation.trim() }
         : null;
       const sit = mergeSituation(extracted, fromApi);
-      if (sit) {
+      const sitChanged = Boolean(
+        sit && sit.text.trim() !== (prevSit?.text ?? "").trim(),
+      );
+      if (sitChanged && sit) {
         writeSituation(sit);
         setSituationText(sit.text);
       }
       const before = snapshotThreads();
-      const ops = parseThreadOps(
-        j.updates,
-        new Set(before.map((t) => t.id)),
+      const ops = filterEffectiveOps(
         before,
+        parseThreadOps(
+          j.updates,
+          new Set(before.map((t) => t.id)),
+          before,
+        ),
       );
       if (ops.length === 0) {
-        if (sit) {
+        if (sitChanged) {
           showPointNote(j.note || "c'est noté", null);
           return true;
         }

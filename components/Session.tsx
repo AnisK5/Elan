@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage, SessionContext, SessionLog, Thread } from "@/lib/types";
-import { parseThreadOps } from "@/lib/ops";
+import { filterEffectiveOps, parseThreadOps } from "@/lib/ops";
 import {
   apiFetch,
   anthropicFailMessage,
@@ -222,10 +222,16 @@ export default function Session({
 
   async function reconcile(msgs: ChatMessage[]) {
     try {
+      const prevSit = readSituation();
       const res = await apiFetch("/api/reconcile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ threads: threadsRef.current, messages: msgs }),
+        body: JSON.stringify({
+          threads: threadsRef.current,
+          // Derniers tours : assez pour le contexte, pas tout le transcript.
+          messages: msgs.slice(-10),
+          situation: prevSit?.text ?? null,
+        }),
       });
       if (!res.ok) return;
       const j = (await res.json()) as {
@@ -233,17 +239,25 @@ export default function Session({
         note?: string;
         situation?: string;
       };
-      const extracted = extractSituationFromConvo(msgs);
+      const extracted = extractSituationFromConvo(msgs.slice(-4));
       const fromApi = j.situation?.trim()
         ? { text: j.situation.trim() }
         : null;
       const sit = mergeSituation(extracted, fromApi);
-      if (sit) writeSituation(mergeSituation(readSituation(), sit));
+      const sitChanged = Boolean(
+        sit && sit.text.trim() !== (prevSit?.text ?? "").trim(),
+      );
+      if (sitChanged && sit) {
+        writeSituation(mergeSituation(prevSit, sit));
+      }
       const before = snapshotThreads();
-      const ops = parseThreadOps(
-        j.updates,
-        new Set(before.map((t) => t.id)),
+      const ops = filterEffectiveOps(
         before,
+        parseThreadOps(
+          j.updates,
+          new Set(before.map((t) => t.id)),
+          before,
+        ),
       );
       if (ops.length > 0) {
         applyThreadOps(ops);
@@ -253,6 +267,9 @@ export default function Session({
           setNote("");
           setUndoSnapshot(null);
         }, 10000);
+      } else if (sitChanged) {
+        setNote(j.note || "c'est noté");
+        window.setTimeout(() => setNote(""), 10000);
       }
     } catch {
       // silencieux : la mise à jour des trucs ne doit jamais casser la séance

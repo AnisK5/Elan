@@ -1,5 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { resolveAnthropicKey, encodeStreamError } from "@/lib/anthropic";
+import {
+  resolveConversationModel,
+  resolveModelPreference,
+} from "@/lib/models";
 import type { ChatMessage, Thread } from "@/lib/types";
 import { ageLabel, dueLabel, intentionLabel } from "@/lib/thread-labels";
 import { renderReguliersForPlan, isContainerThread } from "@/lib/entretiens";
@@ -36,6 +40,7 @@ OÙ TU ES : un échange HORS SÉANCE, au-dessus de l'accueil. Pas de minuteur, p
 
 CE QUE TU FAIS ICI :
 - Nouvelles (« j'ai appelé le dentiste ») : accuse réception. Tu PEUX demander UN détail utile pour porter le truc (ce qu'ils ont dit, la prochaine date). Une question, dernière phrase. Ne lui demande jamais de noter elle-même — et ne prétends JAMAIS l'avoir déjà rayé : le greffier écrit, pas toi.
+- MÉMOIRE DE L'ÉCHANGE : tu as l'historique récent ci-dessous. Si elle reprend un sujet déjà abordé dans ce fil, tu t'en souviens — pas de « c'était quoi déjà ? », pas de re-demander un détail qu'elle vient de donner.
 - Quand un truc vient d'être réglé : pareil — un détail pour classer, pas un débrief de séance.
 - Une question concrète (horaires, que dire, un numéro) : réponds. Cherche si tu as besoin d'un fait réel. Un brouillon court, un conseil, une décision — oui.
 - Organisation (demain, la semaine) : réponds EN CRÉNEAUX, clairsemé, un ou deux par jour.
@@ -83,13 +88,17 @@ export async function POST(req: Request) {
   }
 
   const client = new Anthropic({ apiKey });
+  const model = resolveConversationModel(
+    "chat",
+    resolveModelPreference(req),
+  );
   const stream = client.messages.stream({
-    model: "claude-opus-4-8",
+    model,
     max_tokens: 1000,
     system: systemPrompt(threads, meta?.name, meta?.situation),
-    // On ne garde que la fin de la discussion : au-delà, le contexte utile
-    // vient des trucs eux-mêmes, pas du bavardage.
-    messages: messages.slice(-20).map((m) => ({
+    // On garde assez d'historique pour se souvenir de l'échange en cours ;
+    // au-delà, le contexte utile vient des trucs eux-mêmes.
+    messages: messages.slice(-30).map((m) => ({
       role: m.role,
       content: m.content,
     })),

@@ -67,7 +67,9 @@ export function extractReguliersFromConvo(
   messages: Pick<ChatMessage, "role" | "content">[],
   at = new Date(),
 ): RegulierItem[] {
-  const recent = messages.slice(-12);
+  // Dernier tour seulement : sinon un vieux « toutes les 2 semaines » dans
+  // l'historique re-déclenche une note greffier à chaque message.
+  const recent = messages.slice(-4);
   if (recent.length === 0 || userRefused(recent)) return [];
 
   const blob = recent.map((m) => m.content).join("\n");

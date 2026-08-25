@@ -182,16 +182,14 @@ describe("wakeSnoozed — la promesse « le truc, lui, reviendra »", () => {
   });
 });
 
-// Ces deux comportements sont ceux d'aujourd'hui, et ils sont discutables.
-// Les figer ici sert à ce qu'ils soient CHOISIS, pas subis : le jour où on en
-// change un, ce test tombera et forcera la décision.
-describe("comportements actuels à trancher (figés, pas approuvés)", () => {
-  it("une note du greffier ÉCRASE le contexte accumulé", () => {
+// Comportements figés pour forcer une décision le jour où on les change.
+describe("écriture des notes greffier", () => {
+  it("une note courte du greffier FUSIONNE avec le contexte accumulé", () => {
     seed([thread({ id: "a", note: "papa attend ça depuis mars, il relance" })]);
     applyThreadOps([{ op: "note", id: "a", note: "relancé le 03/08" }]);
-    // La fusion est demandée au modèle dans le prompt de /api/reconcile, mais
-    // rien ne la garantit ici : s'il renvoie une note courte, l'historique part.
-    expect(byId("a")?.note).toBe("relancé le 03/08");
+    expect(byId("a")?.note).toBe(
+      "papa attend ça depuis mars, il relance · relancé le 03/08",
+    );
   });
 
   it("un truc terminé peut être recréé à l'identique", () => {

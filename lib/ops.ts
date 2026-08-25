@@ -178,3 +178,78 @@ export function parseThreadOps(
 
   return out;
 }
+
+function sameDay(a?: string, b?: string): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return a.slice(0, 10) === b.slice(0, 10);
+}
+
+/**
+ * Écarte les ops qui ne changeraient rien à l'état actuel — sinon le greffier
+ * rejoue l'historique et la bulle ✏️ recolle des modifs déjà faites.
+ */
+export function filterEffectiveOps(
+  threads: { id: string; text: string; status?: string; note?: string; due?: string; effort?: string; kind?: string; plannedFor?: string }[],
+  ops: ThreadOp[],
+): ThreadOp[] {
+  const byId = new Map(threads.map((t) => [t.id, t]));
+  const openTexts = new Set(
+    threads
+      .filter((t) => !t.status || t.status === "open")
+      .map((t) => t.text.trim().toLowerCase()),
+  );
+  const out: ThreadOp[] = [];
+
+  for (const op of ops) {
+    if (op.op === "add") {
+      if (openTexts.has(op.text.trim().toLowerCase())) continue;
+      out.push(op);
+      openTexts.add(op.text.trim().toLowerCase());
+      continue;
+    }
+    const t = byId.get(op.id);
+    if (!t) continue;
+
+    switch (op.op) {
+      case "done":
+        if (t.status === "done") continue;
+        out.push(op);
+        break;
+      case "snooze":
+        if (t.status === "snoozed") continue;
+        out.push(op);
+        break;
+      case "rename":
+        if (clean(op.text) === (t.text ?? "").trim()) continue;
+        out.push(op);
+        break;
+      case "note": {
+        const next = clean(op.note);
+        const prev = (t.note ?? "").trim();
+        if (!next || next === prev) continue;
+        out.push(op);
+        break;
+      }
+      case "set": {
+        let changes = false;
+        if (op.due !== undefined && !sameDay(op.due, t.due)) changes = true;
+        if (op.effort && op.effort !== t.effort) changes = true;
+        if (op.kind && op.kind !== t.kind) changes = true;
+        if (op.plannedFor !== undefined) {
+          if (op.plannedFor === null) {
+            if (t.plannedFor) changes = true;
+          } else if (!sameDay(op.plannedFor, t.plannedFor)) {
+            changes = true;
+          }
+        }
+        if (changes) out.push(op);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  return out;
+}
