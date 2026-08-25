@@ -204,14 +204,16 @@ export async function runRitualPushCron(options?: {
         },
       })) ?? buildOfflinePlanHint(threads);
 
-    if (plan && "why" in plan && plan.why?.trim()) {
+    const planWhy =
+      "why" in plan && typeof plan.why === "string" ? plan.why.trim() : "";
+    if (planWhy) {
       const openForSig = threads.filter((t) => t.status === "open");
       const nextPlan = upsertDayPlanSlot(
         parseDayPlan(raw.day_plan),
         whySignature(openForSig, sitText),
         "desk",
         {
-          why: plan.why.trim(),
+          why: planWhy,
           message: plan.message,
           pick: plan.pick,
         },
