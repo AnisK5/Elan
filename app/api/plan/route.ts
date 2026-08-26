@@ -518,9 +518,6 @@ function resolveSituation(body: Body): string | undefined {
 }
 
 export async function POST(req: Request) {
-  const apiKey = resolveAnthropicKey(req);
-  if (!apiKey) return Response.json({ error: "no-key" }, { status: 400 });
-
   let body: Body;
   try {
     body = (await req.json()) as Body;
@@ -529,6 +526,17 @@ export async function POST(req: Request) {
   }
 
   const context = body.context ?? "desk";
+  const open = (body.threads ?? []).filter((t) => t.status === "open");
+  const apiKey = resolveAnthropicKey(req);
+  if (!apiKey) {
+    const plan = fallbackPlan(context, open, body.chosen);
+    return Response.json({
+      message: plan.message,
+      pick: plan.pick,
+      unreachable: true,
+    });
+  }
+
   const debug = body.debug === true && body.forNotify !== true;
   if (context === "deposer") {
     return Response.json({
@@ -537,7 +545,6 @@ export async function POST(req: Request) {
       ...(debug ? { debug: debugPayload(body.threads ?? []) } : {}),
     });
   }
-  const open = (body.threads ?? []).filter((t) => t.status === "open");
   if (open.length === 0 && context !== "regulier") {
     return Response.json({
       message: "",
@@ -607,14 +614,15 @@ export async function POST(req: Request) {
         const plan = fallbackNotifyPlan(open, body.sourceMessage);
         return Response.json({ message: plan.message, pick: plan.pick });
       }
+      const plan = fallbackPlan(context, open, body.chosen);
       return Response.json({
-        message: "",
-        pick: "15",
+        message: plan.message,
+        pick: plan.pick,
         unreachable: true,
         ...(debug
           ? {
               debug: debugPayload(open, {
-                why: "réponse illisible — pas de repli à l'écran",
+                why: "réponse illisible — conseil de secours",
                 system: baseSystem,
                 user: userCue,
               }),
