@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { resolveAnthropicKey } from "@/lib/anthropic";
+import { classifyAnthropicError, resolveAnthropicKey } from "@/lib/anthropic";
 import type { ChatMessage, SessionContext, Thread } from "@/lib/types";
 import {
   isContainerThread,
@@ -276,8 +276,8 @@ RÉGULIERS (fil conteneur — loyer, URSSAF, draps, tout ce qui REVIENT et que L
 - Formule « ça fait X semaines / un mois » — jamais « en retard ».
 - Si aucun régulier n'est mûr, n'en parle pas dans le message.
 
-RÉPONDS via l'outil conseil_du_jour, rien d'autre. Ordre : "why" (les 6 points, une phrase chacun), puis "message", puis "pick".
-Le message est la CONCLUSION — jamais le parcours. "pick" = "5"|"15"|"30"|"50"|"sortie", en cohérence avec why.
+RÉPONDS via l'outil conseil_du_jour, rien d'autre. Ordre : "message" puis "pick" EN PREMIER (ce que la personne lit), puis "why" (les 6 points, une phrase chacun) si tu as la place.
+Le message est la CONCLUSION — jamais le parcours. "pick" = "5"|"15"|"30"|"50"|"sortie". L'arbitrage (why) reste silencieux à l'écran.
 
 SES TRUCS :
 ${render}
@@ -554,7 +554,6 @@ export async function POST(req: Request) {
   }
 
   const situation = resolveSituation(body);
-  const client = new Anthropic({ apiKey });
   const forNotify = body.forNotify === true;
   const reusedWhy = (body.why ?? "").trim();
   const phraseOnly =
@@ -568,6 +567,15 @@ export async function POST(req: Request) {
     : phraseOnly
       ? `[Arbitrage déjà fait. Caler le conseil sur ${body.chosen} min. JSON seulement.]`
       : cue(context);
+
+  // Outdoor / notif / recalage durée : pas de why — schéma court, fiable.
+  // Desk (premier conseil du jour) : CONSEIL_TOOL avec message+pick d'abord.
+  const shortTool =
+    forNotify ||
+    phraseOnly ||
+    context === "courses" ||
+    context === "sortie" ||
+    context === "regulier";
 
   try {
     const baseSystem = forNotify
@@ -594,26 +602,70 @@ export async function POST(req: Request) {
             context,
             situation,
           );
-    const tool = phraseOnly ? PHRASE_TOOL : CONSEIL_TOOL;
-    const res = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: forNotify ? 200 : phraseOnly ? 350 : 800,
-      system: baseSystem,
-      tools: [tool],
-      tool_choice: { type: "tool", name: tool.name },
-      messages: [
-        {
-          role: "user",
-          content: userCue,
-        },
-      ],
+    const tool = shortTool ? PHRASE_TOOL : CONSEIL_TOOL;
+    // Desk : budget large pour why optionnel sans tronquer message/pick.
+    // Notif : court. Recalage / outdoor : moyen.
+    const maxTokens = forNotify
+      ? 220
+      : shortTool
+        ? 400
+        : debug
+          ? 2000
+          : 1200;
+
+    const client = new Anthropic({
+      apiKey,
+      maxRetries: 1,
+      timeout: 45_000,
     });
-    const parsed = extractPlanFromContent(res.content);
+
+    async function callOnce(tokens: number) {
+      return client.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: tokens,
+        system: baseSystem,
+        tools: [tool],
+        tool_choice: { type: "tool", name: tool.name },
+        messages: [{ role: "user", content: userCue }],
+      });
+    }
+
+    let res = await callOnce(maxTokens);
+    let parsed = extractPlanFromContent(res.content);
+
+    // Truncation mid-why (ou mid-message) : un seul retry avec plus de budget,
+    // ou bascule sur l'outil court si le desk a échoué.
+    if (
+      !parsed?.message.trim() &&
+      res.stop_reason === "max_tokens" &&
+      !forNotify
+    ) {
+      console.warn("[plan] max_tokens sans message — retry");
+      if (!shortTool) {
+        // Retry desk sans why : même prompt, outil court.
+        res = await client.messages.create({
+          model: "claude-sonnet-4-6",
+          max_tokens: 500,
+          system: baseSystem,
+          tools: [PHRASE_TOOL],
+          tool_choice: { type: "tool", name: PHRASE_TOOL.name },
+          messages: [{ role: "user", content: userCue }],
+        });
+      } else {
+        res = await callOnce(Math.min(maxTokens * 2, 800));
+      }
+      parsed = extractPlanFromContent(res.content);
+    }
+
     if (!parsed?.message.trim()) {
       if (forNotify) {
         const plan = fallbackNotifyPlan(open, body.sourceMessage);
         return Response.json({ message: plan.message, pick: plan.pick });
       }
+      console.error(
+        "[plan] réponse inutilisable",
+        res.stop_reason,
+      );
       const plan = fallbackPlan(context, open, body.chosen);
       return Response.json({
         message: plan.message,
@@ -622,7 +674,7 @@ export async function POST(req: Request) {
         ...(debug
           ? {
               debug: debugPayload(open, {
-                why: "réponse illisible — conseil de secours",
+                why: `réponse illisible (stop=${res.stop_reason}) — conseil de secours`,
                 system: baseSystem,
                 user: userCue,
               }),
@@ -652,7 +704,8 @@ export async function POST(req: Request) {
         : {}),
     });
   } catch (e) {
-    console.error("[plan] échec:", e instanceof Error ? e.message : e);
+    const kind = classifyAnthropicError(e);
+    console.error("[plan] échec:", kind, e instanceof Error ? e.message : e);
     const plan = forNotify
       ? fallbackNotifyPlan(open, body.sourceMessage)
       : fallbackPlan(context, open, body.chosen);
@@ -660,6 +713,7 @@ export async function POST(req: Request) {
       message: plan.message,
       pick: plan.pick,
       unreachable: true,
+      errorKind: kind,
       ...(debug
         ? {
             debug: debugPayload(open, {

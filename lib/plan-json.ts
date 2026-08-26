@@ -7,40 +7,46 @@ export type PlanJson = { message: string; pick: string; why?: string };
 
 export const CONSEIL_TOOL_NAME = "conseil_du_jour";
 
-/** Force un JSON {why, message, pick} — l'arbitrage écrit guide le conseil. */
+/**
+ * Force un JSON {message, pick, why?}.
+ * message + pick D'ABORD : si max_tokens coupe, on a quand même le conseil
+ * visible. why (arbitrage du jour) vient après, optionnel — utile pour
+ * recalage de durée, pas bloquant pour l'écran.
+ */
 export const CONSEIL_TOOL = {
   name: CONSEIL_TOOL_NAME,
   description:
-    "Le conseil du jour. Remplis why EN PREMIER (les 6 points d'arbitrage), puis message et pick, en cohérence avec why.",
+    "Le conseil du jour. Remplis message et pick EN PREMIER (ce que la personne lit), puis why si tu as la place (arbitrage silencieux, 6 points courts).",
   input_schema: {
     type: "object" as const,
     properties: {
-      why: {
-        type: "string",
-        description:
-          "Les 6 points d'ARBITRAGE SILENCIEUX, une phrase courte chacun, numérotés 1) à 6). Factuel, pour le développeur. JAMAIS repris dans message.",
-      },
       message: {
         type: "string",
-        description: "2 à 4 phrases, françaises, sans markdown. La conclusion seulement.",
+        description:
+          "2 à 4 phrases, françaises, sans markdown. La conclusion seulement — ce qui s'affiche à l'écran.",
       },
       pick: {
         type: "string",
         enum: [...PLAN_PICKS],
-        description: "Durée du créneau, ou sortie. Doit suivre why.",
+        description: "Durée du créneau, ou sortie.",
+      },
+      why: {
+        type: "string",
+        description:
+          "Optionnel. Les 6 points d'ARBITRAGE SILENCIEUX, une phrase courte chacun, numérotés 1) à 6). Factuel, pour le cache du jour. JAMAIS repris dans message. À remplir APRÈS message et pick.",
       },
     },
-    required: ["why", "message", "pick"],
+    required: ["message", "pick"],
   },
 };
 
 export const PHRASE_TOOL_NAME = "conseil_duree";
 
-/** Recale le message sur une durée — l'arbitrage (why) est déjà tranché. */
+/** Message + pick seuls — recalage de durée, outdoor, notif. */
 export const PHRASE_TOOL = {
   name: PHRASE_TOOL_NAME,
   description:
-    "Le conseil pour CETTE durée. L'arbitrage est déjà fait : ne le refais pas. Même truc, phrase calée sur le temps demandé.",
+    "Le conseil à l'écran : la phrase visible et la durée (ou sortie). Pas d'arbitrage écrit.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -51,7 +57,7 @@ export const PHRASE_TOOL = {
       pick: {
         type: "string",
         enum: [...PLAN_PICKS],
-        description: "La durée demandée, ou sortie si l'arbitrage l'impose.",
+        description: "Durée du créneau, ou sortie.",
       },
     },
     required: ["message", "pick"],
