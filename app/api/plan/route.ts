@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { resolveAnthropicKey } from "@/lib/anthropic";
+import { classifyAnthropicError, resolveAnthropicKey } from "@/lib/anthropic";
 import type { ChatMessage, SessionContext, Thread } from "@/lib/types";
 import {
   isContainerThread,
@@ -518,9 +518,6 @@ function resolveSituation(body: Body): string | undefined {
 }
 
 export async function POST(req: Request) {
-  const apiKey = resolveAnthropicKey(req);
-  if (!apiKey) return Response.json({ error: "no-key" }, { status: 400 });
-
   let body: Body;
   try {
     body = (await req.json()) as Body;
@@ -529,6 +526,17 @@ export async function POST(req: Request) {
   }
 
   const context = body.context ?? "desk";
+  const open = (body.threads ?? []).filter((t) => t.status === "open");
+  const apiKey = resolveAnthropicKey(req);
+  if (!apiKey) {
+    const plan = fallbackPlan(context, open, body.chosen);
+    return Response.json({
+      message: plan.message,
+      pick: plan.pick,
+      unreachable: true,
+    });
+  }
+
   const debug = body.debug === true && body.forNotify !== true;
   if (context === "deposer") {
     return Response.json({
@@ -537,7 +545,6 @@ export async function POST(req: Request) {
       ...(debug ? { debug: debugPayload(body.threads ?? []) } : {}),
     });
   }
-  const open = (body.threads ?? []).filter((t) => t.status === "open");
   if (open.length === 0 && context !== "regulier") {
     return Response.json({
       message: "",
@@ -547,7 +554,6 @@ export async function POST(req: Request) {
   }
 
   const situation = resolveSituation(body);
-  const client = new Anthropic({ apiKey });
   const forNotify = body.forNotify === true;
   const reusedWhy = (body.why ?? "").trim();
   const phraseOnly =
@@ -561,6 +567,15 @@ export async function POST(req: Request) {
     : phraseOnly
       ? `[Arbitrage déjà fait. Caler le conseil sur ${body.chosen} min. JSON seulement.]`
       : cue(context);
+
+  // Outdoor / notif / recalage durée : pas de why — schéma court, fiable.
+  // Desk (premier conseil du jour) : CONSEIL_TOOL avec message+pick d'abord.
+  const shortTool =
+    forNotify ||
+    phraseOnly ||
+    context === "courses" ||
+    context === "sortie" ||
+    context === "regulier";
 
   try {
     const baseSystem = forNotify
@@ -587,34 +602,66 @@ export async function POST(req: Request) {
             context,
             situation,
           );
-    const tool = phraseOnly ? PHRASE_TOOL : CONSEIL_TOOL;
-    const res = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: forNotify ? 200 : phraseOnly ? 350 : 800,
-      system: baseSystem,
-      tools: [tool],
-      tool_choice: { type: "tool", name: tool.name },
-      messages: [
-        {
-          role: "user",
-          content: userCue,
-        },
-      ],
+    const tool = shortTool ? PHRASE_TOOL : CONSEIL_TOOL;
+    // Desk : why d'abord (qualité) → budget large pour ne pas tronquer.
+    // Notif : court. Recalage / outdoor : moyen, sans why.
+    const maxTokens = forNotify
+      ? 220
+      : shortTool
+        ? 400
+        : debug
+          ? 2500
+          : 1800;
+
+    const client = new Anthropic({
+      apiKey,
+      maxRetries: 1,
+      timeout: 45_000,
     });
-    const parsed = extractPlanFromContent(res.content);
+
+    async function callOnce(tokens: number) {
+      return client.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: tokens,
+        system: baseSystem,
+        tools: [tool],
+        tool_choice: { type: "tool", name: tool.name },
+        messages: [{ role: "user", content: userCue }],
+      });
+    }
+
+    let res = await callOnce(maxTokens);
+    let parsed = extractPlanFromContent(res.content);
+
+    // Truncation : retry avec plus de budget, MÊME outil (why conservé sur desk).
+    if (
+      !parsed?.message.trim() &&
+      res.stop_reason === "max_tokens" &&
+      !forNotify
+    ) {
+      console.warn("[plan] max_tokens sans message — retry budget ↑");
+      res = await callOnce(Math.min(Math.max(maxTokens * 2, 1600), 2500));
+      parsed = extractPlanFromContent(res.content);
+    }
+
     if (!parsed?.message.trim()) {
       if (forNotify) {
         const plan = fallbackNotifyPlan(open, body.sourceMessage);
         return Response.json({ message: plan.message, pick: plan.pick });
       }
+      console.error(
+        "[plan] réponse inutilisable",
+        res.stop_reason,
+      );
+      const plan = fallbackPlan(context, open, body.chosen);
       return Response.json({
-        message: "",
-        pick: "15",
+        message: plan.message,
+        pick: plan.pick,
         unreachable: true,
         ...(debug
           ? {
               debug: debugPayload(open, {
-                why: "réponse illisible — pas de repli à l'écran",
+                why: `réponse illisible (stop=${res.stop_reason}) — conseil de secours`,
                 system: baseSystem,
                 user: userCue,
               }),
@@ -644,7 +691,8 @@ export async function POST(req: Request) {
         : {}),
     });
   } catch (e) {
-    console.error("[plan] échec:", e instanceof Error ? e.message : e);
+    const kind = classifyAnthropicError(e);
+    console.error("[plan] échec:", kind, e instanceof Error ? e.message : e);
     const plan = forNotify
       ? fallbackNotifyPlan(open, body.sourceMessage)
       : fallbackPlan(context, open, body.chosen);
@@ -652,6 +700,7 @@ export async function POST(req: Request) {
       message: plan.message,
       pick: plan.pick,
       unreachable: true,
+      errorKind: kind,
       ...(debug
         ? {
             debug: debugPayload(open, {

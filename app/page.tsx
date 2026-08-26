@@ -27,7 +27,10 @@ import InstallPrompt from "@/components/InstallPrompt";
 import RitualNotify from "@/components/RitualNotify";
 import SettingsSheet from "@/components/SettingsSheet";
 import { useRitualReminder } from "@/components/useRitualReminder";
-import { isNotifyPromptDismissed } from "@/lib/notifications";
+import {
+  buildOfflinePlanHint,
+  isNotifyPromptDismissed,
+} from "@/lib/notifications";
 import { isDiagnosticEnabled } from "@/lib/diagnostic";
 import { buildPlanViewSnapshot, planViewFromDebug } from "@/lib/plan-candidates";
 import PlanDiagnostic, {
@@ -420,71 +423,66 @@ export default function Home() {
         const msg = (j?.message ?? "").trim();
         const unreachable = Boolean(j?.unreachable) || !msg;
         setPlanUnreachable(unreachable);
+        // Même en cas d'échec Claude, on garde un conseil concret (serveur ou
+        // secours local) pour pouvoir lancer la séance sans attendre.
+        const pick = j?.pick ?? "15";
+        const effective = msg
+          ? { message: msg, pick }
+          : buildOfflinePlanHint(openThreads, duration);
+        setPlan(effective);
+        if (manualPickSig.current !== planSig) {
+          applyPick(effective.pick, planSig);
+        }
         if (msg && !unreachable) {
-          const pick = j?.pick ?? "15";
-          setPlan({ message: msg, pick });
-          if (manualPickSig.current !== planSig) {
-            applyPick(pick, planSig);
-          }
           const why = (j?.why ?? "").trim();
           if (
             why &&
             !wantDebug &&
             isDayPlanContext(context)
           ) {
-            persistPlanSlot(context, { why, message: msg, pick });
-          }
-          if (wantDebug) {
-            const view =
-              (j?.debug && planViewFromDebug(j.debug)) ||
-              buildPlanViewSnapshot(openThreads);
-            setPlanDiag({
-              view,
-              why: typeof j?.debug?.why === "string" ? j.debug.why : why,
-              system:
-                typeof j?.debug?.system === "string"
-                  ? j.debug.system
-                  : undefined,
-              user:
-                typeof j?.debug?.user === "string" ? j.debug.user : undefined,
-              source: "api",
+            persistPlanSlot(context, {
+              why,
               message: msg,
-              pick,
+              pick: effective.pick,
             });
-          } else {
-            setPlanDiag(null);
           }
+        }
+        if (wantDebug) {
+          const view =
+            (j?.debug && planViewFromDebug(j.debug)) ||
+            buildPlanViewSnapshot(openThreads);
+          setPlanDiag({
+            view,
+            why: typeof j?.debug?.why === "string" ? j.debug.why : (j?.why ?? ""),
+            system:
+              typeof j?.debug?.system === "string"
+                ? j.debug.system
+                : undefined,
+            user:
+              typeof j?.debug?.user === "string" ? j.debug.user : undefined,
+            source: j ? "api" : "offline",
+            message: effective.message,
+            pick: effective.pick,
+          });
         } else {
-          setPlan(null);
-          if (wantDebug) {
-            setPlanDiag({
-              view:
-                (j?.debug && planViewFromDebug(j.debug)) ||
-                buildPlanViewSnapshot(openThreads),
-              why: typeof j?.debug?.why === "string" ? j.debug.why : undefined,
-              system:
-                typeof j?.debug?.system === "string"
-                  ? j.debug.system
-                  : undefined,
-              user:
-                typeof j?.debug?.user === "string" ? j.debug.user : undefined,
-              source: j ? "api" : "offline",
-              message: msg,
-              pick: j?.pick ?? "15",
-            });
-          }
+          setPlanDiag(null);
         }
       })
       .catch(() => {
         if (cancelled) return;
         if (planReq.current !== reqId || planCtxRef.current !== context) return;
         setPlanUnreachable(true);
+        const hint = buildOfflinePlanHint(openThreads, duration);
+        setPlan(hint);
+        if (manualPickSig.current !== planSig) {
+          applyPick(hint.pick, planSig);
+        }
         if (wantDebug) {
           setPlanDiag({
             view: buildPlanViewSnapshot(openThreads),
             source: "offline",
-            message: "",
-            pick: "15",
+            message: hint.message,
+            pick: hint.pick,
           });
         }
       })
@@ -538,13 +536,12 @@ export default function Home() {
     clearActiveSession();
     setResume(null);
     sessionStartRef.current = new Date().toISOString();
-    // Le texte AFFICHÉ sur la carte, pas un brief de notif resté en mémoire.
+    // Le texte AFFICHÉ sur la carte (y compris conseil de secours si Claude
+    // n'a pas répondu) — pas un brief de notif resté en mémoire.
     const msg =
       opts && "brief" in opts
         ? (opts.brief?.trim() ?? "")
-        : planUnreachable
-          ? ""
-          : (plan?.message ?? "").trim();
+        : (plan?.message ?? "").trim();
     sessionBriefRef.current = msg || null;
     setRitualBrief(msg ? { message: msg } : null);
     setView("session");
@@ -649,55 +646,65 @@ export default function Home() {
           const msg = (j.message ?? "").trim();
           const unreachable = Boolean(j.unreachable) || !msg;
           setPlanUnreachable(unreachable);
+          const pick = opts?.chosen
+            ? String(opts.chosen)
+            : (j.pick ?? "15");
+          const effective = msg
+            ? { message: msg, pick }
+            : buildOfflinePlanHint(
+                openThreads,
+                opts?.chosen ?? duration,
+              );
+          setPlan(effective);
           if (msg && !unreachable) {
-            const pick = opts?.chosen
-              ? String(opts.chosen)
-              : (j.pick ?? "15");
-            setPlan({ message: msg, pick });
             const why = (j.why ?? cached?.why ?? "").trim();
             if (why && !wantDebug && isDayPlanContext(ctx)) {
-              persistPlanSlot(ctx, { why, message: msg, pick });
-            }
-            if (wantDebug) {
-              const view =
-                (j.debug && planViewFromDebug(j.debug)) ||
-                buildPlanViewSnapshot(openThreads);
-              setPlanDiag({
-                view,
-                why: j.debug?.why ?? why,
-                system: j.debug?.system,
-                user: j.debug?.user,
-                source: "api",
+              persistPlanSlot(ctx, {
+                why,
                 message: msg,
-                pick,
+                pick: effective.pick,
               });
             }
-          } else {
-            setPlan(null);
-            if (wantDebug) {
-              setPlanDiag({
-                view: buildPlanViewSnapshot(openThreads),
-                source: "offline",
-                message: "",
-                pick: "15",
-              });
-            }
+          }
+          if (wantDebug) {
+            const view =
+              (j.debug && planViewFromDebug(j.debug)) ||
+              buildPlanViewSnapshot(openThreads);
+            setPlanDiag({
+              view,
+              why: j.debug?.why ?? (j.why ?? ""),
+              system: j.debug?.system,
+              user: j.debug?.user,
+              source: "api",
+              message: effective.message,
+              pick: effective.pick,
+            });
           }
         }
       } else if (planReq.current === reqId && planCtxRef.current === ctx) {
         setPlanUnreachable(true);
+        const hint = buildOfflinePlanHint(
+          openThreads,
+          opts?.chosen ?? duration,
+        );
+        setPlan(hint);
         if (wantDebug) {
           setPlanDiag({
             view: buildPlanViewSnapshot(openThreads),
             source: "offline",
-            message: "",
-            pick: "15",
+            message: hint.message,
+            pick: hint.pick,
           });
         }
       }
     } catch {
       if (planReq.current === reqId && planCtxRef.current === ctx) {
         setPlanUnreachable(true);
+        setPlan(
+          (prev) =>
+            prev ??
+            buildOfflinePlanHint(openThreads, opts?.chosen ?? duration),
+        );
         if (wantDebug) {
           setPlanDiag({
             view: buildPlanViewSnapshot(openThreads),
@@ -1102,12 +1109,12 @@ export default function Home() {
                       className="whitespace-pre-wrap text-[15px] leading-relaxed text-teal-ink"
                       trucs={trucs}
                     />
+                    {planUnreachable ? (
+                      <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
+                        Conseil de secours — Élan n&apos;a pas répondu à temps.
+                      </p>
+                    ) : null}
                   </div>
-                ) : planUnreachable ? (
-                  <p className="text-[15px] leading-relaxed text-amber">
-                    Je n&apos;arrive pas à joindre Élan pour le moment. Tes
-                    trucs sont bien là — tu peux quand même lancer un créneau.
-                  </p>
                 ) : (
                   <AssistantSpeech
                     content={planFallbackMessage(context)}
@@ -1137,10 +1144,13 @@ export default function Home() {
               onClick={() =>
                 context === "deposer" ? startDeposer() : startFresh()
               }
-              disabled={planLoading && context !== "deposer"}
-              className="mt-5 w-full rounded-xl bg-teal py-4 text-center font-display text-lg font-semibold text-white transition hover:bg-teal-ink disabled:opacity-50"
+              className="mt-5 w-full rounded-xl bg-teal py-4 text-center font-display text-lg font-semibold text-white transition hover:bg-teal-ink"
             >
-              {context === "deposer" ? "Déposer" : "Commencer la séance"}
+              {context === "deposer"
+                ? "Déposer"
+                : planLoading
+                  ? "Commencer quand même"
+                  : "Commencer la séance"}
             </button>
           </>
         )}

@@ -7,7 +7,12 @@ export type PlanJson = { message: string; pick: string; why?: string };
 
 export const CONSEIL_TOOL_NAME = "conseil_du_jour";
 
-/** Force un JSON {why, message, pick} — l'arbitrage écrit guide le conseil. */
+/**
+ * Force un JSON {why, message, pick}.
+ * why EN PREMIER : l'arbitrage écrit guide le conseil visible (qualité).
+ * Budget max_tokens côté /api/plan doit être assez large pour ne pas
+ * tronquer avant message/pick.
+ */
 export const CONSEIL_TOOL = {
   name: CONSEIL_TOOL_NAME,
   description:
@@ -22,7 +27,8 @@ export const CONSEIL_TOOL = {
       },
       message: {
         type: "string",
-        description: "2 à 4 phrases, françaises, sans markdown. La conclusion seulement.",
+        description:
+          "2 à 4 phrases, françaises, sans markdown. La conclusion seulement — en cohérence avec why.",
       },
       pick: {
         type: "string",
@@ -36,22 +42,26 @@ export const CONSEIL_TOOL = {
 
 export const PHRASE_TOOL_NAME = "conseil_duree";
 
-/** Recale le message sur une durée — l'arbitrage (why) est déjà tranché. */
+/**
+ * Message + pick seuls — recalage de durée (why déjà tranché), outdoor, notif.
+ * Pas d'arbitrage écrit ici : le why du jour reste celui du premier conseil desk.
+ */
 export const PHRASE_TOOL = {
   name: PHRASE_TOOL_NAME,
   description:
-    "Le conseil pour CETTE durée. L'arbitrage est déjà fait : ne le refais pas. Même truc, phrase calée sur le temps demandé.",
+    "Le conseil à l'écran : la phrase visible et la durée (ou sortie). Pas d'arbitrage écrit.",
   input_schema: {
     type: "object" as const,
     properties: {
       message: {
         type: "string",
-        description: "2 à 4 phrases, françaises, sans markdown. La conclusion seulement.",
+        description:
+          "2 à 4 phrases, françaises, sans markdown. La conclusion seulement.",
       },
       pick: {
         type: "string",
         enum: [...PLAN_PICKS],
-        description: "La durée demandée, ou sortie si l'arbitrage l'impose.",
+        description: "Durée du créneau, ou sortie.",
       },
     },
     required: ["message", "pick"],

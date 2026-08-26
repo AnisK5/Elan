@@ -66,6 +66,23 @@ describe("extractPlanFromContent", () => {
     });
   });
 
+  it("accepte message+pick sans why (ordre fiable)", () => {
+    const plan = extractPlanFromContent([
+      {
+        type: "tool_use",
+        name: "conseil_du_jour",
+        input: {
+          message: "Je te propose 15 min pour relancer Laura.",
+          pick: "15",
+        },
+      },
+    ]);
+    expect(plan).toEqual({
+      message: "Je te propose 15 min pour relancer Laura.",
+      pick: "15",
+    });
+  });
+
   it("retombe sur le JSON texte", () => {
     const plan = extractPlanFromContent([
       {
