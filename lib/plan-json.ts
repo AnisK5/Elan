@@ -8,41 +8,44 @@ export type PlanJson = { message: string; pick: string; why?: string };
 export const CONSEIL_TOOL_NAME = "conseil_du_jour";
 
 /**
- * Force un JSON {message, pick, why?}.
- * message + pick D'ABORD : si max_tokens coupe, on a quand même le conseil
- * visible. why (arbitrage du jour) vient après, optionnel — utile pour
- * recalage de durée, pas bloquant pour l'écran.
+ * Force un JSON {why, message, pick}.
+ * why EN PREMIER : l'arbitrage écrit guide le conseil visible (qualité).
+ * Budget max_tokens côté /api/plan doit être assez large pour ne pas
+ * tronquer avant message/pick.
  */
 export const CONSEIL_TOOL = {
   name: CONSEIL_TOOL_NAME,
   description:
-    "Le conseil du jour. Remplis message et pick EN PREMIER (ce que la personne lit), puis why si tu as la place (arbitrage silencieux, 6 points courts).",
+    "Le conseil du jour. Remplis why EN PREMIER (les 6 points d'arbitrage), puis message et pick, en cohérence avec why.",
   input_schema: {
     type: "object" as const,
     properties: {
+      why: {
+        type: "string",
+        description:
+          "Les 6 points d'ARBITRAGE SILENCIEUX, une phrase courte chacun, numérotés 1) à 6). Factuel, pour le développeur. JAMAIS repris dans message.",
+      },
       message: {
         type: "string",
         description:
-          "2 à 4 phrases, françaises, sans markdown. La conclusion seulement — ce qui s'affiche à l'écran.",
+          "2 à 4 phrases, françaises, sans markdown. La conclusion seulement — en cohérence avec why.",
       },
       pick: {
         type: "string",
         enum: [...PLAN_PICKS],
-        description: "Durée du créneau, ou sortie.",
-      },
-      why: {
-        type: "string",
-        description:
-          "Optionnel. Les 6 points d'ARBITRAGE SILENCIEUX, une phrase courte chacun, numérotés 1) à 6). Factuel, pour le cache du jour. JAMAIS repris dans message. À remplir APRÈS message et pick.",
+        description: "Durée du créneau, ou sortie. Doit suivre why.",
       },
     },
-    required: ["message", "pick"],
+    required: ["why", "message", "pick"],
   },
 };
 
 export const PHRASE_TOOL_NAME = "conseil_duree";
 
-/** Message + pick seuls — recalage de durée, outdoor, notif. */
+/**
+ * Message + pick seuls — recalage de durée (why déjà tranché), outdoor, notif.
+ * Pas d'arbitrage écrit ici : le why du jour reste celui du premier conseil desk.
+ */
 export const PHRASE_TOOL = {
   name: PHRASE_TOOL_NAME,
   description:
@@ -52,7 +55,8 @@ export const PHRASE_TOOL = {
     properties: {
       message: {
         type: "string",
-        description: "2 à 4 phrases, françaises, sans markdown. La conclusion seulement.",
+        description:
+          "2 à 4 phrases, françaises, sans markdown. La conclusion seulement.",
       },
       pick: {
         type: "string",

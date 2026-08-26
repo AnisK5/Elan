@@ -276,8 +276,8 @@ RÉGULIERS (fil conteneur — loyer, URSSAF, draps, tout ce qui REVIENT et que L
 - Formule « ça fait X semaines / un mois » — jamais « en retard ».
 - Si aucun régulier n'est mûr, n'en parle pas dans le message.
 
-RÉPONDS via l'outil conseil_du_jour, rien d'autre. Ordre : "message" puis "pick" EN PREMIER (ce que la personne lit), puis "why" (les 6 points, une phrase chacun) si tu as la place.
-Le message est la CONCLUSION — jamais le parcours. "pick" = "5"|"15"|"30"|"50"|"sortie". L'arbitrage (why) reste silencieux à l'écran.
+RÉPONDS via l'outil conseil_du_jour, rien d'autre. Ordre : "why" (les 6 points, une phrase chacun), puis "message", puis "pick".
+Le message est la CONCLUSION — jamais le parcours. "pick" = "5"|"15"|"30"|"50"|"sortie", en cohérence avec why.
 
 SES TRUCS :
 ${render}
@@ -603,15 +603,15 @@ export async function POST(req: Request) {
             situation,
           );
     const tool = shortTool ? PHRASE_TOOL : CONSEIL_TOOL;
-    // Desk : budget large pour why optionnel sans tronquer message/pick.
-    // Notif : court. Recalage / outdoor : moyen.
+    // Desk : why d'abord (qualité) → budget large pour ne pas tronquer.
+    // Notif : court. Recalage / outdoor : moyen, sans why.
     const maxTokens = forNotify
       ? 220
       : shortTool
         ? 400
         : debug
-          ? 2000
-          : 1200;
+          ? 2500
+          : 1800;
 
     const client = new Anthropic({
       apiKey,
@@ -633,27 +633,14 @@ export async function POST(req: Request) {
     let res = await callOnce(maxTokens);
     let parsed = extractPlanFromContent(res.content);
 
-    // Truncation mid-why (ou mid-message) : un seul retry avec plus de budget,
-    // ou bascule sur l'outil court si le desk a échoué.
+    // Truncation : retry avec plus de budget, MÊME outil (why conservé sur desk).
     if (
       !parsed?.message.trim() &&
       res.stop_reason === "max_tokens" &&
       !forNotify
     ) {
-      console.warn("[plan] max_tokens sans message — retry");
-      if (!shortTool) {
-        // Retry desk sans why : même prompt, outil court.
-        res = await client.messages.create({
-          model: "claude-sonnet-4-6",
-          max_tokens: 500,
-          system: baseSystem,
-          tools: [PHRASE_TOOL],
-          tool_choice: { type: "tool", name: PHRASE_TOOL.name },
-          messages: [{ role: "user", content: userCue }],
-        });
-      } else {
-        res = await callOnce(Math.min(maxTokens * 2, 800));
-      }
+      console.warn("[plan] max_tokens sans message — retry budget ↑");
+      res = await callOnce(Math.min(Math.max(maxTokens * 2, 1600), 2500));
       parsed = extractPlanFromContent(res.content);
     }
 
