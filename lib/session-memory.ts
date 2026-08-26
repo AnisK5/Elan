@@ -5,6 +5,7 @@ import {
   dueLabel,
   intentionLabel,
 } from "./thread-labels";
+import { splitPlanThreads } from "./plan-candidates";
 
 export function sessionsToday(sessions: SessionLog[]): SessionLog[] {
   const start = new Date();
@@ -67,6 +68,27 @@ export function renderOpenThreads(
     : `${open.length} trucs ouverts (${overdueDue} dont la fenêtre est passée)`;
 
   return `${header} :\n${open.map((t) => renderThreadLine(t, style)).join("\n")}`;
+}
+
+/** Séance bureau : les fils trop tôt ne sont pas un menu. */
+export function renderDeskSessionThreads(
+  threads: Thread[],
+  emptyMessage: string,
+): string {
+  const open = threads.filter((t) => t.status === "open");
+  if (open.length === 0) return emptyMessage;
+  const { candidates, waiting } = splitPlanThreads(open);
+  const overdueDue = open.filter((t) => t.due && dayDiff(t.due) < 0).length;
+  const header = `${open.length} trucs ouverts (${overdueDue} échéances passées)`;
+  const now =
+    candidates.length > 0
+      ? `POUR AUJOURD'HUI :\n${candidates.map((t) => renderThreadLine(t, "session")).join("\n")}`
+      : "POUR AUJOURD'HUI : (rien de mûr — ne fabrique pas de travail).";
+  const later =
+    waiting.length > 0
+      ? `\n\nPAS POUR AUJOURD'HUI (trop tôt — « vers / à partir du », relance future, contacté récemment). NE PROPOSE PAS, même si on vient d'écarter un autre truc :\n${waiting.map((t) => renderThreadLine(t, "session")).join("\n")}`
+      : "";
+  return `${header}.\n\n${now}${later}`;
 }
 
 /** Ce qui a bougé — ou stagné — depuis la dernière séance du jour. */

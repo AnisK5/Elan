@@ -118,6 +118,17 @@ describe("isDeskPlanCandidate — cas Claire", () => {
     expect(isRelanceStyleText("déclaration URSSAF")).toBe(false);
   });
 
+  it("exclut « vers le 1er septembre » même sans année dans la note", () => {
+    const t = thread({
+      text: "MP LinkedIn à Claire Ducreux (Saegus)",
+      kind: "action",
+      due: daysFromNow(8),
+      note: "Claire Ducreux, contact Saegus sur LinkedIn. À faire vers le 1er septembre.",
+    });
+    expect(hasFutureSoftTiming(t.note)).toBe(true);
+    expect(isDeskPlanCandidate(t)).toBe(false);
+  });
+
   it("exclut Claire « à faire vers le 1er septembre » (timing doux)", () => {
     const t = thread({
       text: "MP LinkedIn à Claire Ducreux (Saegus)",

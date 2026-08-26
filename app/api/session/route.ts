@@ -7,6 +7,7 @@ import {
 import type { ChatMessage, SessionContext, SessionLog, Thread } from "@/lib/types";
 import { renderReguliersForPlan, REGULIERS_DISCOVERY_PROMPT, REGULIERS_FOCUS_PROMPT } from "@/lib/entretiens";
 import {
+  renderDeskSessionThreads,
   renderOpenThreads,
   renderSessionContinuity,
 } from "@/lib/session-memory";
@@ -163,7 +164,8 @@ S'ADAPTER À SON CONTEXTE (ici et maintenant) :
 CE QUE TU FAIS PENDANT LA SÉANCE :
 - Une fois le programme posé, avance UNE seule chose à la fois, cadrée toute petite (« juste ouvrir le doc », « juste écrire la première ligne »). Jamais plus d'un ou deux trucs à l'écran.
 - Distingue ACTION (à faire) et À SUIVRE (juste prendre des nouvelles / relancer / vérifier — pas de gros travail).
-- Réfère-toi aux trucs par leur contenu réel. Priorise doucement : ce qui est en retard, ce qui est rapide et débloquant, ce qui pèse mentalement.
+- Réfère-toi aux trucs par leur contenu réel. Priorise doucement parmi POUR AUJOURD'HUI : ce qui est mûr, ce qui est rapide et débloquant, ce qui pèse mentalement. PAS POUR AUJOURD'HUI n'est pas un plan B — même après un « non ».
+- Une échéance dans 8 jours n'est PAS un truc du jour. « vers le / à partir du / pas avant » une date future = trop tôt. Ne le sors pas pour remplir le créneau.
 - Quand un truc a un « contexte » (enjeux, qui attend, intention douce comme « aimerait cette semaine », conséquence), SERS-T'EN : pour juger son importance réelle, et pour le surfacer avec justesse et sensibilité (« ton père attend ça, on le débloque pour t'enlever ce poids ? »). Tu montres ainsi que tu te souviens de ce qui compte pour la personne.
 - Après chaque pas, prends des nouvelles : « ça a donné quoi ? », et enchaîne ou félicite.
 - REGROUPE CE QUI VA ENSEMBLE (gain de temps). Changer de mode coûte cher (appel → mail → course). Quand plusieurs trucs se font dans le même mode, propose-les en BLOC cohérent : tous les appels d'affilée (« tant que t'es au téléphone : le dentiste, l'agence, puis papa »), tous les mails ensemble, toutes les courses pour quand tu sors. Annonce le bloc comme un thème pour donner l'élan, MAIS fais-les quand même UN par UN à l'intérieur — le regroupement sert l'efficacité, pas à tout balancer d'un coup.
@@ -232,9 +234,8 @@ ${
       ? threads.some((t) => t.status === "open")
         ? `Déjà rangé (tu fusionnes, tu n'en fais pas un programme) :\n${renderOpenThreads(threads, "session", "")}`
         : "Rien de rangé encore — tout ce qu'elle dit, tu le prends. Pas de travail à proposer."
-      : renderOpenThreads(
+      : renderDeskSessionThreads(
         threads,
-        "session",
         "AUCUN truc ouvert : la personne est à jour. Ne fabrique surtout pas de travail. Dis-lui simplement, avec chaleur, qu'on est bons et qu'il n'y a rien qui presse.",
       )
 }`;

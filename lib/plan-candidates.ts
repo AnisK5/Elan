@@ -61,6 +61,7 @@ function parseFrDayMonth(
   day: number,
   month: number,
   year?: number,
+  horizon: "past" | "future" = "past",
 ): Date | null {
   if (day < 1 || day > 31 || month < 1 || month > 12) return null;
   const today = startOfToday();
@@ -69,8 +70,11 @@ function parseFrDayMonth(
     y = today.getFullYear();
     const candidate = new Date(y, month - 1, day);
     candidate.setHours(0, 0, 0, 0);
-    // Date future dans l'année civile → probablement l'année d'avant (ex. 31/12 lu en janv.).
-    if (candidate.getTime() > today.getTime() + 2 * 86_400_000) {
+    if (horizon === "future") {
+      // « vers le 1er septembre » lu en août → cette année, pas l'an dernier.
+      if (candidate.getTime() < today.getTime()) y += 1;
+    } else if (candidate.getTime() > today.getTime() + 2 * 86_400_000) {
+      // « relancé le 31/12 » lu en janvier → l'année d'avant.
       y -= 1;
     }
   } else if (y < 100) {
@@ -146,21 +150,34 @@ export function softTimingNotBefore(note: string | undefined): Date | null {
       Number(slash[1]),
       Number(slash[2]),
       slash[3] ? Number(slash[3]) : undefined,
+      "future",
     );
   }
 
   const iso = after.match(/^\s*(\d{4})-(\d{2})-(\d{2})/);
   if (iso) {
-    return parseFrDayMonth(Number(iso[3]), Number(iso[2]), Number(iso[1]));
+    return parseFrDayMonth(
+      Number(iso[3]),
+      Number(iso[2]),
+      Number(iso[1]),
+      "future",
+    );
   }
 
   const named = after.match(
-    /^\s*(?:le\s+)?(\d{1,2}|1er)\s+([a-zéûôà]+)\s+(\d{4})/i,
+    /^\s*(?:le\s+)?(\d{1,2}|1er)\s+([a-zéûôà]+)(?:\s+(\d{4}))?/i,
   );
   if (named) {
     const dayRaw = named[1].toLowerCase() === "1er" ? 1 : Number(named[1]);
     const month = FR_MONTHS[named[2].toLowerCase()];
-    if (month) return parseFrDayMonth(dayRaw, month, Number(named[3]));
+    if (month) {
+      return parseFrDayMonth(
+        dayRaw,
+        month,
+        named[3] ? Number(named[3]) : undefined,
+        "future",
+      );
+    }
   }
 
   return null;
