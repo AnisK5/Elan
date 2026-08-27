@@ -2,9 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Logo } from "@/components/home/Branding";
-import { AssistantSpeech } from "@/components/HighlightEncart";
 import AnalyticsDashboard from "@/components/admin/AnalyticsDashboard";
+import UserConversationsPanel from "@/components/admin/UserConversationsPanel";
+import {
+  ActivityWeightStrip,
+  WeightedDayFrise,
+} from "@/components/admin/UserTimelineFrise";
+import { Logo } from "@/components/home/Branding";
 import type { AdminAnalyticsSnapshot } from "@/lib/admin-analytics";
 import type { AdminUserDetail } from "@/lib/admin-user-detail";
 import { getSupabase } from "@/lib/supabase";
@@ -41,6 +45,14 @@ function fmtWhen(iso: string): string {
   });
 }
 
+const SECTIONS = [
+  { id: "frise", label: "Frise" },
+  { id: "conversations", label: "Conversations" },
+  { id: "trucs", label: "Trucs" },
+  { id: "usage", label: "Appels IA" },
+  { id: "profil", label: "Profil" },
+] as const;
+
 export default function AdminUserPage({
   params,
 }: {
@@ -49,7 +61,7 @@ export default function AdminUserPage({
   const [userId, setUserId] = useState<string | null>(null);
   const [detail, setDetail] = useState<AdminUserDetail | null>(null);
   const [analytics, setAnalytics] = useState<AdminAnalyticsSnapshot | null>(null);
-  const [openSession, setOpenSession] = useState<string | null>(null);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [error, setError] = useState<
     "auth" | "forbidden" | "fail" | "setup" | "notfound" | null
   >(null);
@@ -110,7 +122,7 @@ export default function AdminUserPage({
   const e = detail?.engagement;
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-5 pb-16">
+    <main className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col px-5 pb-20">
       <header className="flex items-center justify-between py-6">
         <Link href="/" className="flex items-center gap-2">
           <Logo />
@@ -164,215 +176,247 @@ export default function AdminUserPage({
             <div className="mt-3 flex flex-wrap gap-2">
               <Badge>{e.activated ? "Activé" : "Pas encore de séance"}</Badge>
               {e.notifyEnabled ? <Badge>Notifs</Badge> : null}
-              {e.feedbackCount > 0 ? (
-                <Badge>{e.feedbackCount} retour{e.feedbackCount > 1 ? "s" : ""}</Badge>
+              {detail.totals.weightMin90 > 0 ? (
+                <Badge>{detail.totals.weightMin90} min pond. (90 j)</Badge>
+              ) : null}
+              {detail.totals.tokensTotal > 0 ? (
+                <Badge>
+                  {detail.totals.tokensTotal.toLocaleString("fr-FR")} tok
+                </Badge>
               ) : null}
             </div>
           </div>
 
-          <section className="mt-8 grid gap-3 sm:grid-cols-2">
-            <Card title="Profil">
-              <Row label="Inscrit" value={fmtDay(p.signedUp)} />
-              <Row label="Vu" value={fmtDay(e.lastSeen)} />
-              <Row
-                label="Dernière séance"
-                value={fmtDay(e.lastSessionAt)}
-              />
-              <Row
-                label="Créneau habituel"
-                value={`${p.defaultDurationMin} min · ${p.notifyTimezone}`}
-              />
-              {p.situation ? (
-                <Row
-                  label="Situation"
-                  value={
-                    p.situationUntil
-                      ? `${p.situation} (jusqu'au ${fmtDay(p.situationUntil)})`
-                      : p.situation
-                  }
-                />
-              ) : null}
-            </Card>
+          <nav className="sticky top-0 z-20 -mx-5 mt-6 flex gap-1 overflow-x-auto border-b border-line bg-paper/95 px-5 py-2 backdrop-blur-sm">
+            {SECTIONS.map((s) => (
+              <a
+                key={s.id}
+                href={`#${s.id}`}
+                className="shrink-0 rounded-lg px-3 py-1.5 text-[13px] font-medium text-muted transition hover:bg-sink hover:text-ink"
+              >
+                {s.label}
+              </a>
+            ))}
+          </nav>
 
-            <Card title="Engagement (30 j)">
-              <Row label="Jours actifs" value={String(e.daysActive30)} />
-              <Row label="Séances" value={String(e.sessions)} />
-              <Row label="Minutes séance" value={String(e.sessionMinutes)} />
-              <Row label="Dwell" value={`${e.dwellMinutes} min`} />
-              <Row label="Réglés" value={String(e.done30)} />
-              <Row
-                label="Suite"
-                value={
-                  e.longestStreak > e.streak
-                    ? `${e.streak} · max ${e.longestStreak}`
-                    : String(e.streak)
-                }
-              />
-            </Card>
-
-            <Card title="Backlog">
-              <Row label="Ouverts" value={String(detail.backlog.open)} />
-              <Row label="En pause" value={String(detail.backlog.snoozed)} />
-              <Row label="Réglés" value={String(detail.backlog.done)} />
-              {detail.backlog.recent.length > 0 ? (
-                <ul className="mt-2 space-y-1.5 border-t border-line pt-2">
-                  {detail.backlog.recent.map((t) => (
-                    <li key={t.id} className="text-[12px] text-muted">
-                      <span className="text-faint">{t.status} · </span>
-                      {t.text}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </Card>
-
-            <Card title="Notifs">
-              <Row
-                label="Push"
-                value={detail.notifs.pushEnabled ? "Oui" : "Non"}
-              />
-              <Row
-                label="Email"
-                value={detail.notifs.emailEnabled ? "Oui" : "Non"}
-              />
-              <Row label="Heure" value={detail.notifs.notifyTime} />
-              <Row
-                label="Appareil inscrit"
-                value={detail.notifs.hasPushSub ? "Oui" : "Non"}
-              />
-            </Card>
-          </section>
-
-          {detail.feedbacks.length > 0 ? (
-            <section className="mt-10">
-              <h2 className="font-display text-lg font-semibold text-ink">
-                Retours
-              </h2>
-              <div className="mt-3 flex flex-col gap-2">
-                {detail.feedbacks.map((f) => (
-                  <div
-                    key={f.id}
-                    className="rounded-2xl border border-line bg-surface px-4 py-3"
-                  >
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-faint">
-                      <span>{fmtWhen(f.createdAt)}</span>
-                      {f.mood ? <span>· {f.mood}</span> : null}
-                      <span>· {f.source}</span>
-                    </div>
-                    <p className="mt-1.5 whitespace-pre-wrap text-[14px] leading-relaxed text-ink">
-                      {f.message}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          {analytics ? (
-            <section className="mt-10">
-              <h2 className="font-display text-lg font-semibold text-ink">
-                Tokens & séances
-              </h2>
-              <p className="mt-1 text-[13px] text-muted">
-                Comment cette personne consomme l&apos;app — heures, durée,
-                abandon.
-              </p>
-              <div className="mt-4">
-                <AnalyticsDashboard data={analytics} compact />
-              </div>
-            </section>
-          ) : null}
-
-          <section className="mt-10">
+          <section id="frise" className="mt-8 scroll-mt-24">
             <h2 className="font-display text-lg font-semibold text-ink">
-              Parcours
+              Frise temporelle
             </h2>
-            <div className="mt-3 flex flex-col gap-2">
-              {detail.timeline.slice(0, 40).map((entry, i) => (
-                <div
-                  key={`${entry.at}-${entry.kind}-${i}`}
-                  className="flex gap-3 rounded-xl border border-line bg-surface px-3 py-2.5"
-                >
-                  <div className="w-[110px] shrink-0 text-[11px] leading-snug text-faint">
-                    {fmtWhen(entry.at)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[13px] font-medium text-ink">
-                      {entry.label}
-                    </div>
-                    {entry.detail ? (
-                      <div className="mt-0.5 truncate text-[12px] text-muted">
-                        {entry.detail}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
+            <p className="mt-1 text-[13px] text-muted">
+              Chaque jour est pondéré par le temps passé (dwell, séances) et les
+              actions. Clique un jour pour le détail.
+            </p>
+
+            <div className="mt-4 rounded-2xl border border-line bg-surface px-4 py-4">
+              <h3 className="text-[11px] font-medium uppercase tracking-wide text-faint">
+                Calendrier d&apos;intensité (90 j)
+              </h3>
+              <div className="mt-3">
+                <ActivityWeightStrip days={detail.activityDays} />
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <WeightedDayFrise
+                bands={detail.dayBands}
+                selectedDay={selectedDay}
+                onSelectDay={setSelectedDay}
+              />
             </div>
           </section>
 
-          <section className="mt-10">
+          <section id="conversations" className="mt-12 scroll-mt-24">
             <h2 className="font-display text-lg font-semibold text-ink">
-              Séances ({detail.sessions.length})
+              Conversations (séances)
+            </h2>
+            <p className="mt-1 text-[13px] text-muted">
+              Transcripts complets, échange par échange. Le chat « info en passant
+              » sur l&apos;accueil reste local — non visible ici.
+            </p>
+            <div className="mt-4">
+              <UserConversationsPanel sessions={detail.sessions} />
+            </div>
+          </section>
+
+          <section id="trucs" className="mt-12 scroll-mt-24">
+            <h2 className="font-display text-lg font-semibold text-ink">
+              Tous les trucs ({detail.threads.length})
             </h2>
             <div className="mt-3 flex flex-col gap-2">
-              {detail.sessions.map((s) => (
+              {detail.threads.map((t) => (
                 <div
-                  key={s.id}
-                  className="rounded-2xl border border-line bg-surface"
+                  key={t.id}
+                  className="rounded-xl border border-line bg-surface px-4 py-3"
                 >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setOpenSession(openSession === s.id ? null : s.id)
-                    }
-                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
-                  >
-                    <div>
-                      <div className="text-[14px] font-medium text-ink">
-                        {fmtWhen(s.date)}
-                      </div>
-                      <div className="mt-0.5 text-[12px] text-muted">
-                        {s.durationMin} min · {s.messageCount} messages
-                        {s.context ? ` · ${s.context}` : ""}
-                      </div>
-                    </div>
-                    <span className="text-faint">
-                      {openSession === s.id ? "▲" : "▼"}
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-faint">
+                    <span className="rounded bg-sink px-1.5 py-0.5 text-muted">
+                      {t.status}
                     </span>
-                  </button>
-                  {openSession === s.id ? (
-                    <div className="border-t border-line px-3 py-3">
-                      <div className="flex max-h-[420px] flex-col gap-2.5 overflow-y-auto">
-                        {s.transcript.map((m, i) => (
-                          <div
-                            key={i}
-                            className={
-                              m.role === "user"
-                                ? "flex justify-end"
-                                : "flex justify-start"
-                            }
-                          >
-                            {m.role === "user" ? (
-                              <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-sink px-3.5 py-2 text-[14px] leading-relaxed text-ink">
-                                {m.content}
-                              </div>
-                            ) : (
-                              <div className="max-w-[92%] px-1 py-1">
-                                <AssistantSpeech
-                                  content={m.content}
-                                  className="whitespace-pre-wrap text-[14px] leading-relaxed text-teal-ink"
-                                />
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                    <span>{t.kind}</span>
+                    {t.effort ? <span>· effort {t.effort}</span> : null}
+                    <span>· déposé {fmtDay(t.createdAt)}</span>
+                    {t.doneAt ? <span>· réglé {fmtDay(t.doneAt)}</span> : null}
+                    {t.touchedAt ? (
+                      <span>· travaillé {fmtDay(t.touchedAt)}</span>
+                    ) : null}
+                  </div>
+                  <p className="mt-1.5 text-[14px] font-medium text-ink">
+                    {t.text}
+                  </p>
+                  {t.note ? (
+                    <p className="mt-1 text-[12px] text-muted">{t.note}</p>
                   ) : null}
                 </div>
               ))}
             </div>
+          </section>
+
+          <section id="usage" className="mt-12 scroll-mt-24">
+            <h2 className="font-display text-lg font-semibold text-ink">
+              Appels IA ({detail.usageLog.length})
+            </h2>
+            <p className="mt-1 text-[13px] text-muted">
+              Chaque tour Claude — route, tokens, type d&apos;échange. Vide tant
+              que la migration <code className="text-ink">elan_api_usage</code>{" "}
+              n&apos;est pas passée.
+            </p>
+            {detail.usageLog.length > 0 ? (
+              <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-surface">
+                <table className="w-full min-w-[640px] text-left text-[12px]">
+                  <thead className="text-[10px] uppercase tracking-wide text-faint">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">Quand</th>
+                      <th className="px-3 py-2 font-medium">Route</th>
+                      <th className="px-3 py-2 font-medium">Type</th>
+                      <th className="px-3 py-2 font-medium">Tokens</th>
+                      <th className="px-3 py-2 font-medium">Modèle</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.usageLog.slice(0, 80).map((u) => (
+                      <tr key={u.id} className="border-t border-line">
+                        <td className="px-3 py-2 text-muted">
+                          {fmtWhen(u.at)}
+                        </td>
+                        <td className="px-3 py-2 text-ink">{u.route}</td>
+                        <td className="px-3 py-2 text-muted">
+                          {u.exchangeKind ?? "—"}
+                          {u.exchangeIndex != null ? ` #${u.exchangeIndex}` : ""}
+                        </td>
+                        <td className="px-3 py-2 text-ink">
+                          {(u.inputTokens + u.outputTokens).toLocaleString(
+                            "fr-FR",
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-faint">{u.model}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="mt-3 rounded-xl border border-line bg-surface px-4 py-4 text-[13px] text-muted">
+                Aucun appel enregistré pour l&apos;instant.
+              </p>
+            )}
+
+            {detail.feedbacks.length > 0 ? (
+              <div className="mt-8">
+                <h3 className="font-display text-base font-semibold text-ink">
+                  Retours ({detail.feedbacks.length})
+                </h3>
+                <div className="mt-3 flex flex-col gap-2">
+                  {detail.feedbacks.map((f) => (
+                    <div
+                      key={f.id}
+                      className="rounded-xl border border-line bg-surface px-4 py-3"
+                    >
+                      <div className="text-[11px] text-faint">
+                        {fmtWhen(f.createdAt)}
+                        {f.mood ? ` · ${f.mood}` : ""} · {f.source}
+                      </div>
+                      <p className="mt-1 whitespace-pre-wrap text-[14px] text-ink">
+                        {f.message}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </section>
+
+          <section id="profil" className="mt-12 scroll-mt-24">
+            <h2 className="font-display text-lg font-semibold text-ink">
+              Profil & engagement
+            </h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <Card title="Profil">
+                <Row label="Inscrit" value={fmtDay(p.signedUp)} />
+                <Row label="Vu" value={fmtDay(e.lastSeen)} />
+                <Row label="Dernière séance" value={fmtDay(e.lastSessionAt)} />
+                <Row
+                  label="Créneau habituel"
+                  value={`${p.defaultDurationMin} min · ${p.notifyTimezone}`}
+                />
+                {p.situation ? (
+                  <Row
+                    label="Situation"
+                    value={
+                      p.situationUntil
+                        ? `${p.situation} (jusqu'au ${fmtDay(p.situationUntil)})`
+                        : p.situation
+                    }
+                  />
+                ) : null}
+              </Card>
+              <Card title="Engagement (30 j)">
+                <Row label="Jours actifs" value={String(e.daysActive30)} />
+                <Row label="Séances" value={String(e.sessions)} />
+                <Row label="Minutes séance" value={String(e.sessionMinutes)} />
+                <Row label="Dwell" value={`${e.dwellMinutes} min`} />
+                <Row label="Réglés" value={String(e.done30)} />
+                <Row
+                  label="Suite"
+                  value={
+                    e.longestStreak > e.streak
+                      ? `${e.streak} · max ${e.longestStreak}`
+                      : String(e.streak)
+                  }
+                />
+              </Card>
+              <Card title="Backlog">
+                <Row label="Ouverts" value={String(detail.backlog.open)} />
+                <Row label="En pause" value={String(detail.backlog.snoozed)} />
+                <Row label="Réglés" value={String(detail.backlog.done)} />
+              </Card>
+              <Card title="Notifs">
+                <Row
+                  label="Push"
+                  value={detail.notifs.pushEnabled ? "Oui" : "Non"}
+                />
+                <Row
+                  label="Email"
+                  value={detail.notifs.emailEnabled ? "Oui" : "Non"}
+                />
+                <Row label="Heure" value={detail.notifs.notifyTime} />
+                <Row
+                  label="Appareil inscrit"
+                  value={detail.notifs.hasPushSub ? "Oui" : "Non"}
+                />
+              </Card>
+            </div>
+
+            {analytics ? (
+              <div className="mt-8">
+                <h3 className="font-display text-base font-semibold text-ink">
+                  Graphiques tokens
+                </h3>
+                <div className="mt-4">
+                  <AnalyticsDashboard data={analytics} compact />
+                </div>
+              </div>
+            ) : null}
           </section>
         </>
       )}

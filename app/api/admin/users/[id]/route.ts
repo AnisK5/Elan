@@ -13,6 +13,7 @@ import {
   type AdminRawUserDetailSession,
   type AdminRawUserDetailSettings,
   type AdminRawUserDetailThread,
+  type AdminRawUserDetailUsage,
 } from "@/lib/admin-user-detail";
 import { getUserFromBearer } from "@/lib/auth-request";
 import type { ChatMessage } from "@/lib/types";
@@ -58,6 +59,7 @@ export async function GET(
       donesRes,
       feedbackRes,
       pushRes,
+      usageRes,
     ] = await Promise.all([
       admin
         .from("elan_events")
@@ -79,7 +81,9 @@ export async function GET(
         .maybeSingle(),
       admin
         .from("elan_threads")
-        .select("id, text, kind, status, created_at, done_at")
+        .select(
+          "id, text, kind, status, created_at, done_at, touched_at, note, effort, due",
+        )
         .eq("user_id", userId),
       admin
         .from("elan_threads")
@@ -97,6 +101,15 @@ export async function GET(
         .select("id")
         .eq("user_id", userId)
         .limit(1),
+      admin
+        .from("elan_api_usage")
+        .select(
+          "id, at, route, model, input_tokens, output_tokens, exchange_kind, exchange_index, session_id, session_context, stop_reason, latency_ms",
+        )
+        .eq("user_id", userId)
+        .gte("at", since90)
+        .order("at", { ascending: false })
+        .limit(500),
     ]);
 
     const settingsRow = settingsRes.data as {
@@ -161,6 +174,10 @@ export async function GET(
         status: string;
         created_at: string;
         done_at: string | null;
+        touched_at: string | null;
+        note: string | null;
+        effort: string | null;
+        due: string | null;
       }[]
     ).map((r) => ({
       id: r.id,
@@ -169,6 +186,40 @@ export async function GET(
       status: r.status,
       createdAt: r.created_at,
       doneAt: r.done_at ?? undefined,
+      touchedAt: r.touched_at ?? undefined,
+      note: r.note ?? undefined,
+      effort: r.effort ?? undefined,
+      due: r.due ?? undefined,
+    }));
+
+    const usageLog: AdminRawUserDetailUsage[] = (
+      (usageRes.error ? [] : usageRes.data) ?? []
+    ).map((r: {
+      id: string;
+      at: string;
+      route: string;
+      model: string;
+      input_tokens: number;
+      output_tokens: number;
+      exchange_kind: string | null;
+      exchange_index: number | null;
+      session_id: string | null;
+      session_context: string | null;
+      stop_reason: string | null;
+      latency_ms: number | null;
+    }) => ({
+      id: r.id,
+      at: r.at,
+      route: r.route,
+      model: r.model,
+      inputTokens: r.input_tokens,
+      outputTokens: r.output_tokens,
+      exchangeKind: r.exchange_kind,
+      exchangeIndex: r.exchange_index,
+      sessionId: r.session_id,
+      sessionContext: r.session_context,
+      stopReason: r.stop_reason,
+      latencyMs: r.latency_ms,
     }));
 
     const feedbacks: AdminFeedbackItem[] = (
@@ -250,6 +301,7 @@ export async function GET(
       events,
       sessions,
       feedbacks,
+      usageLog,
       (pushRes.data ?? []).length > 0,
     );
 
