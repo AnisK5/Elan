@@ -133,6 +133,33 @@ create policy "own elan_feedback select" on public.elan_feedback
 create index if not exists elan_feedback_user_idx
   on public.elan_feedback(user_id, created_at desc);
 
+-- ── Consommation API Claude (tokens) ───────────────────────────────
+create table if not exists public.elan_api_usage (
+  id               uuid primary key default gen_random_uuid(),
+  user_id          uuid references auth.users(id) on delete cascade,
+  at               timestamptz not null default now(),
+  day              text not null,
+  route            text not null,
+  model            text not null,
+  input_tokens     int not null default 0,
+  output_tokens    int not null default 0,
+  session_id       text,
+  session_context  text,
+  exchange_index   int,
+  exchange_kind    text,
+  stop_reason      text,
+  latency_ms       int
+);
+alter table public.elan_api_usage enable row level security;
+create policy "own elan_api_usage insert" on public.elan_api_usage
+  for insert with check (auth.uid() = user_id);
+create index if not exists elan_api_usage_user_idx
+  on public.elan_api_usage(user_id, at desc);
+create index if not exists elan_api_usage_day_idx
+  on public.elan_api_usage(day desc);
+create index if not exists elan_api_usage_session_idx
+  on public.elan_api_usage(session_id) where session_id is not null;
+
 -- ── Cron rappel rituel (Supabase pg_cron → API Vercel) ───────────────
 -- Même modèle qu'en-suspens : le timing est côté Supabase, pas Vercel
 -- (plan Hobby Vercel = max 1 cron/jour).

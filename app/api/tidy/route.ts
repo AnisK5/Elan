@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { resolveAnthropicKey } from "@/lib/anthropic";
+import { recordMessageUsage } from "@/lib/api-usage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,6 +55,7 @@ export async function POST(req: Request) {
   if (!text) return Response.json({ title: null, note: null });
 
   const client = new Anthropic({ apiKey });
+  const startedAt = Date.now();
   try {
     const res = await client.messages.create({
       model: "claude-sonnet-4-6",
@@ -61,6 +63,12 @@ export async function POST(req: Request) {
       system: SYSTEM,
       messages: [{ role: "user", content: text }],
     });
+    void recordMessageUsage(
+      req,
+      res,
+      { route: "tidy", exchangeKind: "tidy" },
+      startedAt,
+    );
     const block = res.content.find((b) => b.type === "text");
     const raw = block && block.type === "text" ? block.text : "";
     const parsed = safeParse(raw);

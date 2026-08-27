@@ -12,6 +12,7 @@ import AiRetryBanner from "@/components/AiRetryBanner";
 import {
   applyThreadOps,
   clearActiveSession,
+  newId,
   restoreThreads,
   snapshotThreads,
   useThreads,
@@ -45,7 +46,7 @@ export default function Session({
   priorSessionsToday?: SessionLog[];
   ritualBrief?: { message: string } | null;
   situation?: string;
-  onEnd: (transcript: ChatMessage[]) => void;
+  onEnd: (transcript: ChatMessage[], sessionId: string) => void;
 }) {
   const { threads, add, patch, remove, ready } = useThreads();
   const [messages, setMessages] = useState<ChatMessage[]>(
@@ -73,6 +74,8 @@ export default function Session({
     convo: ChatMessage[];
     ending: boolean;
   } | null>(null);
+  const sessionIdRef = useRef(initial?.sessionId ?? newId());
+  const turnRef = useRef(0);
 
   const outdoor = isUntimedSession(context);
   const totalSec = durationMin * 60;
@@ -125,6 +128,7 @@ export default function Session({
       elapsedSec: elapsedRef.current,
       messages,
       startedAt: startedAtRef.current,
+      sessionId: sessionIdRef.current,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, elapsed, context]);
@@ -155,6 +159,7 @@ export default function Session({
     setStreaming(true);
     const at = new Date().toISOString();
     setMessages([...convo, { role: "assistant", content: "", at }]);
+    const exchangeIndex = convo.filter((m) => m.role === "user").length;
 
     try {
       const res = await apiFetch("/api/session", {
@@ -173,6 +178,8 @@ export default function Session({
             situation,
             priorSessionsToday,
             ritualBrief: ritualBriefRef.current ?? undefined,
+            sessionId: sessionIdRef.current,
+            exchangeIndex,
           },
         }),
       });
@@ -347,7 +354,10 @@ export default function Session({
           <button
             onClick={() => {
               clearActiveSession();
-              onEnd(messages.filter((m) => m.content.trim()));
+              onEnd(
+                messages.filter((m) => m.content.trim()),
+                sessionIdRef.current,
+              );
             }}
             className="rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-paper transition hover:opacity-90"
           >

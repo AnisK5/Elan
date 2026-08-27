@@ -8,6 +8,7 @@ import type { ChatMessage, Thread } from "@/lib/types";
 import { ageLabel, dueLabel, intentionLabel } from "@/lib/thread-labels";
 import { renderReguliersForPlan, isContainerThread } from "@/lib/entretiens";
 import { socle } from "@/lib/voice";
+import { recordStreamUsage } from "@/lib/api-usage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export const maxDuration = 60;
 interface Body {
   messages: ChatMessage[];
   threads: Thread[];
-  meta?: { name?: string; situation?: string };
+  meta?: { name?: string; situation?: string; exchangeIndex?: number };
 }
 
 function renderThreads(threads: Thread[]): string {
@@ -106,6 +107,7 @@ export async function POST(req: Request) {
   });
 
   const encoder = new TextEncoder();
+  const startedAt = Date.now();
   const readable = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
@@ -120,6 +122,16 @@ export async function POST(req: Request) {
       } catch (err) {
         controller.enqueue(encoder.encode(encodeStreamError(err)));
       } finally {
+        void recordStreamUsage(
+          req,
+          stream,
+          {
+            route: "chat",
+            exchangeIndex: meta?.exchangeIndex ?? messages.length,
+            exchangeKind: "chat",
+          },
+          startedAt,
+        );
         controller.close();
       }
     },

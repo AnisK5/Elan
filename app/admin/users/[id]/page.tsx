@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Logo } from "@/components/home/Branding";
 import { AssistantSpeech } from "@/components/HighlightEncart";
+import AnalyticsDashboard from "@/components/admin/AnalyticsDashboard";
+import type { AdminAnalyticsSnapshot } from "@/lib/admin-analytics";
 import type { AdminUserDetail } from "@/lib/admin-user-detail";
 import { getSupabase } from "@/lib/supabase";
 
@@ -46,6 +48,7 @@ export default function AdminUserPage({
 }) {
   const [userId, setUserId] = useState<string | null>(null);
   const [detail, setDetail] = useState<AdminUserDetail | null>(null);
+  const [analytics, setAnalytics] = useState<AdminAnalyticsSnapshot | null>(null);
   const [openSession, setOpenSession] = useState<string | null>(null);
   const [error, setError] = useState<
     "auth" | "forbidden" | "fail" | "setup" | "notfound" | null
@@ -64,30 +67,36 @@ export default function AdminUserPage({
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
-    adminGet(`/api/admin/users/${userId}`)
-      .then(async (res) => {
+    Promise.all([
+      adminGet(`/api/admin/users/${userId}`),
+      adminGet(`/api/admin/analytics?userId=${userId}`),
+    ])
+      .then(async ([detailRes, analyticsRes]) => {
         if (cancelled) return;
-        if (res.status === 401) {
+        if (detailRes.status === 401) {
           setError("auth");
           return;
         }
-        if (res.status === 403) {
+        if (detailRes.status === 403) {
           setError("forbidden");
           return;
         }
-        if (res.status === 404) {
+        if (detailRes.status === 404) {
           setError("notfound");
           return;
         }
-        if (res.status === 503) {
+        if (detailRes.status === 503) {
           setError("setup");
           return;
         }
-        if (!res.ok) {
+        if (!detailRes.ok) {
           setError("fail");
           return;
         }
-        setDetail((await res.json()) as AdminUserDetail);
+        setDetail((await detailRes.json()) as AdminUserDetail);
+        if (analyticsRes.ok) {
+          setAnalytics((await analyticsRes.json()) as AdminAnalyticsSnapshot);
+        }
       })
       .catch(() => {
         if (!cancelled) setError("fail");
@@ -255,6 +264,21 @@ export default function AdminUserPage({
                     </p>
                   </div>
                 ))}
+              </div>
+            </section>
+          ) : null}
+
+          {analytics ? (
+            <section className="mt-10">
+              <h2 className="font-display text-lg font-semibold text-ink">
+                Tokens & séances
+              </h2>
+              <p className="mt-1 text-[13px] text-muted">
+                Comment cette personne consomme l&apos;app — heures, durée,
+                abandon.
+              </p>
+              <div className="mt-4">
+                <AnalyticsDashboard data={analytics} compact />
               </div>
             </section>
           ) : null}

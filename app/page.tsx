@@ -501,14 +501,14 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, view, planSig, context, diagnosticOn]);
 
-  function endSession(transcript: ChatMessage[]) {
+  function endSession(transcript: ChatMessage[], sessionId?: string) {
     if (transcript.length > 1) {
       const started = Date.parse(sessionStartRef.current);
       const elapsedMin = Number.isFinite(started)
         ? Math.max(1, Math.round((Date.now() - started) / 60_000))
         : duration;
       log({
-        id: newId(),
+        id: sessionId ?? newId(),
         date: new Date().toISOString(),
         durationMin: elapsedMin,
         transcript,
@@ -886,7 +886,11 @@ export default function Home() {
         body: JSON.stringify({
           threads: snapshotThreads(),
           messages: withUser.map((m) => ({ role: m.role, content: m.content })),
-          meta: { name: settings.name, situation: situationText || undefined },
+          meta: {
+            name: settings.name,
+            situation: situationText || undefined,
+            exchangeIndex: withUser.filter((m) => m.role === "user").length,
+          },
         }),
       });
       if (!res.ok || !res.body) throw new Error("chat");
