@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { classifyAnthropicError, resolveAnthropicKey } from "@/lib/anthropic";
+import { recordMessageUsage } from "@/lib/api-usage";
 import type { ChatMessage, SessionContext, Thread } from "@/lib/types";
 import {
   isContainerThread,
@@ -630,8 +631,20 @@ export async function POST(req: Request) {
       });
     }
 
+    let planStartedAt = Date.now();
     let res = await callOnce(maxTokens);
     let parsed = extractPlanFromContent(res.content);
+
+    void recordMessageUsage(
+      req,
+      res,
+      {
+        route: "plan",
+        sessionContext: context,
+        exchangeKind: forNotify ? "plan_notify" : "plan",
+      },
+      planStartedAt,
+    );
 
     // Truncation : retry avec plus de budget, MÊME outil (why conservé sur desk).
     if (
@@ -640,8 +653,19 @@ export async function POST(req: Request) {
       !forNotify
     ) {
       console.warn("[plan] max_tokens sans message — retry budget ↑");
+      planStartedAt = Date.now();
       res = await callOnce(Math.min(Math.max(maxTokens * 2, 1600), 2500));
       parsed = extractPlanFromContent(res.content);
+      void recordMessageUsage(
+        req,
+        res,
+        {
+          route: "plan",
+          sessionContext: context,
+          exchangeKind: "plan_retry",
+        },
+        planStartedAt,
+      );
     }
 
     if (!parsed?.message.trim()) {

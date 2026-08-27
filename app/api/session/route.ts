@@ -14,6 +14,10 @@ import {
 import { socleSession } from "@/lib/voice";
 import { isUntimedSession } from "@/lib/session-mode";
 import { sessionOpeningFromBrief } from "@/lib/session-opening";
+import {
+  recordStreamUsage,
+  sessionExchangeKind,
+} from "@/lib/api-usage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +34,8 @@ interface Meta {
   priorSessionsToday?: SessionLog[];
   /** Conseil déjà lu (accueil, mail ou notif) — même fil en ouverture. */
   ritualBrief?: { message: string };
+  sessionId?: string;
+  exchangeIndex?: number;
 }
 
 interface Body {
@@ -293,6 +299,7 @@ export async function POST(req: Request) {
   });
 
   const encoder = new TextEncoder();
+  const startedAt = Date.now();
   const readable = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
@@ -309,6 +316,18 @@ export async function POST(req: Request) {
           encoder.encode(encodeStreamError(err)),
         );
       } finally {
+        void recordStreamUsage(
+          req,
+          stream,
+          {
+            route: "session",
+            sessionId: meta?.sessionId ?? null,
+            sessionContext: meta?.context ?? null,
+            exchangeIndex: meta?.exchangeIndex ?? messages.length,
+            exchangeKind: sessionExchangeKind(meta?.ending, messages.length),
+          },
+          startedAt,
+        );
         controller.close();
       }
     },

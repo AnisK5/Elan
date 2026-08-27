@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { resolveAnthropicKey } from "@/lib/anthropic";
+import { recordMessageUsage } from "@/lib/api-usage";
 import type { ChatMessage, Thread } from "@/lib/types";
 import { mergeRegulierWrites, reguliersWriteNote, upsertRegulierOps, extractReguliersFromConvo } from "@/lib/reguliers-write";
 import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
@@ -223,6 +224,7 @@ export async function POST(req: Request) {
   }
 
   const client = new Anthropic({ apiKey });
+  const startedAt = Date.now();
   try {
     const res = await client.messages.create({
       model: "claude-sonnet-4-6",
@@ -230,6 +232,16 @@ export async function POST(req: Request) {
       system: systemPrompt(threads, messages),
       messages: [{ role: "user", content: CUE }],
     });
+    void recordMessageUsage(
+      req,
+      res,
+      {
+        route: "reconcile",
+        sessionContext: messages.length > 4 ? "session" : "chat",
+        exchangeKind: "reconcile",
+      },
+      startedAt,
+    );
     const block = res.content.find((b) => b.type === "text");
     const text = block && block.type === "text" ? block.text : "";
     const parsed = safeParse(text) ?? empty;

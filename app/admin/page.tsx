@@ -101,6 +101,12 @@ export default function AdminPage() {
       <p className="mt-1.5 text-[15px] leading-relaxed text-muted">
         Rétention, séances, parcours — clique sur une personne pour le détail.
       </p>
+      <Link
+        href="/admin/analytics"
+        className="mt-3 inline-flex rounded-xl border border-teal/30 bg-teal-soft/40 px-4 py-2 text-[14px] font-medium text-teal-ink transition hover:border-teal"
+      >
+        Dashboard tokens & séances →
+      </Link>
 
       {error === "auth" && (
         <p className="mt-8 text-[15px] text-muted">

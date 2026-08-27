@@ -765,6 +765,7 @@ export interface ActiveSession {
   messages: ChatMessage[];
   startedAt: string;
   context?: SessionContext;
+  sessionId?: string;
 }
 
 export function readActiveSession(): ActiveSession | null {

@@ -105,8 +105,11 @@ export function writeUserAnthropicKey(key: string): void {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ key: trimmed }));
 }
 
-/** fetch vers /api/* avec la clé perso et la préférence de modèle si elles sont là. */
-export function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+/** fetch vers /api/* avec la clé perso, la préférence de modèle et l'auth Supabase. */
+export async function apiFetch(
+  input: string,
+  init?: RequestInit,
+): Promise<Response> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -116,5 +119,17 @@ export function apiFetch(input: string, init?: RequestInit): Promise<Response> {
     headers.set(ANTHROPIC_KEY_HEADER, key);
   }
   headers.set(MODEL_PREF_HEADER, readModelPreference());
+  try {
+    const { getSupabase } = await import("./supabase");
+    const sb = getSupabase();
+    if (sb) {
+      const { data } = await sb.auth.getSession();
+      if (data.session?.access_token) {
+        headers.set("Authorization", `Bearer ${data.session.access_token}`);
+      }
+    }
+  } catch {
+    // pas de session — appel anonyme OK
+  }
   return fetch(input, { ...init, headers });
 }
