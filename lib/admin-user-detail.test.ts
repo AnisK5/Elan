@@ -88,6 +88,22 @@ describe("buildAdminUserDetail", () => {
           createdAt: "2026-08-21T12:00:00Z",
         },
       ],
+      [
+        {
+          id: "u1",
+          at: "2026-08-22T09:12:00Z",
+          route: "session",
+          model: "claude-sonnet",
+          inputTokens: 100,
+          outputTokens: 50,
+          exchangeKind: "turn",
+          exchangeIndex: 1,
+          sessionId: "s1",
+          sessionContext: "desk",
+          stopReason: null,
+          latencyMs: 800,
+        },
+      ],
       true,
     );
 
@@ -95,8 +111,14 @@ describe("buildAdminUserDetail", () => {
     expect(detail.backlog.done).toBe(1);
     expect(detail.notifs.hasPushSub).toBe(true);
     expect(detail.sessions[0].messageCount).toBe(2);
+    expect(detail.sessions[0].inputTokens).toBe(100);
+    expect(detail.sessions[0].outputTokens).toBe(50);
     expect(detail.timeline.some((e) => e.label === "Rituel (notif)")).toBe(true);
     expect(detail.timeline.some((e) => e.kind === "feedback")).toBe(true);
     expect(detail.timeline[0].at >= detail.timeline[1].at).toBe(true);
+    expect(detail.dayBands.length).toBeGreaterThan(0);
+    expect(detail.activityDays).toHaveLength(90);
+    expect(detail.totals.tokensTotal).toBe(150);
+    expect(detail.totals.apiCalls).toBe(1);
   });
 });
