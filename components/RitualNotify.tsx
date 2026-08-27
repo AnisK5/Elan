@@ -13,6 +13,7 @@ import {
 } from "@/lib/notifications";
 import type { Thread } from "@/lib/types";
 import { useSettings } from "@/lib/store";
+import { logUsage } from "@/lib/usage-log";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase";
 
 /** Opt-in après une première séance : notif matin avec conseil intégré. */
@@ -104,8 +105,13 @@ export default function RitualNotify({
           ? "Web Push pas encore configuré côté serveur (VAPID)."
           : "Impossible d'enregistrer le rappel push — réessaie plus tard.",
       );
-    } else if (pushReady) {
-      setHasPushSub(true);
+    } else {
+      const sb = getSupabase();
+      const uid = sb
+        ? (await sb.auth.getSession()).data.session?.user?.id
+        : null;
+      logUsage("notify_on", { userId: uid, meta: { channel: "push" } });
+      if (pushReady) setHasPushSub(true);
     }
     setBusy(false);
   }

@@ -26,6 +26,7 @@ import Session from "@/components/Session";
 import InstallPrompt from "@/components/InstallPrompt";
 import RitualNotify from "@/components/RitualNotify";
 import SettingsSheet from "@/components/SettingsSheet";
+import FeedbackForm from "@/components/FeedbackForm";
 import { useRitualReminder } from "@/components/useRitualReminder";
 import {
   buildOfflinePlanHint,
@@ -301,8 +302,13 @@ export default function Home() {
   useEffect(() => {
     if (!ready) return;
     logUsage("open", { userId: user?.id ?? null });
+    if (user?.created_at && user.id) {
+      const hours =
+        (Date.now() - Date.parse(user.created_at)) / 3_600_000;
+      if (hours < 24) logUsage("signup", { userId: user.id });
+    }
     return startDwellTracker(user?.id ?? null);
-  }, [ready, user?.id]);
+  }, [ready, user?.id, user?.created_at]);
 
   useEffect(() => {
     setDiagnosticOn(isDiagnosticEnabled());
@@ -506,6 +512,7 @@ export default function Home() {
         date: new Date().toISOString(),
         durationMin: elapsedMin,
         transcript,
+        context,
       });
       logUsage("session", {
         durationSec: elapsedMin * 60,
@@ -727,6 +734,7 @@ export default function Home() {
       ctx === "sortie"
         ? "Je te propose une Sortie — on regarde ce qui se fait dehors."
         : `Ton créneau de ${d} min est prêt.`;
+    logUsage("ritual", { userId: user?.id ?? null });
     ritualLockRef.current = true;
     stashRitualLaunch(launch);
     planSkipFetchRef.current = true;
@@ -1007,22 +1015,25 @@ export default function Home() {
       </header>
 
       {wrapUp && (
-        <div className="animate-rise mb-4 rounded-2xl border border-teal-soft bg-teal-soft px-4 py-3 text-sm text-teal-ink">
-          {wrapUpCount > 0 ? (
-            <>
-              Séance bouclée —{" "}
-              <b>
-                {wrapUpCount} truc{wrapUpCount > 1 ? "s" : ""} réglé
-                {wrapUpCount > 1 ? "s" : ""} 🎉
-              </b>{" "}
-              Le reste attend sagement, tu n&apos;as pas à y penser.
-            </>
-          ) : (
-            <>
-              Séance bouclée. Le reste attend sagement — tu n&apos;as pas à y
-              penser jusqu&apos;à demain.
-            </>
-          )}
+        <div className="animate-rise mb-4 flex flex-col gap-3">
+          <div className="rounded-2xl border border-teal-soft bg-teal-soft px-4 py-3 text-sm text-teal-ink">
+            {wrapUpCount > 0 ? (
+              <>
+                Séance bouclée —{" "}
+                <b>
+                  {wrapUpCount} truc{wrapUpCount > 1 ? "s" : ""} réglé
+                  {wrapUpCount > 1 ? "s" : ""} 🎉
+                </b>{" "}
+                Le reste attend sagement, tu n&apos;as pas à y penser.
+              </>
+            ) : (
+              <>
+                Séance bouclée. Le reste attend sagement — tu n&apos;as pas à y
+                penser jusqu&apos;à demain.
+              </>
+            )}
+          </div>
+          <FeedbackForm source="wrap_up" compact />
         </div>
       )}
 

@@ -10,6 +10,7 @@ import AnthropicKeySettings from "@/components/AnthropicKeySettings";
 import ModelSettings from "@/components/ModelSettings";
 import DiagnosticSettings from "@/components/DiagnosticSettings";
 import ImportData from "@/components/home/ImportData";
+import FeedbackForm from "@/components/FeedbackForm";
 import { useAuth } from "@/components/AuthProvider";
 import { getSupabase } from "@/lib/supabase";
 import { useSettings } from "@/lib/store";
@@ -133,6 +134,7 @@ export default function SettingsSheet({
               <AnthropicKeySettings />
               <ModelSettings />
               <DiagnosticSettings />
+              <FeedbackForm source="settings" />
               <ImportData />
               {isAdmin ? (
                 <Link

@@ -31,6 +31,17 @@ function fmtDay(iso: string | null): string {
   });
 }
 
+function fmtWhen(iso: string): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return iso;
+  return d.toLocaleString("fr-FR", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function AdminPage() {
   const [snap, setSnap] = useState<AdminSnapshot | null>(null);
   const [error, setError] = useState<
@@ -88,8 +99,7 @@ export default function AdminPage() {
         Usage
       </h1>
       <p className="mt-1.5 text-[15px] leading-relaxed text-muted">
-        Rétention, séances, temps passé — pour suivre le partage, pas pour
-        noter les gens.
+        Rétention, séances, parcours — clique sur une personne pour le détail.
       </p>
 
       {error === "auth" && (
@@ -118,7 +128,7 @@ export default function AdminPage() {
         <p className="mt-8 text-sm text-faint">Chargement…</p>
       )}
 
-      {t && (
+      {t && snap && (
         <>
           <section className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3">
             <Stat label="Inscrits" value={String(t.signups)} hint={`${t.signups7} sur 7 j`} />
@@ -145,8 +155,48 @@ export default function AdminPage() {
             <h2 className="font-display text-lg font-semibold text-ink">
               Chaque inscrit
             </h2>
-            <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-surface">
-              <table className="w-full min-w-[720px] text-left text-[13px]">
+
+            <div className="mt-3 flex flex-col gap-2 sm:hidden">
+              {snap.users.map((u) => (
+                <Link
+                  key={u.id}
+                  href={`/admin/users/${u.id}`}
+                  className="rounded-2xl border border-line bg-surface px-4 py-3 transition hover:border-teal/40"
+                >
+                  <div className="font-medium text-ink">
+                    {u.name || u.email || "—"}
+                  </div>
+                  {u.name ? (
+                    <div className="text-[11px] text-faint">{u.email}</div>
+                  ) : null}
+                  <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[12px]">
+                    <span className="text-muted">
+                      Vu <span className="text-ink">{fmtDay(u.lastSeen)}</span>
+                    </span>
+                    <span className="text-muted">
+                      J/30 <span className="text-ink">{u.daysActive30}</span>
+                    </span>
+                    <span className="text-muted">
+                      Séances <span className="text-ink">{u.sessions}</span>
+                    </span>
+                    <span className="text-muted">
+                      Ouverts <span className="text-ink">{u.openThreads}</span>
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {u.activated ? (
+                      <MiniBadge>Activé</MiniBadge>
+                    ) : (
+                      <MiniBadge>Dormant</MiniBadge>
+                    )}
+                    {u.notifyEnabled ? <MiniBadge>Notifs</MiniBadge> : null}
+                  </div>
+                </Link>
+              ))}
+            </div>
+
+            <div className="mt-3 hidden overflow-x-auto rounded-2xl border border-line bg-surface sm:block">
+              <table className="w-full min-w-[880px] text-left text-[13px]">
                 <thead className="text-[11px] uppercase tracking-wide text-faint">
                   <tr>
                     <th className="px-3 py-2 font-medium">Personne</th>
@@ -154,9 +204,9 @@ export default function AdminPage() {
                     <th className="px-3 py-2 font-medium">Vu</th>
                     <th className="px-3 py-2 font-medium">Jours / 30</th>
                     <th className="px-3 py-2 font-medium">Séances</th>
-                    <th className="px-3 py-2 font-medium">Min</th>
-                    <th className="px-3 py-2 font-medium">Dwell</th>
-                    <th className="px-3 py-2 font-medium">Suite</th>
+                    <th className="px-3 py-2 font-medium">Activé</th>
+                    <th className="px-3 py-2 font-medium">Notifs</th>
+                    <th className="px-3 py-2 font-medium">Ouverts</th>
                     <th className="px-3 py-2 font-medium">Réglés / 30</th>
                   </tr>
                 </thead>
@@ -164,25 +214,29 @@ export default function AdminPage() {
                   {snap.users.map((u) => (
                     <tr key={u.id} className="border-t border-line">
                       <td className="px-3 py-2">
-                        <div className="font-medium text-ink">
-                          {u.name || u.email || "—"}
-                        </div>
-                        {u.name ? (
-                          <div className="text-[11px] text-faint">{u.email}</div>
-                        ) : null}
+                        <Link
+                          href={`/admin/users/${u.id}`}
+                          className="block transition hover:text-teal"
+                        >
+                          <div className="font-medium text-ink">
+                            {u.name || u.email || "—"}
+                          </div>
+                          {u.name ? (
+                            <div className="text-[11px] text-faint">{u.email}</div>
+                          ) : null}
+                        </Link>
                       </td>
                       <td className="px-3 py-2 text-muted">{fmtDay(u.signedUp)}</td>
                       <td className="px-3 py-2 text-muted">{fmtDay(u.lastSeen)}</td>
                       <td className="px-3 py-2 text-ink">{u.daysActive30}</td>
                       <td className="px-3 py-2 text-ink">{u.sessions}</td>
-                      <td className="px-3 py-2 text-ink">{u.sessionMinutes}</td>
-                      <td className="px-3 py-2 text-ink">{u.dwellMinutes}</td>
                       <td className="px-3 py-2 text-muted">
-                        {u.streak}
-                        {u.longestStreak > u.streak
-                          ? ` · max ${u.longestStreak}`
-                          : ""}
+                        {u.activated ? "oui" : "—"}
                       </td>
+                      <td className="px-3 py-2 text-muted">
+                        {u.notifyEnabled ? "oui" : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-ink">{u.openThreads}</td>
                       <td className="px-3 py-2 text-ink">{u.done30}</td>
                     </tr>
                   ))}
@@ -190,6 +244,34 @@ export default function AdminPage() {
               </table>
             </div>
           </section>
+
+          {snap.recentFeedback.length > 0 ? (
+            <section className="mt-10">
+              <h2 className="font-display text-lg font-semibold text-ink">
+                Derniers retours
+              </h2>
+              <div className="mt-3 flex flex-col gap-2">
+                {snap.recentFeedback.map((f) => (
+                  <Link
+                    key={f.id}
+                    href={`/admin/users/${f.userId}`}
+                    className="rounded-2xl border border-line bg-surface px-4 py-3 transition hover:border-teal/40"
+                  >
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-faint">
+                      <span className="font-medium text-muted">
+                        {f.name || f.email}
+                      </span>
+                      <span>{fmtWhen(f.createdAt)}</span>
+                      {f.mood ? <span>· {f.mood}</span> : null}
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-[14px] leading-relaxed text-ink">
+                      {f.message}
+                    </p>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : null}
         </>
       )}
     </main>
@@ -215,5 +297,13 @@ function Stat({
       </div>
       {hint ? <div className="mt-0.5 text-[11px] text-faint">{hint}</div> : null}
     </div>
+  );
+}
+
+function MiniBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="rounded-full bg-sink px-2 py-0.5 text-[10px] font-medium text-muted">
+      {children}
+    </span>
   );
 }

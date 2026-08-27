@@ -64,6 +64,7 @@ export interface SessionLog {
   date: string; // ISO
   durationMin: number;
   transcript: ChatMessage[];
+  context?: SessionContext;
 }
 
 export interface Settings {
