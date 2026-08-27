@@ -1,4 +1,4 @@
-/** Agrégats levée / rétention — pas de contenu de trucs ni de transcripts. */
+/** Agrégats levée / rétention — transcripts via fiche individuelle admin. */
 
 export interface AdminUserRow {
   id: string;
@@ -14,6 +14,21 @@ export interface AdminUserRow {
   longestStreak: number;
   done30: number;
   activated: boolean;
+  notifyEnabled: boolean;
+  openThreads: number;
+  lastSessionAt: string | null;
+  feedbackCount: number;
+}
+
+export interface AdminFeedbackRow {
+  id: string;
+  userId: string;
+  email: string;
+  name?: string;
+  message: string;
+  mood: string | null;
+  source: string;
+  createdAt: string;
 }
 
 export interface AdminTotals {
@@ -35,6 +50,7 @@ export interface AdminTotals {
 export interface AdminSnapshot {
   totals: AdminTotals;
   users: AdminUserRow[];
+  recentFeedback: AdminFeedbackRow[];
 }
 
 export interface AdminRawUser {
@@ -50,6 +66,7 @@ export interface AdminRawEvent {
   at: string;
   day: string;
   durationSec?: number;
+  meta?: Record<string, unknown>;
 }
 
 export interface AdminRawSession {
@@ -61,6 +78,33 @@ export interface AdminRawSession {
 export interface AdminRawDone {
   userId: string;
   at: string;
+}
+
+export interface AdminRawSettings {
+  userId: string;
+  name?: string;
+  notifyEnabled: boolean;
+  notifyEmailEnabled: boolean;
+  situation?: string;
+}
+
+export interface AdminRawThreadCount {
+  userId: string;
+  open: number;
+}
+
+export interface AdminRawFeedbackCount {
+  userId: string;
+  count: number;
+}
+
+export interface AdminRawFeedback {
+  id: string;
+  userId: string;
+  message: string;
+  mood: string | null;
+  source: string;
+  createdAt: string;
 }
 
 function utcDay(iso: string): string {
@@ -145,6 +189,12 @@ export function buildAdminSnapshot(
   events: AdminRawEvent[],
   sessions: AdminRawSession[],
   dones: AdminRawDone[],
+  settings: AdminRawSettings[] = [],
+  threadCounts: AdminRawThreadCount[] = [],
+  feedbackCounts: AdminRawFeedbackCount[] = [],
+  recentFeedback: AdminRawFeedback[] = [],
+  userEmails: Map<string, string> = new Map(),
+  userNames: Map<string, string> = new Map(),
   now: Date = new Date(),
 ): AdminSnapshot {
   const today = now.toISOString().slice(0, 10);
@@ -153,6 +203,10 @@ export function buildAdminSnapshot(
   const since7 = Date.parse(`${d7}T00:00:00Z`);
   const since30 = Date.parse(`${d30}T00:00:00Z`);
   const signup7 = addDays(today, -6);
+
+  const settingsByUser = new Map(settings.map((s) => [s.userId, s]));
+  const openByUser = new Map(threadCounts.map((t) => [t.userId, t.open]));
+  const feedbackByUser = new Map(feedbackCounts.map((f) => [f.userId, f.count]));
 
   const daysByUser = new Map<string, Set<string>>();
   for (const u of users) {
@@ -199,6 +253,10 @@ export function buildAdminSnapshot(
       const days = daysByUser.get(u.id) ?? new Set();
       const last = [...days].sort().at(-1) ?? null;
       const sess = sessions.filter((s) => s.userId === u.id);
+      const lastSession = sess
+        .map((s) => s.date)
+        .sort()
+        .at(-1) ?? null;
       const dwell = events
         .filter((e) => e.userId === u.id && e.kind === "dwell")
         .reduce((a, e) => a + (e.durationSec ?? 0), 0);
@@ -206,10 +264,11 @@ export function buildAdminSnapshot(
         (d) => d.userId === u.id && Date.parse(d.at) >= since30,
       ).length;
       const active30 = [...days].filter((d) => d >= d30).length;
+      const sett = settingsByUser.get(u.id);
       return {
         id: u.id,
         email: u.email,
-        name: u.name,
+        name: u.name ?? sett?.name,
         signedUp: u.createdAt,
         lastSeen: last,
         daysActive30: active30,
@@ -220,9 +279,28 @@ export function buildAdminSnapshot(
         longestStreak: longestStreak(days),
         done30,
         activated: sess.length > 0,
+        notifyEnabled: sett?.notifyEnabled ?? false,
+        openThreads: openByUser.get(u.id) ?? 0,
+        lastSessionAt: lastSession,
+        feedbackCount: feedbackByUser.get(u.id) ?? 0,
       };
     })
     .sort((a, b) => (b.lastSeen ?? "").localeCompare(a.lastSeen ?? ""));
+
+  const feedbackRows: AdminFeedbackRow[] = recentFeedback
+    .slice()
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 20)
+    .map((f) => ({
+      id: f.id,
+      userId: f.userId,
+      email: userEmails.get(f.userId) ?? "",
+      name: userNames.get(f.userId),
+      message: f.message,
+      mood: f.mood,
+      source: f.source,
+      createdAt: f.createdAt,
+    }));
 
   return {
     totals: {
@@ -243,5 +321,6 @@ export function buildAdminSnapshot(
       dwellPerActive7: wau > 0 ? Math.round(dwell7 / 60 / wau) : 0,
     },
     users: rows,
+    recentFeedback: feedbackRows,
   };
 }

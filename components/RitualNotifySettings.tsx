@@ -13,6 +13,7 @@ import {
 } from "@/lib/notifications";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { useSettings } from "@/lib/store";
+import { logUsage } from "@/lib/usage-log";
 import { useAuth } from "@/components/AuthProvider";
 
 /** Réglages du rappel matin (visible une fois activé). */
@@ -64,6 +65,9 @@ export default function RitualNotifySettings({
           : "Impossible d'enregistrer — réessaie.",
       );
       return;
+    }
+    if (email && !settings.notifyEmailEnabled) {
+      logUsage("notify_on", { userId: user?.id ?? null, meta: { channel: "email" } });
     }
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2500);

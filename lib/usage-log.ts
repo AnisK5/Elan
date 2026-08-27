@@ -14,6 +14,7 @@ interface EventRow {
   at: string;
   day: string;
   duration_sec: number | null;
+  meta: Record<string, unknown> | null;
 }
 
 function eid(): string {
@@ -44,6 +45,7 @@ function toRow(e: UsageEvent, userId: string) {
     at: e.at,
     day: e.day,
     duration_sec: e.durationSec ?? null,
+    meta: e.meta ?? null,
   };
 }
 
@@ -54,7 +56,22 @@ function rowToEvent(r: EventRow): UsageEvent {
     at: r.at,
     day: r.day,
     durationSec: r.duration_sec ?? undefined,
+    meta: r.meta ?? undefined,
   };
+}
+
+async function resolveUserId(
+  userId?: string | null,
+): Promise<string | null> {
+  if (userId) return userId;
+  const sb = getSupabase();
+  if (!sb) return null;
+  try {
+    const { data } = await sb.auth.getSession();
+    return data.session?.user?.id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 async function pushEvents(userId: string, events: UsageEvent[]) {
@@ -69,7 +86,11 @@ async function pushEvents(userId: string, events: UsageEvent[]) {
 
 export function logUsage(
   kind: UsageKind,
-  opts?: { durationSec?: number; userId?: string | null },
+  opts?: {
+    durationSec?: number;
+    userId?: string | null;
+    meta?: Record<string, unknown>;
+  },
 ): void {
   if (typeof window === "undefined") return;
   const day = dayKey();
@@ -77,6 +98,10 @@ export function logUsage(
   const events = readEvents();
 
   if (kind === "open" && events.some((e) => e.kind === "open" && e.day === day)) {
+    return;
+  }
+
+  if (kind === "signup" && events.some((e) => e.kind === "signup")) {
     return;
   }
 
@@ -89,7 +114,9 @@ export function logUsage(
         durationSec: (existing.durationSec ?? 0) + (opts?.durationSec ?? 0),
       };
       persist(events.map((e) => (e.id === existing.id ? next : e)));
-      if (opts?.userId) void pushEvents(opts.userId, [next]);
+      void resolveUserId(opts?.userId).then((uid) => {
+        if (uid) void pushEvents(uid, [next]);
+      });
       return;
     }
   }
@@ -100,9 +127,12 @@ export function logUsage(
     at,
     day,
     durationSec: opts?.durationSec,
+    meta: opts?.meta,
   };
   persist([ev, ...events].slice(0, MAX_EVENTS));
-  if (opts?.userId) void pushEvents(opts.userId, [ev]);
+  void resolveUserId(opts?.userId).then((uid) => {
+    if (uid) void pushEvents(uid, [ev]);
+  });
 }
 
 export async function hydrateUsageEvents(userId: string): Promise<void> {
@@ -112,7 +142,7 @@ export async function hydrateUsageEvents(userId: string): Promise<void> {
     const since = new Date(Date.now() - 90 * 86_400_000).toISOString();
     const res = await sb
       .from("elan_events")
-      .select("id, kind, at, day, duration_sec")
+      .select("id, kind, at, day, duration_sec, meta")
       .eq("user_id", userId)
       .gte("at", since)
       .order("at", { ascending: false })

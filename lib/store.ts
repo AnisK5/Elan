@@ -16,7 +16,7 @@ import type { Situation } from "./situation";
 import { activeSituation } from "./situation";
 import { getSupabase } from "./supabase";
 import { apiFetch } from "./anthropic";
-import { EVENTS_KEY, hydrateUsageEvents } from "./usage-log";
+import { EVENTS_KEY, hydrateUsageEvents, logUsage } from "./usage-log";
 import {
   mergeDayPlans,
   parseDayPlan,
@@ -107,6 +107,7 @@ interface SessionRow {
   date: string;
   duration_min: number;
   transcript: ChatMessage[];
+  context: string | null;
 }
 interface SettingsRow {
   default_duration_min: number;
@@ -197,6 +198,7 @@ function sessionToRow(s: SessionLog, userId: string) {
     date: s.date,
     duration_min: s.durationMin,
     transcript: s.transcript,
+    context: s.context ?? null,
   };
 }
 function rowToSession(r: SessionRow): SessionLog {
@@ -205,6 +207,7 @@ function rowToSession(r: SessionRow): SessionLog {
     date: r.date,
     durationMin: r.duration_min,
     transcript: r.transcript ?? [],
+    context: (r.context as SessionLog["context"]) ?? undefined,
   };
 }
 function settingsToRow(s: Settings, userId: string) {
@@ -591,9 +594,10 @@ export function applyThreadOps(ops: ThreadOp[]): void {
           t.text.trim().toLowerCase() === op.text.trim().toLowerCase(),
       );
       if (dup) continue;
+      const id = newId();
       list = [
         {
-          id: newId(),
+          id,
           text: clean(op.text),
           kind: op.kind,
           status: "open",
@@ -604,6 +608,7 @@ export function applyThreadOps(ops: ThreadOp[]): void {
         },
         ...list,
       ];
+      logUsage("capture", { meta: { threadId: id } });
       continue;
     }
     list = list.map((t) => {
@@ -611,6 +616,7 @@ export function applyThreadOps(ops: ThreadOp[]): void {
       const touch = t.status === "done" ? {} : { touchedAt: now };
       switch (op.op) {
         case "done":
+          logUsage("thread_done", { meta: { threadId: op.id } });
           return {
             ...t,
             status: "done",
@@ -666,6 +672,7 @@ export function useThreads() {
         ...extra,
       };
       update([t, ...value]);
+      logUsage("capture", { meta: { threadId: t.id } });
       return t;
     },
     [value, update],
@@ -673,6 +680,9 @@ export function useThreads() {
 
   const patch = useCallback(
     (id: string, changes: Partial<Thread>) => {
+      if (changes.status === "done") {
+        logUsage("thread_done", { meta: { threadId: id } });
+      }
       update(value.map((t) => (t.id === id ? { ...t, ...changes } : t)));
     },
     [value, update],

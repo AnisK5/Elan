@@ -1,7 +1,17 @@
 import type { SessionLog, Thread } from "./types";
 import { doneCountsThisWeek } from "./week-stats";
 
-export type UsageKind = "open" | "session" | "aside" | "dwell";
+export type UsageKind =
+  | "open"
+  | "session"
+  | "aside"
+  | "dwell"
+  | "signup"
+  | "notify_on"
+  | "ritual"
+  | "capture"
+  | "thread_done"
+  | "feedback";
 
 export interface UsageEvent {
   id: string;
@@ -10,6 +20,7 @@ export interface UsageEvent {
   /** Jour calendaire local, YYYY-MM-DD. */
   day: string;
   durationSec?: number;
+  meta?: Record<string, unknown>;
 }
 
 export interface UsageWeek {

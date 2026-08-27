@@ -56,6 +56,7 @@ alter table public.elan_sessions enable row level security;
 create policy "own elan_sessions" on public.elan_sessions
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create index if not exists elan_sessions_user_idx on public.elan_sessions(user_id);
+alter table public.elan_sessions add column if not exists context text;
 
 -- ── Réglages (un par utilisateur) ──────────────────────────────────
 create table if not exists public.elan_settings (
@@ -113,6 +114,24 @@ create unique index if not exists elan_events_open_day
   on public.elan_events(user_id, day) where kind = 'open';
 create unique index if not exists elan_events_dwell_day
   on public.elan_events(user_id, day) where kind = 'dwell';
+alter table public.elan_events add column if not exists meta jsonb;
+
+-- ── Retours utilisateur ────────────────────────────────────────────
+create table if not exists public.elan_feedback (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  message    text not null,
+  mood       text,
+  source     text not null,
+  created_at timestamptz not null default now()
+);
+alter table public.elan_feedback enable row level security;
+create policy "own elan_feedback insert" on public.elan_feedback
+  for insert with check (auth.uid() = user_id);
+create policy "own elan_feedback select" on public.elan_feedback
+  for select using (auth.uid() = user_id);
+create index if not exists elan_feedback_user_idx
+  on public.elan_feedback(user_id, created_at desc);
 
 -- ── Cron rappel rituel (Supabase pg_cron → API Vercel) ───────────────
 -- Même modèle qu'en-suspens : le timing est côté Supabase, pas Vercel
