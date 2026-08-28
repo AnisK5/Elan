@@ -45,6 +45,8 @@ export interface UserTokenRow {
   output: number;
   total: number;
   sessions: number;
+  apiCalls: number;
+  avgTokensPerSession: number;
 }
 
 export interface HourRow {
@@ -89,7 +91,14 @@ export interface SessionInsightRow {
   outputTokens: number;
 }
 
+export interface AdminAnalyticsViewUser {
+  userId: string;
+  email: string;
+  name?: string;
+}
+
 export interface AdminAnalyticsSnapshot {
+  viewUser?: AdminAnalyticsViewUser;
   totals: {
     inputTokens: number;
     outputTokens: number;
@@ -220,10 +229,13 @@ export function buildAdminAnalytics(
       output: 0,
       total: 0,
       sessions: 0,
+      apiCalls: 0,
+      avgTokensPerSession: 0,
     };
     cur.input += u.inputTokens;
     cur.output += u.outputTokens;
     cur.total = cur.input + cur.output;
+    cur.apiCalls += 1;
     byUser.set(u.userId, cur);
   }
   const sessionsByUser = new Map<string, number>();
@@ -231,8 +243,25 @@ export function buildAdminAnalytics(
     sessionsByUser.set(s.userId, (sessionsByUser.get(s.userId) ?? 0) + 1);
   }
   for (const [uid, n] of sessionsByUser) {
-    const cur = byUser.get(uid);
-    if (cur) cur.sessions = n;
+    const cur =
+      byUser.get(uid) ??
+      ({
+        userId: uid,
+        email: userEmails.get(uid) ?? "",
+        name: userNames.get(uid),
+        input: 0,
+        output: 0,
+        total: 0,
+        sessions: 0,
+        apiCalls: 0,
+        avgTokensPerSession: 0,
+      } satisfies UserTokenRow);
+    cur.sessions = n;
+    byUser.set(uid, cur);
+  }
+  for (const cur of byUser.values()) {
+    cur.avgTokensPerSession =
+      cur.sessions > 0 ? Math.round(cur.total / cur.sessions) : 0;
   }
   const tokensByUser = [...byUser.values()].sort((a, b) => b.total - a.total);
 
@@ -334,7 +363,16 @@ export function buildAdminAnalytics(
   const sessionCount = sessionRows.length;
   const totalSessionMin = sessionRows.reduce((a, s) => a + s.durationMin, 0);
 
+  const viewUser = filterUserId
+    ? {
+        userId: filterUserId,
+        email: userEmails.get(filterUserId) ?? "",
+        name: userNames.get(filterUserId),
+      }
+    : undefined;
+
   return {
+    viewUser,
     totals: {
       inputTokens,
       outputTokens,
