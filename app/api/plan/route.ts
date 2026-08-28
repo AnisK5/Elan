@@ -28,6 +28,7 @@ import {
 import { identity, socle, today, TON, VOIX } from "@/lib/voice";
 import { DEPOSER_PLAN_MESSAGE } from "@/lib/session-mode";
 import { buildOfflinePlanHint } from "@/lib/notifications";
+import { CLAUDE_SONNET, resolveUtilityModel } from "@/lib/models";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -622,7 +623,7 @@ export async function POST(req: Request) {
 
     async function callOnce(tokens: number) {
       return client.messages.create({
-        model: "claude-sonnet-4-6",
+        model: shortTool ? resolveUtilityModel() : CLAUDE_SONNET,
         max_tokens: tokens,
         system: baseSystem,
         tools: [tool],

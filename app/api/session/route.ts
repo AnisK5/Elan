@@ -4,6 +4,8 @@ import {
   resolveConversationModel,
   resolveModelPreference,
 } from "@/lib/models";
+import { systemPromptBlocks } from "@/lib/prompt-cache";
+import { trimSessionMessages } from "@/lib/session-context";
 import type { ChatMessage, SessionContext, SessionLog, Thread } from "@/lib/types";
 import { renderReguliersForPlan, REGULIERS_DISCOVERY_PROMPT, REGULIERS_FOCUS_PROMPT } from "@/lib/entretiens";
 import {
@@ -69,6 +71,20 @@ function openingCue(context?: SessionContext): string {
 
 const CLOSING_CUE =
   "[Le temps de la séance est écoulé. Clôture en douceur, en un seul message court. D'abord un DÉBRIEF CONCRET : nomme précisément ce qui a bougé pendant CETTE séance — les trucs faits, avancés ou relancés, par leur nom réel — pour que la personne voie noir sur blanc ce qu'elle a accompli (reste bref, une ou deux phrases, pas une liste à puces). Puis RASSURE : ce qui n'est pas fini reste noté et tu le represente à la prochaine séance, donc on peut lâcher sans crainte d'oublier. Donne la permission de s'arrêter là et invite à revenir demain. Si vraiment rien de concret n'a bougé, aucune culpabilité : valorise simplement le fait d'être venu poser les choses. Ne lance AUCUN nouveau front, ne pose pas de question qui relance le travail. Ne promets pas de te souvenir du détail de où on en est dans un truc — promets seulement que le truc, lui, reviendra.]";
+
+const SESSION_RULES_START = "S'ADAPTER À SON CONTEXTE";
+const SESSION_RULES_END = "SES TRUCS EN CE MOMENT";
+
+function splitSessionSystem(meta: Meta, threads: Thread[]) {
+  const full = systemPrompt(meta, threads);
+  const start = full.indexOf(SESSION_RULES_START);
+  const end = full.indexOf(SESSION_RULES_END);
+  if (start < 0 || end <= start) return full;
+  return systemPromptBlocks(
+    full.slice(start, end),
+    full.slice(0, start) + full.slice(end),
+  );
+}
 
 function contextRule(context?: SessionContext): string {
   if (context === "sortie") {
@@ -256,8 +272,9 @@ export async function POST(req: Request) {
   }
 
   const { messages = [], threads = [], meta } = body;
+  const trimmedMessages = trimSessionMessages(messages);
   const brief = meta?.ritualBrief?.message?.trim() ?? "";
-  const isOpening = !meta?.ending && messages.length === 0;
+  const isOpening = !meta?.ending && trimmedMessages.length === 0;
   if (isOpening && brief && meta?.context !== "deposer") {
     return new Response(sessionOpeningFromBrief(brief), {
       headers: { "Content-Type": "text/plain; charset=utf-8" },
@@ -277,7 +294,7 @@ export async function POST(req: Request) {
 
   const apiMessages: { role: "user" | "assistant"; content: string }[] = [
     { role: "user", content: openingCue(meta?.context) },
-    ...messages.map((m) => ({ role: m.role, content: m.content })),
+    ...trimmedMessages.map((m) => ({ role: m.role, content: m.content })),
   ];
 
   if (meta?.ending) {
@@ -293,7 +310,7 @@ export async function POST(req: Request) {
   const stream = client.messages.stream({
     model,
     max_tokens: 1500,
-    system: systemPrompt(meta, threads),
+    system: splitSessionSystem(meta, threads),
     messages: apiMessages,
     tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 4 }],
   });
@@ -323,8 +340,8 @@ export async function POST(req: Request) {
             route: "session",
             sessionId: meta?.sessionId ?? null,
             sessionContext: meta?.context ?? null,
-            exchangeIndex: meta?.exchangeIndex ?? messages.length,
-            exchangeKind: sessionExchangeKind(meta?.ending, messages.length),
+            exchangeIndex: meta?.exchangeIndex ?? trimmedMessages.length,
+            exchangeKind: sessionExchangeKind(meta?.ending, trimmedMessages.length),
           },
           startedAt,
         );
