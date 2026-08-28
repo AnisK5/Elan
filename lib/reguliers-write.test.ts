@@ -41,12 +41,8 @@ describe("extractReguliersFromConvo", () => {
     const messages: ChatMessage[] = [
       {
         role: "user",
-        content: "pourtant il y a rien dans regulier",
-      },
-      {
-        role: "assistant",
         content:
-          "linge de lit, toutes les semaine et demie à deux semaines, à ranger dans Réguliers.",
+          "pourtant il y a rien dans regulier — le linge de lit toutes les 2 semaines pourtant",
       },
     ];
     expect(extractReguliersFromConvo(messages, at)[0]?.label).toBe(
@@ -59,6 +55,24 @@ describe("extractReguliersFromConvo", () => {
       { role: "user", content: "draps toutes les 2 semaines ?" },
       { role: "assistant", content: "Oui, ~2sem ça tient." },
       { role: "user", content: "non" },
+    ];
+    expect(extractReguliersFromConvo(messages, at)).toEqual([]);
+  });
+
+  it("ignore l'historique linge quand le tour parle de Laura", () => {
+    const messages: ChatMessage[] = [
+      {
+        role: "user",
+        content: "le linge de lit toutes les 2 semaines",
+      },
+      {
+        role: "assistant",
+        content: "C'est noté dans Réguliers.",
+      },
+      {
+        role: "user",
+        content: "laura kici je prefere la relancer lundi",
+      },
     ];
     expect(extractReguliersFromConvo(messages, at)).toEqual([]);
   });

@@ -67,12 +67,15 @@ export function extractReguliersFromConvo(
   messages: Pick<ChatMessage, "role" | "content">[],
   at = new Date(),
 ): RegulierItem[] {
-  // Dernier tour seulement : sinon un vieux « toutes les 2 semaines » dans
-  // l'historique re-déclenche une note greffier à chaque message.
-  const recent = messages.slice(-4);
-  if (recent.length === 0 || userRefused(recent)) return [];
+  // Dernier message utilisateur seulement : l'historique du chat ne doit pas
+  // re-déclencher linge / URSSAF quand on parle d'autre chose (Laura, etc.).
+  const lastUserIdx = messages.findLastIndex((m) => m.role === "user");
+  const lastUser = lastUserIdx >= 0 ? messages[lastUserIdx] : undefined;
+  if (!lastUser || userRefused([lastUser])) return [];
 
-  const blob = recent.map((m) => m.content).join("\n");
+  let blob = lastUser.content;
+  const next = messages[lastUserIdx + 1];
+  if (next?.role === "assistant") blob += `\n${next.content}`;
   const cadence = inferCadence(blob);
   if (!cadence) return [];
 

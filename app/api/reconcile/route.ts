@@ -6,6 +6,7 @@ import { systemPromptBlocks } from "@/lib/prompt-cache";
 import type { ChatMessage, Thread } from "@/lib/types";
 import { mergeRegulierWrites, reguliersWriteNote, upsertRegulierOps, extractReguliersFromConvo } from "@/lib/reguliers-write";
 import { mergeShoppingWrites, shoppingWriteNote, shoppingOpsForThreads } from "@/lib/shopping-write";
+import { mergeTurnWrites } from "@/lib/reconcile-turn";
 import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
 
 export const runtime = "nodejs";
@@ -65,6 +66,7 @@ RÈGLES (tu es CONSERVATEUR) :
 - ENVOYÉ / CONTACTÉ / RELANCÉ = ACTION FAITE. Si la personne dit qu'elle a envoyé un mail, passé un appel, fait une relance, posté, soumis, commandé — l'action correspondante EST faite. Ne laisse JAMAIS un truc « relancer X » / « contacter X » / « envoyer X » ouvert et inchangé alors qu'elle vient de le faire (sinon le conseil du matin lui re-proposera de le refaire — confiance brisée). Deux cas, et tu DOIS écrire les ops dans les DEUX :
   · Si l'action clôt le truc (rien de plus à attendre) → "done".
   · Si ça met le truc EN ATTENTE d'une réponse d'un tiers → OBLIGATOIREMENT les trois à la fois : (1) kind "suivi", (2) "note" qui commence par « relancé le [date d'aujourd'hui JJ/MM] » ou « envoyé le [JJ/MM] », en attente de réponse, (3) "due" pour la PROCHAINE relance (typiquement dans ~1 semaine si aucun délai dit), PAS aujourd'hui. Sans la note datée du jour, le plan du lendemain croira que ce n'est pas fait.
+- REPORTER / PRÉFÉRER UN JOUR (crucial) : « je préfère relancer X lundi », « plutôt demain », « on reporte à vendredi » = ce n'est PAS fait. Interdit de "done" ou d'écrire « relancé » / « relancée ». Utilise {"op":"set","id":"...","plannedFor":"YYYY-MM-DD"} pour le jour visé + une "note" « Relance prévue [jour JJ/MM] ». Ne touche AUCUN autre truc que celui nommé dans le message.
 - Améliore un nom ("rename") seulement si l'échange apporte une formulation plus juste/précise (ex. "appeler le garage" → "appeler le garage pour le contrôle technique").
 - Complète des infos ("set") seulement si elles sont explicites (une date mentionnée, un effort évoqué, un changement action↔suivi).
 - "add" seulement pour un nouveau truc clairement évoqué et absent de la liste.
@@ -194,13 +196,28 @@ function withReguliers(
   return { ...greffier, updates, note };
 }
 
+function applyTurnScope(
+  threads: Thread[],
+  messages: ChatMessage[],
+  greffier: { updates: unknown[]; note: string; situation?: string },
+): { updates: unknown[]; note: string; situation?: string } {
+  return {
+    ...greffier,
+    updates: mergeTurnWrites(threads, messages, greffier.updates),
+  };
+}
+
 function withWrites(
   threads: Thread[],
   messages: ChatMessage[],
   greffier: { updates: unknown[]; note: string; situation?: string },
   previousSituation?: string | null,
 ): { updates: unknown[]; note: string; situation?: string } {
-  const after = withShopping(threads, messages, withReguliers(threads, messages, greffier));
+  const after = withShopping(
+    threads,
+    messages,
+    withReguliers(threads, messages, applyTurnScope(threads, messages, greffier)),
+  );
   const extracted = extractSituationFromConvo(messages);
   const fromModel = after.situation?.trim()
     ? { text: after.situation.trim() }
