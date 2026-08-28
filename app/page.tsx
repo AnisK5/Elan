@@ -200,6 +200,14 @@ export default function Home() {
       Number.isFinite(startedMs) &&
       Date.now() - startedMs < RESUME_MAX_AGE_MS;
     if (!fresh) {
+      if (a.messages.length > 1) {
+        saveSessionRecord(a.messages.filter((m) => m.content.trim()), {
+          sessionId: a.sessionId,
+          startedAt: a.startedAt,
+          durationMin: a.durationMin,
+          sessionContext: a.context,
+        });
+      }
       clearActiveSession();
       return;
     }
@@ -564,24 +572,35 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, view, planSig, context, diagnosticOn]);
 
+  function saveSessionRecord(
+    transcript: ChatMessage[],
+    opts: {
+      sessionId?: string;
+      startedAt?: string;
+      durationMin?: number;
+      sessionContext?: SessionContext;
+    } = {},
+  ) {
+    if (transcript.length <= 1) return;
+    const started = Date.parse(opts.startedAt ?? sessionStartRef.current);
+    const elapsedMin = Number.isFinite(started)
+      ? Math.max(1, Math.round((Date.now() - started) / 60_000))
+      : (opts.durationMin ?? duration);
+    log({
+      id: opts.sessionId ?? newId(),
+      date: new Date().toISOString(),
+      durationMin: elapsedMin,
+      transcript,
+      context: opts.sessionContext ?? context,
+    });
+    logUsage("session", {
+      durationSec: elapsedMin * 60,
+      userId: user?.id ?? null,
+    });
+  }
+
   function endSession(transcript: ChatMessage[], sessionId?: string) {
-    if (transcript.length > 1) {
-      const started = Date.parse(sessionStartRef.current);
-      const elapsedMin = Number.isFinite(started)
-        ? Math.max(1, Math.round((Date.now() - started) / 60_000))
-        : duration;
-      log({
-        id: sessionId ?? newId(),
-        date: new Date().toISOString(),
-        durationMin: elapsedMin,
-        transcript,
-        context,
-      });
-      logUsage("session", {
-        durationSec: elapsedMin * 60,
-        userId: user?.id ?? null,
-      });
-    }
+    saveSessionRecord(transcript, { sessionId });
     // Combien de trucs bouclés pendant CETTE séance (depuis son début).
     const start = sessionStartRef.current;
     const count = start
@@ -1250,6 +1269,17 @@ export default function Home() {
             <button
               type="button"
               onClick={() => {
+                if (resume) {
+                  saveSessionRecord(
+                    resume.messages.filter((m) => m.content.trim()),
+                    {
+                      sessionId: resume.sessionId,
+                      startedAt: resume.startedAt,
+                      durationMin: resume.durationMin,
+                      sessionContext: resume.context,
+                    },
+                  );
+                }
                 clearActiveSession();
                 setResume(null);
               }}

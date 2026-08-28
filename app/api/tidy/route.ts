@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { resolveAnthropicKey } from "@/lib/anthropic";
 import { recordMessageUsage } from "@/lib/api-usage";
+import { resolveUtilityModel } from "@/lib/models";
+import { cachedSystemBlock } from "@/lib/prompt-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,9 +60,9 @@ export async function POST(req: Request) {
   const startedAt = Date.now();
   try {
     const res = await client.messages.create({
-      model: "claude-sonnet-4-6",
+      model: resolveUtilityModel(),
       max_tokens: 400,
-      system: SYSTEM,
+      system: cachedSystemBlock(SYSTEM),
       messages: [{ role: "user", content: text }],
     });
     void recordMessageUsage(

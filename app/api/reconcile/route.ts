@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { resolveAnthropicKey } from "@/lib/anthropic";
 import { recordMessageUsage } from "@/lib/api-usage";
+import { resolveUtilityModel } from "@/lib/models";
+import { systemPromptBlocks } from "@/lib/prompt-cache";
 import type { ChatMessage, Thread } from "@/lib/types";
 import { mergeRegulierWrites, reguliersWriteNote, upsertRegulierOps, extractReguliersFromConvo } from "@/lib/reguliers-write";
 import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
@@ -47,16 +49,7 @@ function renderConvo(messages: ChatMessage[]): string {
     .join("\n");
 }
 
-function systemPrompt(threads: Thread[], messages: ChatMessage[]): string {
-  const today = new Intl.DateTimeFormat("fr-FR", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(new Date());
-  return `Tu es le "greffier" d'Élan. Ton seul rôle : après un échange — séance OU une info glissée hors séance — mettre à jour les trucs de la personne à partir de ce qui vient d'être dit, pour qu'elle n'ait jamais à le faire elle-même.
-
-AUJOURD'HUI : ${today}. Sers-t'en pour dater et ancrer tout repère temporel.
+const RECONCILE_CORE = `Tu es le "greffier" d'Élan. Ton seul rôle : après un échange — séance OU une info glissée hors séance — mettre à jour les trucs de la personne à partir de ce qui vient d'être dit, pour qu'elle n'ait jamais à le faire elle-même.
 
 RÈGLES (tu es CONSERVATEUR) :
 - TOUR ACTUEL SEULEMENT : les messages marqués « ← TOUR ACTUEL » (dernier message utilisateur + éventuelle réplique) sont ce que tu ranges MAINTENANT. Le reste de l'échange est du CONTEXTE déjà traité — ne le re-range pas, ne le re-résume pas.
@@ -112,7 +105,16 @@ Chaque update est un de ces objets :
 - {"op":"add","text":"<nom>","kind":"action|suivi","due":"YYYY-MM-DD","effort":"S|M|L","note":"<contexte>"}  (due/effort/note optionnels)
 
 "note" : un résumé TRÈS court et humain de ce que tu as changé DANS CE TOUR SEULEMENT, en français, pour l'afficher à la personne (ex. "impôts ✓ · Paul repoussé à vendredi"). Jamais un récap de l'historique ni des tours précédents. Si tu ne changes rien, renvoie {"updates": [], "note": ""}.
-"situation" : seulement si le TOUR ACTUEL pose ou met à jour le cadre de vie (où elle est, jusqu'à quand). Une phrase. Sinon omets le champ.
+"situation" : seulement si le TOUR ACTUEL pose ou met à jour le cadre de vie (où elle est, jusqu'à quand). Une phrase. Sinon omets le champ.`;
+
+function reconcileDynamic(threads: Thread[], messages: ChatMessage[]): string {
+  const today = new Intl.DateTimeFormat("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date());
+  return `AUJOURD'HUI : ${today}. Sers-t'en pour dater et ancrer tout repère temporel.
 
 LES TRUCS ACTUELS (avec leur id) :
 ${renderThreads(threads)}
@@ -227,9 +229,9 @@ export async function POST(req: Request) {
   const startedAt = Date.now();
   try {
     const res = await client.messages.create({
-      model: "claude-sonnet-4-6",
+      model: resolveUtilityModel(),
       max_tokens: 600,
-      system: systemPrompt(threads, messages),
+      system: systemPromptBlocks(RECONCILE_CORE, reconcileDynamic(threads, messages)),
       messages: [{ role: "user", content: CUE }],
     });
     void recordMessageUsage(

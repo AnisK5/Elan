@@ -4,6 +4,7 @@ import {
   resolveConversationModel,
   resolveModelPreference,
 } from "@/lib/models";
+import { systemPromptBlocks } from "@/lib/prompt-cache";
 import type { ChatMessage, Thread } from "@/lib/types";
 import { ageLabel, dueLabel, intentionLabel } from "@/lib/thread-labels";
 import { renderReguliersForPlan, isContainerThread } from "@/lib/entretiens";
@@ -34,10 +35,7 @@ function renderThreads(threads: Thread[]): string {
   return `${open.length} trucs ouverts :\n${lines.join("\n")}`;
 }
 
-function systemPrompt(threads: Thread[], name?: string, situation?: string): string {
-  return `${socle(name, situation)}
-
-OÙ TU ES : un échange HORS SÉANCE, au-dessus de l'accueil. Pas de minuteur, pas de body-doubling, pas de premier pas à faire ici. Elle glisse une info, pose une question, raconte ce qui vient de se passer. Tu réponds. C'est une vraie conversation — pas un dump de tête (ça, c'est la séance Déposer) et pas le travail du créneau.
+const CHAT_CORE = `OÙ TU ES : un échange HORS SÉANCE, au-dessus de l'accueil. Pas de minuteur, pas de body-doubling, pas de premier pas à faire ici. Elle glisse une info, pose une question, raconte ce qui vient de se passer. Tu réponds. C'est une vraie conversation — pas un dump de tête (ça, c'est la séance Déposer) et pas le travail du créneau.
 
 CE QUE TU FAIS ICI :
 - Nouvelles (« j'ai appelé le dentiste ») : accuse réception. Tu PEUX demander UN détail utile pour porter le truc (ce qu'ils ont dit, la prochaine date). Une question, dernière phrase. Ne lui demande jamais de noter elle-même — et ne prétends JAMAIS l'avoir déjà rayé : le greffier écrit, pas toi.
@@ -58,7 +56,10 @@ CE QUE TU NE FAIS PAS :
 - Tu ne lances pas la séance toi-même. Tu la proposes quand le travail commence, puis tu t'arrêtes.
 - Tu ne fais pas d'interrogatoire. UNE question max, en dernière phrase. Si tu n'en as pas besoin, n'en pose pas.
 - Tu ne culpabilises jamais, tu ne comptes pas les retards.
-- Tu ne parles jamais de ton fonctionnement interne (outils, code, « est-ce que j'ai un mécanisme »).
+- Tu ne parles jamais de ton fonctionnement interne (outils, code, « est-ce que j'ai un mécanisme »).`;
+
+function chatDynamic(threads: Thread[], name?: string, situation?: string): string {
+  return `${socle(name, situation)}
 
 CE QU'ELLE A EN COURS :
 ${renderThreads(threads)}
@@ -96,7 +97,7 @@ export async function POST(req: Request) {
   const stream = client.messages.stream({
     model,
     max_tokens: 1000,
-    system: systemPrompt(threads, meta?.name, meta?.situation),
+    system: systemPromptBlocks(CHAT_CORE, chatDynamic(threads, meta?.name, meta?.situation)),
     // On garde assez d'historique pour se souvenir de l'échange en cours ;
     // au-delà, le contexte utile vient des trucs eux-mêmes.
     messages: messages.slice(-30).map((m) => ({
