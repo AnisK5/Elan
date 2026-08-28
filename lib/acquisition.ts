@@ -1,4 +1,5 @@
 export const ACQUISITION_STORAGE_KEY = "elan.acquisition.v1";
+export const ACQUISITION_DISMISS_KEY = "elan.acquisition.dismissed.v1";
 
 export interface AcquisitionAttribution {
   ref?: string;
@@ -103,4 +104,68 @@ export function formatAcquisitionLabel(info?: AcquisitionInfo | null): string {
     return [a.utmSource, a.utmMedium, a.utmCampaign].filter(Boolean).join(" / ");
   }
   return "—";
+}
+
+export function isAcquisitionPromptDismissed(): boolean {
+  if (typeof localStorage === "undefined") return false;
+  try {
+    const raw = localStorage.getItem(ACQUISITION_DISMISS_KEY);
+    if (!raw) return false;
+    const j = JSON.parse(raw) as { until?: number };
+    return typeof j.until === "number" && Date.now() < j.until;
+  } catch {
+    return false;
+  }
+}
+
+export function dismissAcquisitionPrompt(days = 90): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(
+    ACQUISITION_DISMISS_KEY,
+    JSON.stringify({ until: Date.now() + days * 86_400_000 }),
+  );
+}
+
+export function needsAcquisitionPrompt(info?: AcquisitionInfo | null): boolean {
+  if (info?.survey?.channel) return false;
+  if (isAcquisitionPromptDismissed()) return false;
+  return true;
+}
+
+/** Questionnaire répondu ou reporté — on peut proposer PWA / notifs. */
+export function isAcquisitionResolved(info?: AcquisitionInfo | null): boolean {
+  if (info?.survey?.channel) return true;
+  return isAcquisitionPromptDismissed();
+}
+
+function pickSurvey(
+  local?: AcquisitionSurvey,
+  remote?: AcquisitionSurvey,
+): AcquisitionSurvey | undefined {
+  if (local?.channel && remote?.channel) {
+    const localAt = Date.parse(local.answeredAt);
+    const remoteAt = Date.parse(remote.answeredAt);
+    return localAt >= remoteAt ? local : remote;
+  }
+  return local?.channel ? local : remote?.channel ? remote : undefined;
+}
+
+/** Fusionne local + remote — ne perd jamais une réponse questionnaire. */
+export function mergeAcquisition(
+  local?: AcquisitionInfo | null,
+  remote?: AcquisitionInfo | null,
+): AcquisitionInfo | undefined {
+  const survey = pickSurvey(local?.survey, remote?.survey);
+  const attribution = {
+    ...local?.attribution,
+    ...remote?.attribution,
+  };
+  const hasAttr = Object.keys(attribution).some(
+    (k) => attribution[k as keyof AcquisitionAttribution],
+  );
+  if (!survey && !hasAttr) return undefined;
+  return {
+    ...(hasAttr ? { attribution } : {}),
+    ...(survey ? { survey } : {}),
+  };
 }
