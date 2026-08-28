@@ -24,15 +24,22 @@ import {
   type ActiveSession,
 } from "@/lib/store";
 import Session from "@/components/Session";
-import InstallPrompt from "@/components/InstallPrompt";
-import RitualNotify from "@/components/RitualNotify";
+import EngagementPrompt from "@/components/EngagementPrompt";
 import SettingsSheet from "@/components/SettingsSheet";
 import FeedbackForm from "@/components/FeedbackForm";
 import { useRitualReminder } from "@/components/useRitualReminder";
 import {
   buildOfflinePlanHint,
-  isNotifyPromptDismissed,
+  isWebPushClientConfigured,
 } from "@/lib/notifications";
+import {
+  isAcquisitionResolved,
+  markModalShownThisVisit,
+  resolveEngagementPrompt,
+  wasModalShownThisVisit,
+  type EngagementPromptKind,
+} from "@/lib/engagement-prompts";
+import { isSupabaseConfigured } from "@/lib/supabase";
 import { isDiagnosticEnabled } from "@/lib/diagnostic";
 import { buildPlanViewSnapshot, planViewFromDebug } from "@/lib/plan-candidates";
 import PlanDiagnostic, {
@@ -151,6 +158,9 @@ export default function Home() {
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [situationText, setSituationText] = useState("");
   const [showAcquisition, setShowAcquisition] = useState(false);
+  const [engagementPrompt, setEngagementPrompt] =
+    useState<EngagementPromptKind | null>(null);
+  const [hasPushSub, setHasPushSub] = useState<boolean | null>(null);
   const signupLogged = useRef(false);
 
   useEffect(() => {
@@ -387,19 +397,66 @@ export default function Home() {
       },
     };
     saveAcquisition(next);
+    markModalShownThisVisit();
     setShowAcquisition(false);
   }
 
   function dismissAcquisition() {
     sessionStorage.setItem("elan.acquisition.dismissed", "1");
+    markModalShownThisVisit();
     setShowAcquisition(false);
   }
 
-  const showNotifyPrompt =
-    ready &&
-    !isNewcomer &&
-    sessions.length > 0 &&
-    (!isNotifyPromptDismissed() || Boolean(settings.notifyEnabled));
+  const pushReady =
+    isWebPushClientConfigured() && isSupabaseConfigured();
+
+  useEffect(() => {
+    if (!pushReady || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setHasPushSub(false);
+      return;
+    }
+    let cancelled = false;
+    navigator.serviceWorker.ready
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => {
+        if (!cancelled) setHasPushSub(!!sub);
+      })
+      .catch(() => {
+        if (!cancelled) setHasPushSub(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pushReady, settings.notifyEnabled]);
+
+  useEffect(() => {
+    if (!ready || !user || showAcquisition) {
+      setEngagementPrompt(null);
+      return;
+    }
+    setEngagementPrompt(
+      resolveEngagementPrompt({
+        acquisitionResolved: isAcquisitionResolved(
+          settings.acquisition?.survey?.channel,
+        ),
+        modalShownThisVisit: wasModalShownThisVisit(),
+        sessionsCount: sessions.length,
+        threadsCount: threads.length,
+        settings,
+        pushReady,
+        hasPushSub,
+      }),
+    );
+  }, [
+    ready,
+    user,
+    showAcquisition,
+    sessions.length,
+    threads.length,
+    settings,
+    pushReady,
+    hasPushSub,
+  ]);
 
   useRitualReminder({
     enabled: Boolean(settings.notifyEnabled),
@@ -1325,20 +1382,21 @@ export default function Home() {
         />
       </section>
 
-      <InstallPrompt />
-
-      <RitualNotify
-        visible={showNotifyPrompt || wrapUp}
-        threads={threads}
-        planStats={planStats}
-      />
-
       <footer className="mt-auto pt-10 text-center text-xs text-faint">
         Élan — pense à la séance, pas à la liste.
       </footer>
     </main>
 
     <HelpButton lift={showChat || !isNewcomer} />
+
+    {engagementPrompt ? (
+      <EngagementPrompt
+        kind={engagementPrompt}
+        threads={threads}
+        planStats={planStats}
+        onClose={() => setEngagementPrompt(null)}
+      />
+    ) : null}
 
     {showAcquisition ? (
       <AcquisitionPrompt
