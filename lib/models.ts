@@ -10,27 +10,74 @@ export type ModelPreference = "present" | "light";
 export const DEFAULT_MODEL_PREFERENCE: ModelPreference = "light";
 
 export const MODEL_PREF_HEADER = "x-elan-model-pref";
-const STORAGE_KEY = "elan.model-pref.v1";
+const STORAGE_KEY = "elan.model-pref.v2";
+const LEGACY_STORAGE_KEY = "elan.model-pref.v1";
+
+interface StoredModelPreference {
+  pref?: string;
+  /** true seulement si la personne a choisi dans Réglages. */
+  explicit?: boolean;
+}
 
 export function isModelPreference(v: unknown): v is ModelPreference {
   return v === "present" || v === "light";
 }
 
+function parseStored(raw: string | null): StoredModelPreference | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as StoredModelPreference;
+  } catch {
+    return null;
+  }
+}
+
+function persistModelPreference(
+  pref: ModelPreference,
+  explicit: boolean,
+): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({ pref, explicit }),
+  );
+}
+
+/** v1 gardait Opus par défaut sans marquer un choix explicite — on bascule tout le monde en léger. */
+function migrateLegacyModelPreference(stored: StoredModelPreference): ModelPreference {
+  if (stored.pref === "light") return "light";
+  return DEFAULT_MODEL_PREFERENCE;
+}
+
 export function readModelPreference(): ModelPreference {
   if (typeof window === "undefined") return DEFAULT_MODEL_PREFERENCE;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_MODEL_PREFERENCE;
-    const j = JSON.parse(raw) as { pref?: string };
-    return isModelPreference(j.pref) ? j.pref : DEFAULT_MODEL_PREFERENCE;
+    const current = parseStored(window.localStorage.getItem(STORAGE_KEY));
+    if (current && isModelPreference(current.pref)) {
+      if (current.pref === "present" && current.explicit !== true) {
+        persistModelPreference(DEFAULT_MODEL_PREFERENCE, false);
+        return DEFAULT_MODEL_PREFERENCE;
+      }
+      return current.pref;
+    }
+
+    const legacy = parseStored(window.localStorage.getItem(LEGACY_STORAGE_KEY));
+    if (legacy) {
+      const migrated = migrateLegacyModelPreference(legacy);
+      const explicit = legacy.pref === "light";
+      persistModelPreference(migrated, explicit);
+      window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+      return migrated;
+    }
+
+    return DEFAULT_MODEL_PREFERENCE;
   } catch {
     return DEFAULT_MODEL_PREFERENCE;
   }
 }
 
 export function writeModelPreference(pref: ModelPreference): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ pref }));
+  persistModelPreference(pref, true);
 }
 
 export function resolveModelPreference(req?: Request): ModelPreference {
