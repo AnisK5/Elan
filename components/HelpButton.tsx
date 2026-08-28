@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { ExplainerBody } from "./Explainer";
+import FeedbackForm from "./FeedbackForm";
+import { useAuth } from "./AuthProvider";
 
 /** Bouton flottant discret : ramène l'explication d'Élan quand on l'a perdue. */
 export default function HelpButton({
@@ -10,6 +12,7 @@ export default function HelpButton({
   lift?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const { user } = useAuth();
 
   useEffect(() => {
     if (!open) return;
@@ -66,6 +69,12 @@ export default function HelpButton({
             </div>
 
             <ExplainerBody />
+
+            {user ? (
+              <div className="mt-8 border-t border-line pt-6">
+                <FeedbackForm source="home" compact />
+              </div>
+            ) : null}
 
             <button
               onClick={() => setOpen(false)}
