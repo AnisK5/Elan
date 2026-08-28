@@ -1,4 +1,5 @@
 import type { DayPlanCache } from "./day-plan";
+import type { AcquisitionInfo } from "./acquisition";
 
 // Le "fil" : une chose qui traîne dans ta tête. Capturé sans friction,
 // enrichi seulement si tu en as l'envie. L'IA se débrouille avec le reste.
@@ -81,4 +82,8 @@ export interface Settings {
   dayPlan?: DayPlanCache;
   situation?: string;
   situationUntil?: string;
+  /** Chat accueil synchronisé entre appareils. */
+  homeChat?: ChatMessage[];
+  /** Source d'acquisition (UTM + questionnaire). */
+  acquisition?: AcquisitionInfo;
 }

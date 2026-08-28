@@ -231,6 +231,12 @@ export default function AdminPage() {
                             <div className="text-[11px] text-faint">{u.email}</div>
                           ) : null}
                         </Link>
+                        <Link
+                          href={`/admin/analytics?userId=${u.id}`}
+                          className="mt-1 inline-block text-[11px] text-teal hover:underline"
+                        >
+                          tokens →
+                        </Link>
                       </td>
                       <td className="px-3 py-2 text-muted">{fmtDay(u.signedUp)}</td>
                       <td className="px-3 py-2 text-muted">{fmtDay(u.lastSeen)}</td>

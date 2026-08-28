@@ -76,6 +76,8 @@ alter table public.elan_settings add column if not exists notify_email_enabled b
 alter table public.elan_settings add column if not exists day_plan jsonb;
 alter table public.elan_settings add column if not exists situation text;
 alter table public.elan_settings add column if not exists situation_until text;
+alter table public.elan_settings add column if not exists home_chat jsonb;
+alter table public.elan_settings add column if not exists acquisition jsonb;
 
 -- ── Web Push (notifs rituel, app fermée) ───────────────────────────
 create table if not exists public.elan_push_subscriptions (

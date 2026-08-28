@@ -75,7 +75,7 @@ export async function GET(
       admin
         .from("elan_settings")
         .select(
-          "name, default_duration_min, notify_enabled, notify_email_enabled, notify_time, notify_timezone, situation, situation_until",
+          "name, default_duration_min, notify_enabled, notify_email_enabled, notify_time, notify_timezone, situation, situation_until, home_chat, acquisition",
         )
         .eq("user_id", userId)
         .maybeSingle(),
@@ -121,6 +121,8 @@ export async function GET(
       notify_timezone: string | null;
       situation: string | null;
       situation_until: string | null;
+      home_chat: ChatMessage[] | null;
+      acquisition: import("@/lib/acquisition").AcquisitionInfo | null;
     } | null;
 
     const settings: AdminRawUserDetailSettings = {
@@ -132,6 +134,8 @@ export async function GET(
       notifyTimezone: settingsRow?.notify_timezone ?? "Europe/Paris",
       situation: settingsRow?.situation ?? undefined,
       situationUntil: settingsRow?.situation_until ?? undefined,
+      acquisition: settingsRow?.acquisition ?? undefined,
+      homeChat: settingsRow?.home_chat ?? undefined,
     };
 
     const events: AdminRawUserDetailEvent[] = (

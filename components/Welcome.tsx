@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import SignIn from "./SignIn";
 import { ExplainerBody } from "./Explainer";
 import { Logo } from "@/components/home/Branding";
+import { captureAcquisitionFromUrl } from "@/lib/acquisition";
 
 /**
  * Premier écran pour qui débarque sans rien savoir.
@@ -12,6 +13,10 @@ import { Logo } from "@/components/home/Branding";
  */
 export default function Welcome() {
   const [view, setView] = useState<"pitch" | "signin">("pitch");
+
+  useEffect(() => {
+    captureAcquisitionFromUrl();
+  }, []);
 
   if (view === "signin") return <SignIn onBack={() => setView("pitch")} />;
 

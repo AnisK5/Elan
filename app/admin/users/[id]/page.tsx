@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import AnalyticsDashboard from "@/components/admin/AnalyticsDashboard";
 import UserConversationsPanel from "@/components/admin/UserConversationsPanel";
+import HomeChatPanel from "@/components/admin/HomeChatPanel";
 import {
   ActivityWeightStrip,
   WeightedDayFrise,
@@ -48,6 +49,7 @@ function fmtWhen(iso: string): string {
 const SECTIONS = [
   { id: "frise", label: "Frise" },
   { id: "conversations", label: "Conversations" },
+  { id: "chat", label: "Chat accueil" },
   { id: "trucs", label: "Trucs" },
   { id: "usage", label: "Appels IA" },
   { id: "profil", label: "Profil" },
@@ -239,6 +241,19 @@ export default function AdminUserPage({
             </div>
           </section>
 
+          <section id="chat" className="mt-12 scroll-mt-24">
+            <h2 className="font-display text-lg font-semibold text-ink">
+              Chat accueil
+            </h2>
+            <p className="mt-1 text-[13px] text-muted">
+              Messages « info en passant » — synchronisés entre appareils après
+              migration <code className="text-ink">home_chat</code>.
+            </p>
+            <div className="mt-4">
+              <HomeChatPanel messages={detail.homeChat} />
+            </div>
+          </section>
+
           <section id="trucs" className="mt-12 scroll-mt-24">
             <h2 className="font-display text-lg font-semibold text-ink">
               Tous les trucs ({detail.threads.length})
@@ -368,6 +383,9 @@ export default function AdminUserPage({
                         : p.situation
                     }
                   />
+                ) : null}
+                {p.acquisitionLabel && p.acquisitionLabel !== "—" ? (
+                  <Row label="Source" value={p.acquisitionLabel} />
                 ) : null}
               </Card>
               <Card title="Engagement (30 j)">
