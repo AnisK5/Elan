@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ACQUISITION_DISMISS_KEY,
+  dismissAcquisitionPrompt,
+} from "./acquisition";
+import {
   dismissPwaPrompt,
   hasMeaningfulEngagement,
   isPwaPromptDismissed,
@@ -41,7 +45,9 @@ describe("resolveEngagementPrompt", () => {
   });
 
   const base = {
-    acquisitionResolved: true,
+    acquisition: {
+      survey: { channel: "google", answeredAt: "2026-08-27T12:00:00.000Z" },
+    },
     modalShownThisVisit: false,
     sessionsCount: 1,
     threadsCount: 0,
@@ -52,8 +58,19 @@ describe("resolveEngagementPrompt", () => {
 
   it("attend la fin du questionnaire acquisition", () => {
     expect(
-      resolveEngagementPrompt({ ...base, acquisitionResolved: false }),
+      resolveEngagementPrompt({ ...base, acquisition: undefined }),
     ).toBeNull();
+  });
+
+  it("accepte un report acquisition (Plus tard)", () => {
+    dismissAcquisitionPrompt(90);
+    expect(
+      resolveEngagementPrompt({
+        ...base,
+        acquisition: undefined,
+      }),
+    ).toBe("pwa");
+    expect(store[ACQUISITION_DISMISS_KEY]).toBeTruthy();
   });
 
   it("ne montre rien si une modale a déjà été vue cette visite", () => {

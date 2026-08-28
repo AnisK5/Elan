@@ -33,7 +33,6 @@ import {
   isWebPushClientConfigured,
 } from "@/lib/notifications";
 import {
-  isAcquisitionResolved,
   markModalShownThisVisit,
   resolveEngagementPrompt,
   wasModalShownThisVisit,
@@ -63,6 +62,7 @@ import { computeUsageWeek } from "@/lib/usage";
 import {
   buildSignupMeta,
   captureAcquisitionFromUrl,
+  dismissAcquisitionPrompt,
   readStoredAttribution,
   type AcquisitionInfo,
 } from "@/lib/acquisition";
@@ -382,7 +382,6 @@ export default function Home() {
   useEffect(() => {
     if (!ready || !user) return;
     if (!needsAcquisitionPrompt(settings.acquisition)) return;
-    if (sessionStorage.getItem("elan.acquisition.dismissed") === "1") return;
     setShowAcquisition(true);
   }, [ready, user, settings.acquisition]);
 
@@ -402,7 +401,7 @@ export default function Home() {
   }
 
   function dismissAcquisition() {
-    sessionStorage.setItem("elan.acquisition.dismissed", "1");
+    dismissAcquisitionPrompt(90);
     markModalShownThisVisit();
     setShowAcquisition(false);
   }
@@ -436,9 +435,7 @@ export default function Home() {
     }
     setEngagementPrompt(
       resolveEngagementPrompt({
-        acquisitionResolved: isAcquisitionResolved(
-          settings.acquisition?.survey?.channel,
-        ),
+        acquisition: settings.acquisition,
         modalShownThisVisit: wasModalShownThisVisit(),
         sessionsCount: sessions.length,
         threadsCount: threads.length,
@@ -454,6 +451,7 @@ export default function Home() {
     sessions.length,
     threads.length,
     settings,
+    settings.acquisition,
     pushReady,
     hasPushSub,
   ]);

@@ -13,6 +13,7 @@ import type {
   ThreadKind,
 } from "./types";
 import type { AcquisitionInfo } from "./acquisition";
+import { mergeAcquisition } from "./acquisition";
 import type { Situation } from "./situation";
 import { activeSituation } from "./situation";
 import { getSupabase } from "./supabase";
@@ -336,8 +337,20 @@ export async function hydrateFromSupabase(userId: string): Promise<void> {
       writeLocalOnly(THREADS_KEY, dbThreads);
       writeLocalOnly(SESSIONS_KEY, dbSessions);
       if (settingsRow) {
-        const st = rowToSettings(settingsRow);
+        const remote = rowToSettings(settingsRow);
+        const local = read<Settings>(SETTINGS_KEY, { defaultDurationMin: 15 });
+        const acquisition = mergeAcquisition(
+          local.acquisition,
+          remote.acquisition,
+        );
+        const st: Settings = { ...remote, acquisition };
         writeLocalOnly(SETTINGS_KEY, st);
+        if (
+          local.acquisition?.survey?.channel &&
+          !remote.acquisition?.survey?.channel
+        ) {
+          void pushToSupabase(SETTINGS_KEY, st, remote);
+        }
         if (st.homeChat?.length) {
           writeLocalOnly(CHAT_KEY, st.homeChat.slice(-60));
         } else {

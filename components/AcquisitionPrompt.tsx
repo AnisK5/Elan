@@ -6,6 +6,8 @@ import {
   type AcquisitionInfo,
 } from "@/lib/acquisition";
 
+export { needsAcquisitionPrompt } from "@/lib/acquisition";
+
 export default function AcquisitionPrompt({
   onSubmit,
   onDismiss,
@@ -83,8 +85,4 @@ export default function AcquisitionPrompt({
       </div>
     </div>
   );
-}
-
-export function needsAcquisitionPrompt(info?: AcquisitionInfo | null): boolean {
-  return !info?.survey?.channel;
 }

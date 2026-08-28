@@ -1,5 +1,7 @@
 import type { Settings } from "./types";
+import type { AcquisitionInfo } from "./acquisition";
 import { isNotifyPromptDismissed } from "./notifications";
+import { isAcquisitionResolved as acquisitionGateOpen } from "./acquisition";
 
 export type EngagementPromptKind = "pwa" | "notify";
 
@@ -44,10 +46,6 @@ export function markModalShownThisVisit(): void {
   sessionStorage.setItem(MODAL_THIS_VISIT_KEY, "1");
 }
 
-export function isAcquisitionResolved(surveyChannel?: string | null): boolean {
-  return Boolean(surveyChannel?.trim());
-}
-
 export function hasMeaningfulEngagement(
   sessionsCount: number,
   threadsCount: number,
@@ -65,7 +63,7 @@ export function isNotifySetupComplete(
 }
 
 export function resolveEngagementPrompt(opts: {
-  acquisitionResolved: boolean;
+  acquisition?: AcquisitionInfo | null;
   modalShownThisVisit: boolean;
   sessionsCount: number;
   threadsCount: number;
@@ -73,7 +71,7 @@ export function resolveEngagementPrompt(opts: {
   pushReady?: boolean;
   hasPushSub?: boolean | null;
 }): EngagementPromptKind | null {
-  if (!opts.acquisitionResolved) return null;
+  if (!acquisitionGateOpen(opts.acquisition)) return null;
   if (opts.modalShownThisVisit) return null;
   if (
     !hasMeaningfulEngagement(opts.sessionsCount, opts.threadsCount)
