@@ -13,7 +13,8 @@ describe("resolveConversationModel", () => {
     expect(resolveConversationModel("chat", "light")).toBe(CLAUDE_SONNET);
   });
 
-  it("met la séance en Opus par défaut, Sonnet si léger", () => {
+  it("met la séance en Sonnet par défaut, Opus si présent", () => {
+    expect(resolveConversationModel("session")).toBe(CLAUDE_SONNET);
     expect(resolveConversationModel("session", "present")).toBe(CLAUDE_OPUS);
     expect(resolveConversationModel("session", "light")).toBe(CLAUDE_SONNET);
   });
@@ -27,8 +28,8 @@ describe("resolveModelPreference", () => {
     expect(resolveModelPreference(req)).toBe("light");
   });
 
-  it("replie sur present", () => {
-    expect(resolveModelPreference()).toBe("present");
+  it("replie sur light", () => {
+    expect(resolveModelPreference()).toBe("light");
     expect(isModelPreference("nope")).toBe(false);
   });
 });
