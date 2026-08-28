@@ -50,4 +50,18 @@ describe("filterEffectiveOps", () => {
     ];
     expect(filterEffectiveOps(threads, ops)).toEqual([]);
   });
+
+  it("écarte un done si achat encore nécessaire", () => {
+    const withPatins = [
+      ...threads,
+      {
+        id: "p",
+        text: "Changer les patins des chaises",
+        status: "open",
+        note: "Patins à acheter — pas en stock.",
+      },
+    ];
+    const ops: ThreadOp[] = [{ op: "done", id: "p" }];
+    expect(filterEffectiveOps(withPatins, ops)).toEqual([]);
+  });
 });

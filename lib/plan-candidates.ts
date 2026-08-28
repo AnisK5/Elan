@@ -244,6 +244,20 @@ const OUTDOOR_CUE =
 const OUTDOOR_NOTE =
   /d[ée]placement|sortie physique|pas faisable à distance|en magasin|sur le trajet|n[ée]cessite un d[ée]placement/i;
 
+/** Achat ou récupération en magasin encore à faire — sortie, pas une simple question bureau. */
+const PURCHASE_CUE =
+  /à acheter|pas en stock|commander|à récup[ée]rer|acheter d['']abord|r[ée]cup[ée]rer d['']abord|passer (?:chez|à|en)|(?:leroy|castorama|decathlon|bricolage|mr\.?\s*bricolage|action)\b/i;
+
+export function needsPurchaseStep(text?: string, note?: string): boolean {
+  const blob = `${text ?? ""}\n${note ?? ""}`;
+  return PURCHASE_CUE.test(blob);
+}
+
+/** Travail physique pas fini (achat / pose) — le greffier ne doit pas "done" trop tôt. */
+export function hasPendingPhysicalWork(text?: string, note?: string): boolean {
+  return needsPurchaseStep(text, note);
+}
+
 /** Condition posée dans la note, jamais tranchée — pas un mur, une question. */
 const UNVERIFIED_CONDITION =
   /d[èe]s r[ée]ception|d[èe]s que|à v[ée]rifier|une fois arriv[ée]e?|pas encore ouverte|quand j['’]aurai|condition salaire/i;
@@ -253,12 +267,14 @@ export function isOutdoorNeed(t: Thread): boolean {
   const blob = `${t.text}\n${t.note ?? ""}`;
   if (NO_LONGER_OUTDOOR.test(blob)) return false;
   if (t.text.trim().toLowerCase() === "courses") return true;
+  if (needsPurchaseStep(t.text, t.note)) return true;
   return OUTDOOR_CUE.test(blob) || OUTDOOR_NOTE.test(t.note ?? "");
 }
 
 /** Une condition bloque le truc sur le papier, mais on ne l'a jamais demandée. */
 export function hasUnverifiedCondition(t: Thread): boolean {
   if (hasFutureSoftTiming(t.note)) return false;
+  if (needsPurchaseStep(t.text, t.note)) return false;
   return UNVERIFIED_CONDITION.test(`${t.note ?? ""}\n${t.text}`);
 }
 

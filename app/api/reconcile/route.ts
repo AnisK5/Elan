@@ -5,6 +5,7 @@ import { resolveUtilityModel } from "@/lib/models";
 import { systemPromptBlocks } from "@/lib/prompt-cache";
 import type { ChatMessage, Thread } from "@/lib/types";
 import { mergeRegulierWrites, reguliersWriteNote, upsertRegulierOps, extractReguliersFromConvo } from "@/lib/reguliers-write";
+import { mergeShoppingWrites, shoppingWriteNote, shoppingOpsForThreads } from "@/lib/shopping-write";
 import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
 
 export const runtime = "nodejs";
@@ -68,6 +69,7 @@ RÈGLES (tu es CONSERVATEUR) :
 - Complète des infos ("set") seulement si elles sont explicites (une date mentionnée, un effort évoqué, un changement action↔suivi).
 - "add" seulement pour un nouveau truc clairement évoqué et absent de la liste.
 - COURSES / SUPERMARCHÉ (important) : les achats courants (lait, pain, produits ménagers, courses alimentaires…) ne créent PAS chacun un thread séparé — ça gonflerait artificiellement le backlog. Un seul fil conteneur "Courses" porte toute la liste dans sa "note", articles séparés par « · ». Si "Courses" n'existe pas encore : {"op":"add","text":"Courses","kind":"action","note":"lait"}. Si elle existe déjà : {"op":"note","id":"<id du fil Courses>","note":"lait · pain · lessive"} en fusionnant avec la note existante, sans doublons, en gardant l'ordre logique. Les missions ponctuelles en magasin spécifique (« acheter des chaussures chez Decathlon », « retourner la robe chez Zara ») restent des threads séparés — ce ne sont pas des courses alimentaires.
+- ACHATS MAISON / BRICOLAGE (patins, ampoules, vis, patère…) : si la note dit « à acheter », « pas en stock », « commander », « à récupérer » — ajoute l'article au fil "Courses" (ex. « patins chaises ») ET laisse le thread principal OUVERT pour la pose une fois le matériel là. Ne marque JAMAIS "done" tant que l'achat n'est pas fait ou la pose pas confirmée.
 - RÉGULIERS (loyer, URSSAF, prélèvements, linge, draps, appels réguliers… — ce qui REVIENT) : dès qu'elle CONFIRME un rythme (« toutes les 2 semaines », « une fois par mois »), tu DOIS l'écrire dans le fil conteneur "Réguliers". Pas un thread séparé. Pas « c'est noté » sans op.
   · Un seul fil "Réguliers" (accepte legacy "Rythmes" / "Entretiens"). UN régulier par LIGNE :
     libellé · ~cadence · YYYY-MM-DD · contexte optionnel
@@ -154,6 +156,24 @@ function safeParse(text: string): {
   return null;
 }
 
+function withShopping(
+  threads: Thread[],
+  messages: ChatMessage[],
+  greffier: { updates: unknown[]; note: string; situation?: string },
+): { updates: unknown[]; note: string; situation?: string } {
+  const filtered = mergeShoppingWrites(threads, messages, greffier.updates);
+  const ours = shoppingOpsForThreads(threads, filtered);
+  const updates = ours.length > 0 ? [...filtered, ...ours] : filtered;
+  if (ours.length === 0) return { ...greffier, updates };
+  const extra = shoppingWriteNote(ours);
+  const note = greffier.note?.trim()
+    ? greffier.note.includes("Courses")
+      ? greffier.note
+      : `${greffier.note} · ${extra}`
+    : extra;
+  return { ...greffier, updates, note };
+}
+
 function withReguliers(
   threads: Thread[],
   messages: ChatMessage[],
@@ -180,7 +200,7 @@ function withWrites(
   greffier: { updates: unknown[]; note: string; situation?: string },
   previousSituation?: string | null,
 ): { updates: unknown[]; note: string; situation?: string } {
-  const after = withReguliers(threads, messages, greffier);
+  const after = withShopping(threads, messages, withReguliers(threads, messages, greffier));
   const extracted = extractSituationFromConvo(messages);
   const fromModel = after.situation?.trim()
     ? { text: after.situation.trim() }
