@@ -409,9 +409,17 @@ export default function AdminUserPage({
 
             {analytics ? (
               <div className="mt-8">
-                <h3 className="font-display text-base font-semibold text-ink">
-                  Graphiques tokens
-                </h3>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="font-display text-base font-semibold text-ink">
+                    Graphiques tokens
+                  </h3>
+                  <Link
+                    href={`/admin/analytics?userId=${userId}`}
+                    className="text-[13px] font-medium text-teal hover:underline"
+                  >
+                    Dashboard complet →
+                  </Link>
+                </div>
                 <div className="mt-4">
                   <AnalyticsDashboard data={analytics} compact />
                 </div>

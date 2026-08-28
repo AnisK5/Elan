@@ -67,7 +67,54 @@ describe("buildAdminAnalytics", () => {
     expect(snap.totals.totalTokens).toBe(1550);
     expect(snap.totals.avgTurnsPerSession).toBe(2);
     expect(snap.tokensByUser[0].name).toBe("Alice");
+    expect(snap.tokensByUser[0].apiCalls).toBe(2);
+    expect(snap.tokensByUser[0].avgTokensPerSession).toBe(1550);
     expect(snap.dropoffTurns.find((d) => d.turns === 2)?.count).toBe(1);
     expect(snap.recentSessions[0].inputTokens).toBe(1000);
+  });
+
+  it("filtre par utilisateur et expose viewUser", () => {
+    const snap = buildAdminAnalytics(
+      [
+        {
+          userId: "u1",
+          at: "2026-08-22T09:00:00Z",
+          day: "2026-08-22",
+          route: "session",
+          model: "claude-opus-4-8",
+          inputTokens: 1000,
+          outputTokens: 200,
+          sessionId: "s1",
+          sessionContext: "desk",
+          exchangeIndex: 1,
+          exchangeKind: "user_turn",
+        },
+        {
+          userId: "u2",
+          at: "2026-08-22T10:00:00Z",
+          day: "2026-08-22",
+          route: "chat",
+          model: "claude-sonnet-4-6",
+          inputTokens: 500,
+          outputTokens: 100,
+          sessionId: null,
+          sessionContext: null,
+          exchangeIndex: 1,
+          exchangeKind: "chat",
+        },
+      ],
+      [],
+      new Map([
+        ["u1", "a@test.fr"],
+        ["u2", "b@test.fr"],
+      ]),
+      new Map([["u1", "Alice"]]),
+      "u1",
+    );
+
+    expect(snap.viewUser?.userId).toBe("u1");
+    expect(snap.totals.totalTokens).toBe(1200);
+    expect(snap.tokensByUser).toHaveLength(1);
+    expect(snap.tokensByUser[0].userId).toBe("u1");
   });
 });

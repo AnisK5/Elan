@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import type { AdminAnalyticsSnapshot } from "@/lib/admin-analytics";
+import type { AdminAnalyticsSnapshot, UserTokenRow } from "@/lib/admin-analytics";
 import {
   BarChart,
   HourHeatmap,
   MetricGrid,
 } from "@/components/admin/AnalyticsCharts";
+import UserTokenTable from "@/components/admin/UserTokenTable";
 
 function fmtDay(iso: string): string {
   const d = new Date(iso.length <= 10 ? `${iso}T12:00:00` : iso);
@@ -32,25 +33,76 @@ export default function AnalyticsDashboard({
   data,
   userLinkPrefix = "/admin/users/",
   compact = false,
+  globalUsers,
+  selectedUserId,
+  onSelectUser,
 }: {
   data: AdminAnalyticsSnapshot;
   userLinkPrefix?: string;
   compact?: boolean;
+  globalUsers?: UserTokenRow[];
+  selectedUserId?: string | null;
+  onSelectUser?: (userId: string | null) => void;
 }) {
   const t = data.totals;
+  const viewUser = data.viewUser;
+  const viewLabel = viewUser?.name || viewUser?.email;
+  const scopeHint = viewLabel ? ` — ${viewLabel}` : "";
 
   if (t.apiCalls === 0 && t.sessions === 0) {
     return (
       <p className="rounded-2xl border border-line bg-surface px-4 py-6 text-[14px] text-muted">
-        Pas encore de données tokens — il faut d&apos;abord exécuter la migration{" "}
+        Pas encore de données tokens{scopeHint ? ` pour ${viewLabel}` : ""} — il
+        faut d&apos;abord exécuter la migration{" "}
         <code className="text-ink">elan_api_usage</code> dans Supabase, puis laisser
         les gens utiliser l&apos;app connectés.
       </p>
     );
   }
 
+  const userRows = globalUsers ?? data.tokensByUser;
+
   return (
     <div className="flex flex-col gap-10">
+      {viewUser ? (
+        <div className="rounded-2xl border border-teal/30 bg-teal-soft/30 px-4 py-3">
+          <p className="text-[14px] text-ink">
+            Vue filtrée :{" "}
+            <span className="font-semibold">
+              {viewUser.name || viewUser.email}
+            </span>
+          </p>
+          {compact ? (
+            <Link
+              href={`/admin/analytics?userId=${viewUser.userId}`}
+              className="mt-2 inline-block text-[13px] font-medium text-teal hover:underline"
+            >
+              Ouvrir le dashboard tokens complet →
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!compact && userRows.length > 0 ? (
+        <section>
+          <h3 className="font-display text-lg font-semibold text-ink">
+            Consommation par personne
+          </h3>
+          <p className="mt-1 text-[13px] text-muted">
+            Tokens, séances et appels API — clique Filtrer pour voir les graphiques
+            d&apos;une seule personne.
+          </p>
+          <div className="mt-3">
+            <UserTokenTable
+              rows={userRows}
+              selectedUserId={selectedUserId}
+              onSelectUser={onSelectUser}
+              userLinkPrefix={userLinkPrefix}
+            />
+          </div>
+        </section>
+      ) : null}
+
       <MetricGrid
         items={[
           {
@@ -76,7 +128,7 @@ export default function AnalyticsDashboard({
 
       <section>
         <h3 className="font-display text-lg font-semibold text-ink">
-          Tokens par jour
+          Tokens par jour{scopeHint}
         </h3>
         <p className="mt-1 text-[13px] text-muted">
           Consommation sur 30 jours — pour voir si ça accélère ou se stabilise.
@@ -135,7 +187,7 @@ export default function AnalyticsDashboard({
 
       <section>
         <h3 className="font-display text-lg font-semibold text-ink">
-          À quelle heure ils font une séance
+          À quelle heure {viewUser ? "elle fait" : "ils font"} une séance
         </h3>
         <p className="mt-1 text-[13px] text-muted">
           Heure de Paris — repère le rythme naturel (matin ? soir ?).
@@ -151,7 +203,8 @@ export default function AnalyticsDashboard({
             Durée des séances
           </h3>
           <p className="mt-1 text-[13px] text-muted">
-            Est-ce qu&apos;ils restent 5 min ou s&apos;installent vraiment ?
+            Est-ce qu&apos;{viewUser ? "elle reste" : "ils restent"} 5 min ou
+            s&apos;installe vraiment ?
           </p>
           <div className="mt-3 rounded-2xl border border-line bg-surface px-4 py-4">
             <BarChart
@@ -167,7 +220,7 @@ export default function AnalyticsDashboard({
 
         <section>
           <h3 className="font-display text-lg font-semibold text-ink">
-            Après combien d&apos;échanges ils partent
+            Après combien d&apos;échanges {viewUser ? "elle part" : "ils partent"}
           </h3>
           <p className="mt-1 text-[13px] text-muted">
             Nombre de messages utilisateur avant la fin — friction ou flow ?
@@ -217,39 +270,10 @@ export default function AnalyticsDashboard({
         </div>
       </section>
 
-      {!compact && data.tokensByUser.length > 0 ? (
-        <section>
-          <h3 className="font-display text-lg font-semibold text-ink">
-            Tokens par personne
-          </h3>
-          <div className="mt-3 flex flex-col gap-2">
-            {data.tokensByUser.slice(0, 8).map((u) => (
-              <Link
-                key={u.userId}
-                href={`${userLinkPrefix}${u.userId}`}
-                className="flex items-center justify-between rounded-xl border border-line bg-surface px-4 py-3 transition hover:border-teal/40"
-              >
-                <div>
-                  <div className="font-medium text-ink">
-                    {u.name || u.email}
-                  </div>
-                  <div className="text-[11px] text-faint">
-                    {u.sessions} séance{u.sessions > 1 ? "s" : ""}
-                  </div>
-                </div>
-                <div className="text-right text-[13px] tabular-nums text-ink">
-                  {u.total.toLocaleString("fr-FR")} tok
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
       {!compact ? (
         <section>
           <h3 className="font-display text-lg font-semibold text-ink">
-            Séances récentes (détail)
+            Séances récentes (détail){scopeHint}
           </h3>
           <p className="mt-1 text-[13px] text-muted">
             Durée, échanges, tokens — pour se mettre dans une séance précise.
