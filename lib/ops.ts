@@ -1,4 +1,5 @@
 import type { Effort, ThreadKind } from "@/lib/types";
+import { hasPendingPhysicalWork } from "@/lib/plan-candidates";
 import { clean, type ThreadOp } from "@/lib/store";
 
 // Porte d'entrée des écritures venues du modèle.
@@ -214,6 +215,7 @@ export function filterEffectiveOps(
     switch (op.op) {
       case "done":
         if (t.status === "done") continue;
+        if (hasPendingPhysicalWork(t.text, t.note)) continue;
         out.push(op);
         break;
       case "snooze":

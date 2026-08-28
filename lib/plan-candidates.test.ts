@@ -214,11 +214,19 @@ describe("sorties et conditions jamais posées", () => {
     expect(
       hasUnverifiedCondition(
         thread({
+          text: "Rendre argent au coffre",
+          note: "À faire dès réception du salaire.",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      hasUnverifiedCondition(
+        thread({
           text: "Changer les patins des chaises",
           note: "À vérifier : patins déjà disponibles ou à acheter.",
         }),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       hasUnverifiedCondition(
         thread({ text: "mettre le linge", note: "dans le bac" }),
@@ -243,7 +251,7 @@ describe("sorties et conditions jamais posées", () => {
       patins,
     ]);
     expect(sitting.map((t) => t.id)).toEqual(["l"]);
-    expect(outdoor.map((t) => t.id)).toEqual(["s"]);
-    expect(conditions.map((t) => t.id)).toEqual(["p"]);
+    expect(outdoor.map((t) => t.id)).toEqual(["s", "p"]);
+    expect(conditions.map((t) => t.id)).toEqual([]);
   });
 });
