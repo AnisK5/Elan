@@ -17,6 +17,7 @@ import {
   writeSituation,
   readDayPlan,
   writeDayPlan,
+  saveAcquisition,
   useSessions,
   useSettings,
   useThreads,
@@ -39,6 +40,9 @@ import PlanDiagnostic, {
 } from "@/components/PlanDiagnostic";
 import Welcome from "@/components/Welcome";
 import HelpButton from "@/components/HelpButton";
+import AcquisitionPrompt, {
+  needsAcquisitionPrompt,
+} from "@/components/AcquisitionPrompt";
 import BacklogPeek from "@/components/home/BacklogPeek";
 import SessionPick from "@/components/home/SessionPick";
 import ChatBubble from "@/components/home/ChatBubble";
@@ -49,6 +53,12 @@ import { filterEffectiveOps, parseThreadOps } from "@/lib/ops";
 import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
 import { completionAt } from "@/lib/week-stats";
 import { computeUsageWeek } from "@/lib/usage";
+import {
+  buildSignupMeta,
+  captureAcquisitionFromUrl,
+  readStoredAttribution,
+  type AcquisitionInfo,
+} from "@/lib/acquisition";
 import { logUsage, startDwellTracker, useUsageEvents } from "@/lib/usage-log";
 import { sessionsToday } from "@/lib/session-memory";
 import { apiFetch, anthropicFailMessage, parseStreamError } from "@/lib/anthropic";
@@ -140,8 +150,20 @@ export default function Home() {
   const [pointUndo, setPointUndo] = useState<Thread[] | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [situationText, setSituationText] = useState("");
+  const [showAcquisition, setShowAcquisition] = useState(false);
+  const signupLogged = useRef(false);
 
-  useEffect(() => setChat(readChat()), []);
+  useEffect(() => {
+    captureAcquisitionFromUrl();
+    const sync = () => setChat(readChat());
+    sync();
+    const onCustom = (e: Event) => {
+      const key = (e as CustomEvent).detail;
+      if (key === "elan.chat.v1" || key === "elan.settings.v1") sync();
+    };
+    window.addEventListener("elan:sync", onCustom);
+    return () => window.removeEventListener("elan:sync", onCustom);
+  }, []);
   useEffect(() => {
     setSituationText(
       readSituation()?.text ?? settings.situation ?? "",
@@ -169,8 +191,7 @@ export default function Home() {
     if (ready) wakeSnoozed();
   }, [ready]);
 
-  // Reprise automatique d'une séance laissée en cours (refresh, onglet fermé…),
-  // mais seulement si elle est encore fraîche — sinon on la jette.
+  // Reprise d'une séance laissée en cours — bannière sur l'accueil, pas d'entrée auto.
   useEffect(() => {
     const a = readActiveSession();
     if (!a || a.messages.length === 0) return;
@@ -187,7 +208,6 @@ export default function Home() {
     setContext(a.context ?? "desk");
     sessionStartRef.current = a.startedAt;
     sessionBriefRef.current = null;
-    setView("session");
   }, []);
   // « Aujourd'hui » et la carte de la semaine doivent basculer de jour même si
   // l'onglet reste ouvert toute la nuit : on resynchronise à intervalle et au
@@ -302,13 +322,29 @@ export default function Home() {
   useEffect(() => {
     if (!ready) return;
     logUsage("open", { userId: user?.id ?? null });
-    if (user?.created_at && user.id) {
+    if (user?.created_at && user.id && !signupLogged.current) {
       const hours =
         (Date.now() - Date.parse(user.created_at)) / 3_600_000;
-      if (hours < 24) logUsage("signup", { userId: user.id });
+      if (hours < 24) {
+        signupLogged.current = true;
+        const attribution = readStoredAttribution();
+        const provider =
+          (user.app_metadata?.provider as string | undefined) ??
+          (user.identities?.[0]?.provider as string | undefined);
+        logUsage("signup", {
+          userId: user.id,
+          meta: buildSignupMeta(attribution, provider),
+        });
+        if (attribution && !settings.acquisition?.attribution) {
+          saveAcquisition({
+            ...(settings.acquisition ?? {}),
+            attribution,
+          });
+        }
+      }
     }
     return startDwellTracker(user?.id ?? null);
-  }, [ready, user?.id, user?.created_at]);
+  }, [ready, user?.id, user?.created_at, settings.acquisition]);
 
   useEffect(() => {
     setDiagnosticOn(isDiagnosticEnabled());
@@ -323,6 +359,33 @@ export default function Home() {
 
   // Premier lancement : jamais rien déposé ET jamais fait de séance.
   const isNewcomer = ready && threads.length === 0 && sessions.length === 0;
+  const showChat = ready && (threads.length > 0 || sessions.length > 0);
+
+  useEffect(() => {
+    if (!ready || !user) return;
+    if (!needsAcquisitionPrompt(settings.acquisition)) return;
+    if (sessionStorage.getItem("elan.acquisition.dismissed") === "1") return;
+    setShowAcquisition(true);
+  }, [ready, user, settings.acquisition]);
+
+  function submitAcquisition(channel: string, detail?: string) {
+    const next: AcquisitionInfo = {
+      ...(settings.acquisition ?? {}),
+      attribution: settings.acquisition?.attribution ?? readStoredAttribution() ?? undefined,
+      survey: {
+        channel,
+        detail,
+        answeredAt: new Date().toISOString(),
+      },
+    };
+    saveAcquisition(next);
+    setShowAcquisition(false);
+  }
+
+  function dismissAcquisition() {
+    sessionStorage.setItem("elan.acquisition.dismissed", "1");
+    setShowAcquisition(false);
+  }
 
   const showNotifyPrompt =
     ready &&
@@ -1171,7 +1234,34 @@ export default function Home() {
         )}
       </section>
 
-      {!isNewcomer && (
+      {resume && view === "home" ? (
+        <section className="animate-rise mt-4 rounded-2xl border border-amber/30 bg-amber/10 px-4 py-3">
+          <p className="text-[14px] text-ink">
+            Séance en cours — tu peux reprendre là où tu t&apos;étais arrêté.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setView("session")}
+              className="rounded-xl bg-teal px-4 py-2 text-[14px] font-semibold text-white transition hover:bg-teal-ink"
+            >
+              Reprendre ({resume.durationMin} min)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                clearActiveSession();
+                setResume(null);
+              }}
+              className="rounded-xl border border-line px-4 py-2 text-[14px] text-muted transition hover:text-ink"
+            >
+              Abandonner
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {showChat ? (
         <ChatBubble
           chat={chat}
           pointText={pointText}
@@ -1191,7 +1281,7 @@ export default function Home() {
           onReset={resetChat}
           trucs={trucs}
         />
-      )}
+      ) : null}
 
       {!isNewcomer && <UsageWeek week={usageWeek} />}
 
@@ -1218,7 +1308,14 @@ export default function Home() {
       </footer>
     </main>
 
-    <HelpButton lift={!isNewcomer} />
+    <HelpButton lift={showChat || !isNewcomer} />
+
+    {showAcquisition ? (
+      <AcquisitionPrompt
+        onSubmit={submitAcquisition}
+        onDismiss={dismissAcquisition}
+      />
+    ) : null}
     </>
   );
 }

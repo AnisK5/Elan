@@ -12,6 +12,7 @@ import type {
   Thread,
   ThreadKind,
 } from "./types";
+import type { AcquisitionInfo } from "./acquisition";
 import type { Situation } from "./situation";
 import { activeSituation } from "./situation";
 import { getSupabase } from "./supabase";
@@ -120,6 +121,8 @@ interface SettingsRow {
   day_plan?: DayPlanCache | null;
   situation?: string | null;
   situation_until?: string | null;
+  home_chat?: ChatMessage[] | null;
+  acquisition?: AcquisitionInfo | null;
 }
 
 function threadToRow(t: Thread, userId: string) {
@@ -222,6 +225,8 @@ function settingsToRow(s: Settings, userId: string) {
     day_plan: s.dayPlan ?? null,
     situation: s.situation ?? null,
     situation_until: s.situationUntil ?? null,
+    home_chat: s.homeChat ?? null,
+    acquisition: s.acquisition ?? null,
     updated_at: new Date().toISOString(),
   };
 }
@@ -236,6 +241,8 @@ function rowToSettings(r: SettingsRow): Settings {
     dayPlan: parseDayPlan(r.day_plan) ?? undefined,
     situation: r.situation ?? undefined,
     situationUntil: r.situation_until ?? undefined,
+    homeChat: r.home_chat ?? undefined,
+    acquisition: r.acquisition ?? undefined,
   };
 }
 
@@ -316,6 +323,14 @@ export async function hydrateFromSupabase(userId: string): Promise<void> {
         void pushToSupabase(SESSIONS_KEY, localSessions, []);
       const localSettings = read<Settings | null>(SETTINGS_KEY, null);
       if (localSettings) void pushToSupabase(SETTINGS_KEY, localSettings, null);
+      const localChat = read<ChatMessage[]>(CHAT_KEY, []);
+      if (localChat.length && localSettings) {
+        void pushToSupabase(
+          SETTINGS_KEY,
+          { ...localSettings, homeChat: localChat.slice(-60) },
+          localSettings,
+        );
+      }
     } else {
       // Sinon la DB fait foi.
       writeLocalOnly(THREADS_KEY, dbThreads);
@@ -323,6 +338,14 @@ export async function hydrateFromSupabase(userId: string): Promise<void> {
       if (settingsRow) {
         const st = rowToSettings(settingsRow);
         writeLocalOnly(SETTINGS_KEY, st);
+        if (st.homeChat?.length) {
+          writeLocalOnly(CHAT_KEY, st.homeChat.slice(-60));
+        } else {
+          const localChat = read<ChatMessage[]>(CHAT_KEY, []);
+          if (localChat.length > 0) {
+            write(SETTINGS_KEY, { ...st, homeChat: localChat.slice(-60) });
+          }
+        }
         const remotePlan = parseDayPlan(settingsRow.day_plan);
         if (remotePlan) {
           const localPlan = parseDayPlan(read<unknown>(PLAN_KEY, null));
@@ -378,6 +401,7 @@ export function clearLocalData(): void {
     SESSIONS_KEY,
     SETTINGS_KEY,
     ACTIVE_KEY,
+    CHAT_KEY,
     PLAN_KEY,
     EVENTS_KEY,
   ]) {
@@ -783,14 +807,23 @@ export function readChat(): ChatMessage[] {
 }
 
 export function writeChat(messages: ChatMessage[]) {
-  // On coupe la queue : au-delà, le contexte utile vient des trucs eux-mêmes.
-  writeLocalOnly(CHAT_KEY, messages.slice(-60));
+  const trimmed = messages.slice(-60);
+  writeLocalOnly(CHAT_KEY, trimmed);
+  const cur = read<Settings>(SETTINGS_KEY, { defaultDurationMin: 15 });
+  write(SETTINGS_KEY, { ...cur, homeChat: trimmed });
+}
+
+export function saveAcquisition(info: AcquisitionInfo): void {
+  const cur = read<Settings>(SETTINGS_KEY, { defaultDurationMin: 15 });
+  write(SETTINGS_KEY, { ...cur, acquisition: info });
 }
 
 export function clearChat() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(CHAT_KEY);
   window.dispatchEvent(new CustomEvent(SYNC_EVENT, { detail: CHAT_KEY }));
+  const cur = read<Settings>(SETTINGS_KEY, { defaultDurationMin: 15 });
+  write(SETTINGS_KEY, { ...cur, homeChat: [] });
 }
 
 /** Cadre de vie actuel (Vienne, pas chez soi…) — pas un truc, un contexte. */

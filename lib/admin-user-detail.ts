@@ -1,4 +1,6 @@
 import type { ChatMessage, SessionContext } from "./types";
+import type { AcquisitionInfo } from "./acquisition";
+import { formatAcquisitionLabel } from "./acquisition";
 import type { AdminUserRow } from "./admin-stats";
 import { countUserTurns } from "./admin-analytics";
 
@@ -107,6 +109,7 @@ export interface AdminUserDetail {
     situationUntil?: string;
     defaultDurationMin: number;
     notifyTimezone: string;
+    acquisitionLabel?: string;
   };
   engagement: AdminUserRow;
   backlog: {
@@ -126,6 +129,7 @@ export interface AdminUserDetail {
   dayBands: AdminDayBand[];
   activityDays: AdminActivityDay[];
   sessions: AdminSessionDetail[];
+  homeChat: ChatMessage[];
   feedbacks: AdminFeedbackItem[];
   usageLog: AdminUsageLogEntry[];
   totals: {
@@ -188,6 +192,8 @@ export interface AdminRawUserDetailSettings {
   notifyTimezone: string;
   situation?: string;
   situationUntil?: string;
+  acquisition?: AcquisitionInfo;
+  homeChat?: ChatMessage[];
 }
 
 const EVENT_LABELS: Record<string, string> = {
@@ -246,6 +252,15 @@ function eventDetail(
   }
   if (kind === "feedback" && meta?.mood) {
     return String(meta.mood);
+  }
+  if (kind === "signup" && meta) {
+    const parts = [
+      meta.authProvider ? `via ${String(meta.authProvider)}` : null,
+      meta.ref ? `ref=${String(meta.ref)}` : null,
+      meta.utmSource ? `utm=${String(meta.utmSource)}` : null,
+      meta.source ? String(meta.source) : null,
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join(" · ") : undefined;
   }
   return undefined;
 }
@@ -524,6 +539,7 @@ export function buildAdminUserDetail(
       situationUntil: settings.situationUntil,
       defaultDurationMin: settings.defaultDurationMin,
       notifyTimezone: settings.notifyTimezone,
+      acquisitionLabel: formatAcquisitionLabel(settings.acquisition),
     },
     engagement,
     backlog: { open, snoozed, done, recent },
@@ -552,6 +568,7 @@ export function buildAdminUserDetail(
     dayBands: dayBands.slice(0, 60),
     activityDays,
     sessions: sessionDetails,
+    homeChat: settings.homeChat ?? [],
     feedbacks: feedbacks.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     usageLog: usageEntries,
     totals: {

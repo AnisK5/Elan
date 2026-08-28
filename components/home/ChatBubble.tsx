@@ -78,7 +78,7 @@ function Composer({
           }
         }}
         rows={1}
-        placeholder="ex. j'ai appelé le dentiste"
+        placeholder="ex. j'ai appelé le dentiste, relance faite"
         className="max-h-28 min-h-[44px] flex-1 resize-none rounded-xl bg-transparent px-3 py-2.5 text-[15px] leading-snug text-ink outline-none placeholder:text-faint"
       />
       <button
