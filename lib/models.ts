@@ -1,10 +1,12 @@
-/** Modèles Claude utilisés par Élan — chat léger, séance présente. */
+/** Modèles Claude utilisés par Élan — Sonnet par défaut, Opus en opt-in. */
 
 export const CLAUDE_SONNET = "claude-sonnet-4-6";
 export const CLAUDE_OPUS = "claude-opus-4-8";
 
-/** Préférence utilisateur : présent = Opus en séance ; léger = Sonnet partout. */
+/** Préférence utilisateur : léger = Sonnet partout (défaut) ; présent = Opus en séance. */
 export type ModelPreference = "present" | "light";
+
+export const DEFAULT_MODEL_PREFERENCE: ModelPreference = "light";
 
 export const MODEL_PREF_HEADER = "x-elan-model-pref";
 const STORAGE_KEY = "elan.model-pref.v1";
@@ -14,14 +16,14 @@ export function isModelPreference(v: unknown): v is ModelPreference {
 }
 
 export function readModelPreference(): ModelPreference {
-  if (typeof window === "undefined") return "present";
+  if (typeof window === "undefined") return DEFAULT_MODEL_PREFERENCE;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return "present";
+    if (!raw) return DEFAULT_MODEL_PREFERENCE;
     const j = JSON.parse(raw) as { pref?: string };
-    return isModelPreference(j.pref) ? j.pref : "present";
+    return isModelPreference(j.pref) ? j.pref : DEFAULT_MODEL_PREFERENCE;
   } catch {
-    return "present";
+    return DEFAULT_MODEL_PREFERENCE;
   }
 }
 
@@ -33,15 +35,15 @@ export function writeModelPreference(pref: ModelPreference): void {
 export function resolveModelPreference(req?: Request): ModelPreference {
   const fromHeader = req?.headers.get(MODEL_PREF_HEADER)?.trim() ?? "";
   if (isModelPreference(fromHeader)) return fromHeader;
-  return "present";
+  return DEFAULT_MODEL_PREFERENCE;
 }
 
 /**
- * Chat → Sonnet (coût). Séance → Opus sauf préférence « léger ».
+ * Chat → Sonnet. Séance → Sonnet par défaut, Opus si « plus présent ».
  */
 export function resolveConversationModel(
   surface: "chat" | "session",
-  pref: ModelPreference = "present",
+  pref: ModelPreference = DEFAULT_MODEL_PREFERENCE,
 ): string {
   if (surface === "chat") return CLAUDE_SONNET;
   return pref === "light" ? CLAUDE_SONNET : CLAUDE_OPUS;
