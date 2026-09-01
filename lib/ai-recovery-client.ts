@@ -1,4 +1,5 @@
 import { apiFetch } from "./anthropic";
+import type { AnthropicFailKind } from "./anthropic";
 import type { AiPingStatus } from "./ai-ping-status";
 import {
   clearByokFallback,

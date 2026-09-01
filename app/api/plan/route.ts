@@ -1,8 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { resolveAiAccess } from "@/lib/ai-access";
 import { notifyAdminAiIssue } from "@/lib/admin-alert";
-import { formatSharedTokenLimit } from "@/lib/app-config";
-import { formatTokensWithEur } from "@/lib/token-display";
 import {
   classifyAnthropicError,
   type AnthropicFailKind,
@@ -541,19 +539,7 @@ export async function POST(req: Request) {
   if (!apiKey || access.blocked) {
     const plan = fallbackPlan(context, open, body.chosen);
     const errorKind: AnthropicFailKind =
-      access.blocked === "quota"
-        ? "quota"
-        : access.blocked === "no_key"
-          ? "no_key"
-          : "credits";
-    if (access.blocked === "quota" && access.quota) {
-      void notifyAdminAiIssue({
-        kind: "quota",
-        route: "plan",
-        userId: access.userId,
-        detail: `${formatTokensWithEur(access.quota.used)}/${formatSharedTokenLimit(access.quota.limit)}`,
-      });
-    }
+      access.blocked === "no_key" ? "no_key" : "credits";
     return Response.json({
       message: plan.message,
       pick: plan.pick,

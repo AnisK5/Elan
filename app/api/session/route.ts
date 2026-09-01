@@ -1,11 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { resolveAiAccess } from "@/lib/ai-access";
 import { notifyAdminAiIssue } from "@/lib/admin-alert";
-import { formatSharedTokenLimit } from "@/lib/app-config";
-import { formatTokensWithEur } from "@/lib/token-display";
 import {
   classifyAnthropicError,
-  encodeQuotaError,
   encodeStreamError,
 } from "@/lib/anthropic";
 import {
@@ -291,22 +288,9 @@ export async function POST(req: Request) {
 
   const access = await resolveAiAccess(req);
   if (!access.apiKey || access.blocked) {
-    if (access.blocked === "quota" && access.quota) {
-      void notifyAdminAiIssue({
-        kind: "quota",
-        route: "session",
-        userId: access.userId,
-        detail: `${formatTokensWithEur(access.quota.used)}/${formatSharedTokenLimit(access.quota.limit)}`,
-      });
-    }
-    const marker =
-      access.blocked === "quota"
-        ? encodeQuotaError()
-        : encodeStreamError(
-            new Error(
-              "Your credit balance is too low to access the Anthropic API",
-            ),
-          );
+    const marker = encodeStreamError(
+      new Error("Your credit balance is too low to access the Anthropic API"),
+    );
     return new Response(marker, {
       headers: { "Content-Type": "text/plain; charset=utf-8" },
     });

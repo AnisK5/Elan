@@ -6,7 +6,7 @@ import {
   isSharedTokenQuotaExempt,
   usesUserAnthropicKey,
 } from "./api-budget";
-import { formatSharedTokenLimit } from "./app-config";
+import { formatSharedTokenLimit, resolveSharedDailyTokenLimit } from "./app-config";
 import { classifyAnthropicError, type AnthropicFailKind } from "./anthropic";
 import { getUserFromBearer } from "./auth-request";
 import { CLAUDE_HAIKU } from "./models";
