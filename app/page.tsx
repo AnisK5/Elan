@@ -72,7 +72,7 @@ import {
 import { logUsage, startDwellTracker, useUsageEvents } from "@/lib/usage-log";
 import { sessionsToday } from "@/lib/session-memory";
 import { apiFetch, anthropicFailMessage, parseStreamError, type AnthropicFailKind } from "@/lib/anthropic";
-import { aiRetryHint, reportAiFail } from "@/lib/ai-fail-client";
+import { aiRetryHint, reportAiFail, reportAiRecovered } from "@/lib/ai-fail-client";
 import { needsWtpSurvey } from "@/lib/product-surveys";
 import {
   normalizeDuration,
@@ -153,6 +153,8 @@ export default function Home() {
   const ritualLockRef = useRef(false);
   /** Après un pick "sortie" du conseil : ne pas recharger le plan Sortie. */
   const planSkipFetchRef = useRef(false);
+  const skipPlanCacheOnceRef = useRef(false);
+  const [planRecoveryTick, setPlanRecoveryTick] = useState(0);
 
   // Discussion libre hors séance : déposer, donner des nouvelles, réfléchir
   // à un truc, demander comment s'organiser demain.
@@ -182,6 +184,27 @@ export default function Home() {
     window.addEventListener("elan:sync", onCustom);
     return () => window.removeEventListener("elan:sync", onCustom);
   }, []);
+
+  useEffect(() => {
+    function onAiRecovered() {
+      setLiveAiKind(null);
+      setPlanAiNote("");
+      setPlanUnreachable(false);
+      skipPlanCacheOnceRef.current = true;
+      setPlanRecoveryTick((t) => t + 1);
+    }
+    window.addEventListener("elan:ai-recovered", onAiRecovered);
+    function onDismiss() {
+      setLiveAiKind(null);
+      setPlanAiNote("");
+    }
+    window.addEventListener("elan:ai-dismiss", onDismiss);
+    return () => {
+      window.removeEventListener("elan:ai-recovered", onAiRecovered);
+      window.removeEventListener("elan:ai-dismiss", onDismiss);
+    };
+  }, []);
+
   useEffect(() => {
     setSituationText(
       readSituation()?.text ?? settings.situation ?? "",
@@ -549,7 +572,9 @@ export default function Home() {
       return;
     }
     const wantDebug = diagnosticOn;
-    if (!wantDebug && isDayPlanContext(context)) {
+    const skipCache = skipPlanCacheOnceRef.current;
+    if (skipCache) skipPlanCacheOnceRef.current = false;
+    if (!wantDebug && !skipCache && isDayPlanContext(context)) {
       const slot = cachedPlanSlot(context);
       if (slot) {
         if (manualPickSig.current === planSig) return;
@@ -588,6 +613,10 @@ export default function Home() {
         if (errorKind) {
           reportAiFail(errorKind);
           setLiveAiKind(errorKind);
+        } else if (!unreachable) {
+          reportAiRecovered();
+          setLiveAiKind(null);
+          setPlanAiNote("");
         }
         setPlanAiNote(
           unreachable && errorKind ? anthropicFailMessage(errorKind) : "",
@@ -663,7 +692,7 @@ export default function Home() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, view, planSig, context, diagnosticOn]);
+  }, [ready, view, planSig, context, diagnosticOn, planRecoveryTick]);
 
   function saveSessionRecord(
     transcript: ChatMessage[],
@@ -832,6 +861,10 @@ export default function Home() {
           if (j.errorKind) {
             reportAiFail(j.errorKind);
             setLiveAiKind(j.errorKind);
+          } else if (!unreachable) {
+            reportAiRecovered();
+            setLiveAiKind(null);
+            setPlanAiNote("");
           }
           setPlanAiNote(
             unreachable && j.errorKind
@@ -1128,6 +1161,8 @@ export default function Home() {
       ];
       setChat(full);
       writeChat(full);
+      reportAiRecovered();
+      setLiveAiKind(null);
       setPointBusy(false);
       const wrote = await clerkP;
       // Seconde passe : le greffier a vu le message, pas encore la réplique.

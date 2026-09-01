@@ -8,7 +8,7 @@ import {
   anthropicFailMessage,
   parseStreamError,
 } from "@/lib/anthropic";
-import { aiRetryHint, reportAiFail } from "@/lib/ai-fail-client";
+import { aiRetryHint, reportAiFail, reportAiRecovered } from "@/lib/ai-fail-client";
 import AiRetryBanner from "@/components/AiRetryBanner";
 import {
   applyThreadOps,
@@ -226,6 +226,7 @@ export default function Session({
       if (!ending && lastWasUser && clean.trim()) {
         void reconcile([...convo, { role: "assistant", content: clean }]);
       }
+      reportAiRecovered();
     } catch {
       setError("Connexion interrompue.");
       setMessages(convo);

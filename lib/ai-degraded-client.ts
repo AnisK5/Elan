@@ -21,3 +21,9 @@ export function clearAiDegraded(): void {
   sessionStorage.removeItem(KEY);
   window.dispatchEvent(new CustomEvent("elan:ai-degraded"));
 }
+
+/** Masque le bandeau même si une erreur live est encore en mémoire. */
+export function dismissAiDegraded(): void {
+  clearAiDegraded();
+  window.dispatchEvent(new CustomEvent("elan:ai-dismiss"));
+}

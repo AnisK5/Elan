@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import type { AnthropicFailKind } from "@/lib/anthropic";
+import { probeAiRecovery } from "@/lib/ai-recovery-client";
 import { aiUserFailCopy, BYOK_HINT } from "@/lib/ai-user-messages";
 import {
-  clearAiDegraded,
+  dismissAiDegraded,
   readAiDegraded,
   type AiDegradedKind,
 } from "@/lib/ai-degraded-client";
@@ -20,6 +21,7 @@ export default function AiDegradedBanner({
   liveKind?: AnthropicFailKind | null;
 }) {
   const [stored, setStored] = useState<AiDegradedKind | null>(null);
+  const [probing, setProbing] = useState(false);
 
   useEffect(() => {
     setStored(readAiDegraded());
@@ -27,7 +29,11 @@ export default function AiDegradedBanner({
       setStored(readAiDegraded());
     }
     window.addEventListener("elan:ai-degraded", sync);
-    return () => window.removeEventListener("elan:ai-degraded", sync);
+    window.addEventListener("elan:ai-recovered", sync);
+    return () => {
+      window.removeEventListener("elan:ai-degraded", sync);
+      window.removeEventListener("elan:ai-recovered", sync);
+    };
   }, []);
 
   const kind: AiDegradedKind | null =
@@ -35,9 +41,28 @@ export default function AiDegradedBanner({
       ? liveKind
       : stored;
 
+  useEffect(() => {
+    if (!kind) return;
+    void probeAiRecovery();
+    function onVisible() {
+      if (document.visibilityState === "visible") void probeAiRecovery();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [kind]);
+
   if (!kind) return null;
 
   const copy = aiUserFailCopy(kind);
+
+  async function retry() {
+    setProbing(true);
+    try {
+      await probeAiRecovery({ force: true });
+    } finally {
+      setProbing(false);
+    }
+  }
 
   return (
     <div
@@ -65,14 +90,24 @@ export default function AiDegradedBanner({
             </p>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={() => clearAiDegraded()}
-          aria-label="Masquer"
-          className="-mr-1 shrink-0 rounded-lg px-2 py-1 text-lg text-faint transition hover:text-ink"
-        >
-          ×
-        </button>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <button
+            type="button"
+            onClick={() => void retry()}
+            disabled={probing}
+            className="rounded-lg px-2 py-1 text-[12px] font-medium text-teal transition hover:underline disabled:opacity-50"
+          >
+            {probing ? "Vérification…" : "Réessayer"}
+          </button>
+          <button
+            type="button"
+            onClick={() => dismissAiDegraded()}
+            aria-label="Masquer"
+            className="rounded-lg px-2 py-1 text-lg text-faint transition hover:text-ink"
+          >
+            ×
+          </button>
+        </div>
       </div>
     </div>
   );
