@@ -1,9 +1,27 @@
-export function greeting(): string {
+export function firstName(name?: string | null): string | null {
+  const trimmed = name?.trim();
+  if (!trimmed) return null;
+  const part = trimmed.split(/\s+/)[0];
+  return part || null;
+}
+
+export function greeting(name?: string | null): string {
   const h = new Date().getHours();
-  if (h < 6) return "Nuit calme.";
-  if (h < 12) return "Bonjour.";
-  if (h < 18) return "Bel après-midi.";
-  return "Bonsoir.";
+  let base: string;
+  if (h < 6) base = "Nuit calme";
+  else if (h < 12) base = "Bonjour";
+  else if (h < 18) base = "Bel après-midi";
+  else base = "Bonsoir";
+
+  const first = firstName(name);
+  if (!first) return `${base}.`;
+  return `${base}, ${first}.`;
+}
+
+export function welcomeLine(name?: string | null): string {
+  const first = firstName(name);
+  if (!first) return "Bienvenue 👋";
+  return `Bienvenue, ${first} 👋`;
 }
 
 export function Dot() {

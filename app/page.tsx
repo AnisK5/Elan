@@ -56,7 +56,7 @@ import BacklogPeek from "@/components/home/BacklogPeek";
 import SessionPick from "@/components/home/SessionPick";
 import ChatBubble from "@/components/home/ChatBubble";
 import UsageWeek from "@/components/home/UsageWeek";
-import { greeting, Logo } from "@/components/home/Branding";
+import { greeting, Logo, welcomeLine } from "@/components/home/Branding";
 import { useAuth } from "@/components/AuthProvider";
 import { filterEffectiveOps, parseThreadOps } from "@/lib/ops";
 import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
@@ -1243,7 +1243,7 @@ export default function Home() {
       {/* Séance du jour */}
       <section className="animate-rise rounded-2xl border border-line bg-surface p-6 shadow-[0_8px_40px_-24px_rgba(38,35,29,0.4)]">
         <p className="text-sm text-muted">
-          {isNewcomer ? "Bienvenue 👋" : greeting()}
+          {isNewcomer ? welcomeLine(settings.name) : greeting(settings.name)}
         </p>
 
         {isNewcomer ? (

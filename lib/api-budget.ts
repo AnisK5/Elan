@@ -1,3 +1,4 @@
+import { isAdminEmail } from "./admin";
 import { resolveSharedDailyTokenLimit } from "./app-config";
 import {
   ANTHROPIC_KEY_HEADER,
@@ -46,12 +47,22 @@ export interface SharedBudgetStatus {
   limit: number;
 }
 
+export function isSharedTokenQuotaExempt(
+  email: string | null | undefined,
+): boolean {
+  return isAdminEmail(email);
+}
+
 export async function checkSharedDailyBudget(
   req: Request,
   userId: string | null,
+  userEmail?: string | null,
 ): Promise<SharedBudgetStatus> {
   const limit = await resolveSharedDailyTokenLimit();
   if (usesUserAnthropicKey(req)) {
+    return { applies: false, allowed: true, used: 0, limit };
+  }
+  if (isSharedTokenQuotaExempt(userEmail)) {
     return { applies: false, allowed: true, used: 0, limit };
   }
   if (!resolveAnthropicKey(req)) {

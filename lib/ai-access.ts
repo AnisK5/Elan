@@ -1,6 +1,6 @@
 import { resolveAnthropicKey } from "./anthropic";
 import { checkSharedDailyBudget, usesUserAnthropicKey } from "./api-budget";
-import { resolveUserIdFromRequest } from "./api-usage";
+import { getUserFromBearer } from "./auth-request";
 
 export type AiBlockKind = "no_key" | "quota";
 
@@ -14,7 +14,8 @@ export interface AiAccess {
 
 export async function resolveAiAccess(req: Request): Promise<AiAccess> {
   const apiKey = resolveAnthropicKey(req);
-  const userId = await resolveUserIdFromRequest(req);
+  const user = await getUserFromBearer(req);
+  const userId = user?.id ?? null;
   const usesSharedKey = Boolean(apiKey && !usesUserAnthropicKey(req));
 
   if (!apiKey) {
@@ -22,7 +23,7 @@ export async function resolveAiAccess(req: Request): Promise<AiAccess> {
   }
 
   if (usesSharedKey) {
-    const budget = await checkSharedDailyBudget(req, userId);
+    const budget = await checkSharedDailyBudget(req, userId, user?.email);
     if (budget.applies && !budget.allowed) {
       return {
         apiKey,

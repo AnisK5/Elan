@@ -106,7 +106,7 @@ export default function AdminTokenLimitSettings() {
       </h2>
       <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
         Tokens max / jour / personne sur ta clé Anthropic (hors clé perso dans
-        Réglages). Actuel :{" "}
+        Réglages, hors comptes admin). Actuel :{" "}
         <span className="font-medium text-ink">
           {limit.toLocaleString("fr-FR")} tok
         </span>

@@ -1,5 +1,4 @@
 import type { AnthropicFailKind } from "./anthropic";
-import { CREATOR_EMAIL } from "./contact";
 
 export interface AiUserFailCopy {
   message: string;
@@ -7,18 +6,21 @@ export interface AiUserFailCopy {
   showListHint: boolean;
 }
 
+const FEEDBACK_HINT =
+  "Un retour dans Réglages ou ci-dessous suffit — je le lis à la main.";
+
 /** Messages utilisateur quand l'IA est indisponible (crédits, quota). */
 export function aiUserFailCopy(kind: AnthropicFailKind): AiUserFailCopy {
   if (kind === "credits") {
     return {
-      message: `Élan est en pause technique — ta liste marche toujours. Écris-moi à ${CREATOR_EMAIL} si c'est urgent.`,
+      message: `Élan est en pause technique — ta liste marche toujours. ${FEEDBACK_HINT}`,
       showByokHint: true,
       showListHint: true,
     };
   }
   if (kind === "quota") {
     return {
-      message: `Tu as beaucoup utilisé Élan aujourd'hui — reprends demain, ou écris-moi à ${CREATOR_EMAIL}.`,
+      message: `Tu as beaucoup utilisé Élan aujourd'hui — reprends demain. ${FEEDBACK_HINT}`,
       showByokHint: true,
       showListHint: true,
     };
