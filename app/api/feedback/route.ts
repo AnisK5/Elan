@@ -1,4 +1,5 @@
 import { getUserFromBearer } from "@/lib/auth-request";
+import { notifyAdminNewFeedback } from "@/lib/feedback-notify";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
@@ -68,6 +69,14 @@ export async function POST(req: Request) {
   if (error) {
     return Response.json({ error: "insert-failed" }, { status: 500 });
   }
+
+  void notifyAdminNewFeedback({
+    message: message || (mood === "up" ? "👍" : mood === "down" ? "👎" : mood ?? ""),
+    mood,
+    source,
+    userId: user.id,
+    userEmail: user.email,
+  });
 
   return Response.json({ ok: true, id: data.id, createdAt: data.created_at });
 }

@@ -72,7 +72,13 @@ export default function HelpButton({
 
             {user ? (
               <div className="mt-8 border-t border-line pt-6">
-                <FeedbackForm source="home" compact />
+                <FeedbackForm
+                  source="home"
+                  compact
+                  title="Contact"
+                  subtitle="Un mot suffit — on le lit."
+                  contactHint
+                />
               </div>
             ) : null}
 

@@ -13,7 +13,7 @@ export default function SessionPulseFeedback({
       source="wrap_up"
       compact
       title="Comment c'était ?"
-      subtitle="Un pouce suffit — précise seulement si tu veux."
+      subtitle="Un pouce, un mot — un bouton."
       onSent={onSent}
     />
   );

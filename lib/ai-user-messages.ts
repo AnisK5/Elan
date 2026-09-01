@@ -7,7 +7,7 @@ export interface AiUserFailCopy {
 }
 
 const FEEDBACK_HINT =
-  "Un retour dans Réglages ou ci-dessous suffit — je le lis à la main.";
+  "Contact dans Réglages ou ci-dessous — un mot suffit, on le lit.";
 
 /** Messages utilisateur quand l'IA est indisponible (crédits, quota). */
 export function aiUserFailCopy(kind: AnthropicFailKind): AiUserFailCopy {

@@ -70,14 +70,17 @@ export default function FeedbackForm({
   source = "settings",
   compact = false,
   onSent,
-  title = "Un retour ?",
-  subtitle = "Ça va ou ça coince ? Dis-moi pourquoi si tu veux.",
+  title = "Contact",
+  subtitle = "Bug, idée, question — un bouton pour nous écrire.",
+  contactHint = false,
 }: {
   source?: FeedbackSource;
   compact?: boolean;
   onSent?: () => void;
   title?: string;
   subtitle?: string;
+  /** Petite ligne de réassurance sous le bouton Envoyer. */
+  contactHint?: boolean;
 }) {
   const [rating, setRating] = useState<FeedbackRating | null>(null);
   const [message, setMessage] = useState("");
@@ -85,13 +88,16 @@ export default function FeedbackForm({
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
 
+  const canSend = Boolean(rating || message.trim());
+
   async function submit() {
-    if (busy || !rating) return;
     const text = message.trim();
+    if (busy || (!rating && !text)) return;
     setBusy(true);
     setError("");
     const ok = await postFeedback({
-      message: text || (rating === "up" ? "👍" : "👎"),
+      message:
+        text || (rating === "up" ? "👍" : rating === "down" ? "👎" : ""),
       rating,
       source,
     }).catch(() => false);
@@ -100,7 +106,7 @@ export default function FeedbackForm({
       setError("Impossible d'envoyer — réessaie.");
       return;
     }
-    logUsage("feedback", { meta: { mood: rating } });
+    if (rating) logUsage("feedback", { meta: { mood: rating } });
     setMessage("");
     setRating(null);
     setSent(true);
@@ -136,32 +142,40 @@ export default function FeedbackForm({
         </ThumbButton>
       </div>
 
-      {rating ? (
-        <textarea
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          rows={compact ? 2 : 3}
-          placeholder="Pourquoi ? (optionnel)"
-          className="mt-3 w-full resize-none rounded-xl border border-line bg-paper px-3 py-2 text-[14px] leading-relaxed text-ink outline-none placeholder:text-faint focus:border-teal"
-        />
+      <textarea
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            void submit();
+          }
+        }}
+        rows={compact ? 2 : 3}
+        placeholder="Écris ce que tu veux…"
+        className="mt-3 w-full resize-none rounded-xl border border-line bg-paper px-3 py-2 text-[14px] leading-relaxed text-ink outline-none placeholder:text-faint focus:border-teal"
+      />
+
+      <button
+        type="button"
+        onClick={() => void submit()}
+        disabled={!canSend || busy}
+        className={`mt-2 w-full rounded-xl bg-teal font-medium text-white transition hover:bg-teal-ink disabled:opacity-40 ${
+          compact ? "py-2 text-[13px]" : "py-2.5 text-[14px]"
+        }`}
+      >
+        {busy ? "…" : sent ? "Merci — c'est noté" : "Envoyer"}
+      </button>
+
+      {error ? (
+        <p className="mt-2 text-center text-[12px] text-amber">{error}</p>
       ) : null}
 
-      <div className="mt-2 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={submit}
-          disabled={!rating || busy}
-          className="rounded-lg bg-teal px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-teal-ink disabled:opacity-40"
-        >
-          {busy ? "…" : "Envoyer"}
-        </button>
-        {sent ? (
-          <span className="text-[12px] text-teal">Merci — c&apos;est noté.</span>
-        ) : null}
-        {error ? (
-          <span className="text-[12px] text-amber">{error}</span>
-        ) : null}
-      </div>
+      {contactHint ? (
+        <p className="mt-2 text-center text-[11px] text-faint">
+          Ça nous arrive directement.
+        </p>
+      ) : null}
     </div>
   );
 }
