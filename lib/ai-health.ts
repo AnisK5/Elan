@@ -85,7 +85,7 @@ export async function buildAiHealth(req: Request): Promise<AiHealthSnapshot> {
         ? ` Aujourd'hui l'app a consommé ${formatQuotaUsage(quotaUsedGlobal)}.`
         : "";
     diagnosis =
-      `Compte Anthropic sans crédits${keyHint} — les crédits sont sur le compte, pas sur une clé : en changer ne suffit pas.${usageHint} Recharge sur Plans & Billing (console Anthropic), attends 1–2 min, puis Réessayer.`;
+      `Compte Anthropic sans crédits utilisables${keyHint} — les crédits sont sur le compte, pas sur une clé : en changer ne suffit pas.${usageHint} Si la console affiche encore des crédits mais une alerte orange « échec de paiement / rechargement auto désactivé », mets à jour ta carte sur Plans & Billing — l'API reste souvent bloquée tant que le paiement n'est pas réglé. Puis Réessayer.`;
   } else if (!app.ok && app.errorKind === "auth") {
     diagnosis =
       "La clé sur Vercel est refusée par Anthropic — régénère-la et mets à jour ANTHROPIC_API_KEY sur Vercel.";
