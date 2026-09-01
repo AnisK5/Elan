@@ -11,6 +11,13 @@ export function looksLikeAnthropicKey(value: string): boolean {
   return /^sk-ant-[A-Za-z0-9_-]{20,}$/.test(value.trim());
 }
 
+/** 4 derniers caractères — pour vérifier quelle clé est sur Vercel. */
+export function maskApiKeySuffix(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (!looksLikeAnthropicKey(trimmed)) return undefined;
+  return `…${trimmed.slice(-4)}`;
+}
+
 /** Serveur : header perso si valide, sinon ANTHROPIC_API_KEY. */
 export function resolveAnthropicKey(req?: Request): string | null {
   const fromUser = req?.headers.get(ANTHROPIC_KEY_HEADER)?.trim() ?? "";

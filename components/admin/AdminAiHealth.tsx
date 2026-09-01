@@ -98,9 +98,24 @@ export default function AdminAiHealth() {
       <p className="mt-1">{health.diagnosis}</p>
       <ul className="mt-2 space-y-0.5 text-[12px] text-muted">
         <li>
-          Clé Vercel : {health.anthropicKeyConfigured ? "présente" : "absente"}
+          Clé Vercel :{" "}
+          {health.anthropicKeyConfigured
+            ? `présente${health.sharedKeySuffix ? ` (${health.sharedKeySuffix})` : ""}`
+            : "absente"}
         </li>
         <li>Ping Anthropic : {pingLabel}</li>
+        {!health.appPingOk && health.appPingError === "credits" ? (
+          <li>
+            <a
+              href="https://console.anthropic.com/settings/billing"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-teal hover:underline"
+            >
+              Recharger sur Anthropic → Plans &amp; Billing
+            </a>
+          </li>
+        ) : null}
         <li>
           Ta conso aujourd&apos;hui : {formatQuotaUsage(health.quotaUsed)}
           {health.quotaExempt ? " (exempt du plafond)" : ""}

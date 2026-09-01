@@ -11,9 +11,10 @@ import {
   isUnlimitedSharedTokenLimit,
   resolveSharedDailyTokenLimit,
 } from "./app-config";
-import { classifyAnthropicError, type AnthropicFailKind } from "./anthropic";
+import { classifyAnthropicError, maskApiKeySuffix, type AnthropicFailKind } from "./anthropic";
 import { getUserFromBearer } from "./auth-request";
 import { CLAUDE_HAIKU } from "./models";
+import { formatQuotaUsage } from "./token-display";
 
 export interface AiHealthSnapshot {
   anthropicKeyConfigured: boolean;
@@ -26,6 +27,7 @@ export interface AiHealthSnapshot {
   quotaUsed: number;
   quotaUsedGlobal: number;
   quotaLimit: number;
+  sharedKeySuffix?: string;
   diagnosis: string;
 }
 
@@ -70,17 +72,20 @@ export async function buildAiHealth(req: Request): Promise<AiHealthSnapshot> {
   const quotaUsedGlobal = exempt ? await sumGlobalTokensToday() : 0;
 
   const app = sharedKey ? await pingSharedKey(sharedKey) : { ok: false };
+  const sharedKeySuffix = maskApiKeySuffix(sharedKey);
 
   let diagnosis = "";
   if (!sharedKey) {
     diagnosis =
       "ANTHROPIC_API_KEY absente sur Vercel — ajoute-la en Production puis redéploie.";
   } else if (!app.ok && app.errorKind === "credits") {
+    const keyHint = sharedKeySuffix ? ` (clé Vercel ${sharedKeySuffix})` : "";
+    const usageHint =
+      quotaUsedGlobal > 0
+        ? ` Aujourd'hui l'app a consommé ${formatQuotaUsage(quotaUsedGlobal)}.`
+        : "";
     diagnosis =
-      "Le ping Anthropic avec la clé Vercel échoue (crédits). Ce n'est pas le plafond tokens — vérifie que la clé Production correspond au compte rechargé (console Anthropic → API keys).";
-    if (app.errorDetail) {
-      diagnosis += ` Détail : « ${app.errorDetail} ».`;
-    }
+      `Compte Anthropic sans crédits${keyHint} — les crédits sont sur le compte, pas sur une clé : en changer ne suffit pas.${usageHint} Recharge sur Plans & Billing (console Anthropic), attends 1–2 min, puis Réessayer.`;
   } else if (!app.ok && app.errorKind === "auth") {
     diagnosis =
       "La clé sur Vercel est refusée par Anthropic — régénère-la et mets à jour ANTHROPIC_API_KEY sur Vercel.";
@@ -119,6 +124,7 @@ export async function buildAiHealth(req: Request): Promise<AiHealthSnapshot> {
     quotaUsed,
     quotaUsedGlobal,
     quotaLimit: limit,
+    sharedKeySuffix,
     diagnosis,
   };
 }
