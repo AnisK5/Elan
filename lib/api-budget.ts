@@ -1,5 +1,5 @@
 import { isAdminEmail } from "./admin";
-import { resolveSharedDailyTokenLimit } from "./app-config";
+import { isUnlimitedSharedTokenLimit, resolveSharedDailyTokenLimit } from "./app-config";
 import {
   ANTHROPIC_KEY_HEADER,
   looksLikeAnthropicKey,
@@ -59,6 +59,9 @@ export async function checkSharedDailyBudget(
   userEmail?: string | null,
 ): Promise<SharedBudgetStatus> {
   const limit = await resolveSharedDailyTokenLimit();
+  if (isUnlimitedSharedTokenLimit(limit)) {
+    return { applies: false, allowed: true, used: 0, limit };
+  }
   if (usesUserAnthropicKey(req)) {
     return { applies: false, allowed: true, used: 0, limit };
   }
@@ -69,7 +72,7 @@ export async function checkSharedDailyBudget(
     return { applies: false, allowed: false, used: 0, limit };
   }
   if (!userId) {
-    return { applies: true, allowed: false, used: 0, limit };
+    return { applies: false, allowed: true, used: 0, limit };
   }
   const { input, output } = await sumUserTokensToday(userId);
   const used = totalTokens(input, output);

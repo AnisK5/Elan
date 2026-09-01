@@ -6,6 +6,9 @@ import {
   readUserAnthropicKey,
   writeUserAnthropicKey,
 } from "@/lib/anthropic";
+import { clearByokFallback } from "@/lib/anthropic-key-client";
+import { reportAiRecovered } from "@/lib/ai-fail-client";
+import { probeAiRecovery } from "@/lib/ai-recovery-client";
 
 /** Clé Claude perso — reste sur cet appareil, jamais dans Supabase. */
 export default function AnthropicKeySettings() {
@@ -29,6 +32,9 @@ export default function AnthropicKeySettings() {
     }
     writeUserAnthropicKey(trimmed);
     setHasKey(Boolean(trimmed));
+    clearByokFallback();
+    reportAiRecovered();
+    void probeAiRecovery({ force: true });
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2500);
   }
@@ -37,6 +43,9 @@ export default function AnthropicKeySettings() {
     setValue("");
     writeUserAnthropicKey("");
     setHasKey(false);
+    clearByokFallback();
+    reportAiRecovered();
+    void probeAiRecovery({ force: true });
     setError("");
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2500);

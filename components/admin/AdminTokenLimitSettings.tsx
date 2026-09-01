@@ -4,11 +4,14 @@ import { useEffect, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import {
   DEFAULT_SHARED_DAILY_TOKEN_LIMIT,
+  formatSharedTokenLimit,
   MAX_SHARED_DAILY_TOKEN_LIMIT,
   MIN_SHARED_DAILY_TOKEN_LIMIT,
+  UNLIMITED_SHARED_DAILY_TOKEN_LIMIT,
 } from "@/lib/app-config";
 
 const PRESETS = [
+  { label: "Illimité", value: UNLIMITED_SHARED_DAILY_TOKEN_LIMIT },
   { label: "80k · léger", value: 80_000 },
   { label: "120k · défaut", value: 120_000 },
   { label: "200k · confort", value: 200_000 },
@@ -93,23 +96,21 @@ export default function AdminTokenLimitSettings() {
 
   if (loading) {
     return (
-      <section className="mt-8 rounded-2xl border border-line bg-surface px-4 py-4">
+      <section className="rounded-2xl border border-line bg-surface px-4 py-4">
         <p className="text-[13px] text-muted">Chargement du plafond tokens…</p>
       </section>
     );
   }
 
   return (
-    <section className="mt-8 rounded-2xl border border-line bg-surface px-4 py-4">
+    <section className="rounded-2xl border border-line bg-surface px-4 py-4">
       <h2 className="font-display text-lg font-semibold text-ink">
         Plafond IA partagée
       </h2>
       <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
-        Tokens max / jour / personne sur ta clé Anthropic (hors clé perso dans
+        Tokens max / jour / personne sur la clé Anthropic (hors clé perso dans
         Réglages, hors comptes admin). Actuel :{" "}
-        <span className="font-medium text-ink">
-          {limit.toLocaleString("fr-FR")} tok
-        </span>
+        <span className="font-medium text-ink">{formatSharedTokenLimit(limit)}</span>
         {source === "env" ? " (valeur par défaut)" : " (enregistré)"}.
       </p>
 
@@ -135,26 +136,32 @@ export default function AdminTokenLimitSettings() {
       </div>
 
       <div className="mt-3 flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-[12px] text-muted">
-          Personnalisé
-          <input
-            type="number"
-            min={MIN_SHARED_DAILY_TOKEN_LIMIT}
-            max={MAX_SHARED_DAILY_TOKEN_LIMIT}
-            step={1000}
-            value={limit}
-            onChange={(e) => setLimit(Number.parseInt(e.target.value, 10) || 0)}
-            className="w-36 rounded-lg border border-line bg-paper px-2 py-1.5 text-[14px] tabular-nums text-ink"
-          />
-        </label>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void save(limit)}
-          className="rounded-lg bg-teal px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-teal-ink disabled:opacity-40"
-        >
-          {busy ? "…" : "Enregistrer"}
-        </button>
+        {limit !== UNLIMITED_SHARED_DAILY_TOKEN_LIMIT ? (
+          <label className="flex flex-col gap-1 text-[12px] text-muted">
+            Personnalisé
+            <input
+              type="number"
+              min={MIN_SHARED_DAILY_TOKEN_LIMIT}
+              max={MAX_SHARED_DAILY_TOKEN_LIMIT}
+              step={1000}
+              value={limit}
+              onChange={(e) =>
+                setLimit(Number.parseInt(e.target.value, 10) || 0)
+              }
+              className="w-36 rounded-lg border border-line bg-paper px-2 py-1.5 text-[14px] tabular-nums text-ink"
+            />
+          </label>
+        ) : null}
+        {limit !== UNLIMITED_SHARED_DAILY_TOKEN_LIMIT ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void save(limit)}
+            className="rounded-lg bg-teal px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-teal-ink disabled:opacity-40"
+          >
+            {busy ? "…" : "Enregistrer"}
+          </button>
+        ) : null}
         {saved ? (
           <span className="text-[12px] text-teal">Plafond mis à jour.</span>
         ) : null}

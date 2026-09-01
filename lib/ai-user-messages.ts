@@ -13,15 +13,22 @@ const FEEDBACK_HINT =
 export function aiUserFailCopy(kind: AnthropicFailKind): AiUserFailCopy {
   if (kind === "credits") {
     return {
-      message: `Élan est en pause technique — ta liste marche toujours. ${FEEDBACK_HINT}`,
+      message: `Crédits Anthropic épuisés sur la clé de l'app — ta liste marche toujours. ${FEEDBACK_HINT}`,
       showByokHint: true,
       showListHint: true,
     };
   }
   if (kind === "quota") {
     return {
-      message: `Tu as beaucoup utilisé Élan aujourd'hui — reprends demain. ${FEEDBACK_HINT}`,
+      message: `Plafond du jour atteint sur la clé partagée — ce n'est pas un rechargement Anthropic. Reprends demain, ou augmente la limite admin. ${FEEDBACK_HINT}`,
       showByokHint: true,
+      showListHint: true,
+    };
+  }
+  if (kind === "no_key") {
+    return {
+      message: `Élan n'a pas de clé API côté serveur — la liste marche toujours. ${FEEDBACK_HINT}`,
+      showByokHint: false,
       showListHint: true,
     };
   }

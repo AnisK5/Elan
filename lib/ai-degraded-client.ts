@@ -2,7 +2,7 @@
 
 const KEY = "elan.ai-degraded.v1";
 
-export type AiDegradedKind = "credits" | "quota";
+export type AiDegradedKind = "credits" | "quota" | "no_key";
 
 export function markAiDegraded(kind: AiDegradedKind): void {
   if (typeof sessionStorage === "undefined") return;
@@ -13,7 +13,7 @@ export function markAiDegraded(kind: AiDegradedKind): void {
 export function readAiDegraded(): AiDegradedKind | null {
   if (typeof sessionStorage === "undefined") return null;
   const v = sessionStorage.getItem(KEY);
-  return v === "credits" || v === "quota" ? v : null;
+  return v === "credits" || v === "quota" || v === "no_key" ? v : null;
 }
 
 export function clearAiDegraded(): void {

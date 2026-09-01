@@ -539,7 +539,11 @@ export async function POST(req: Request) {
   if (!apiKey || access.blocked) {
     const plan = fallbackPlan(context, open, body.chosen);
     const errorKind: AnthropicFailKind =
-      access.blocked === "quota" ? "quota" : "credits";
+      access.blocked === "quota"
+        ? "quota"
+        : access.blocked === "no_key"
+          ? "no_key"
+          : "credits";
     if (access.blocked === "quota" && access.quota) {
       void notifyAdminAiIssue({
         kind: "quota",

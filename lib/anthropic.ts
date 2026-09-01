@@ -1,5 +1,6 @@
 /** Clé Claude : celle de la personne si elle en a une, sinon celle de l'app. */
 
+import { shouldOmitUserAnthropicKey } from "@/lib/anthropic-key-client";
 import { aiUserFailMessage } from "@/lib/ai-user-messages";
 import { MODEL_PREF_HEADER, readModelPreference } from "@/lib/models";
 
@@ -23,7 +24,8 @@ export type AnthropicFailKind =
   | "quota"
   | "auth"
   | "rate"
-  | "unknown";
+  | "unknown"
+  | "no_key";
 
 const STREAM_ERROR_RE = /⟦elan-error:(credits|quota|auth|rate|unknown)⟧/;
 
@@ -119,7 +121,7 @@ export async function apiFetch(
     headers.set("Content-Type", "application/json");
   }
   const key = readUserAnthropicKey();
-  if (looksLikeAnthropicKey(key)) {
+  if (looksLikeAnthropicKey(key) && !shouldOmitUserAnthropicKey()) {
     headers.set(ANTHROPIC_KEY_HEADER, key);
   }
   headers.set(MODEL_PREF_HEADER, readModelPreference());

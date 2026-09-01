@@ -25,6 +25,7 @@ import {
 } from "@/lib/store";
 import Session from "@/components/Session";
 import AiDegradedBanner from "@/components/AiDegradedBanner";
+import ByokFallbackNotice from "@/components/ByokFallbackNotice";
 import EngagementPrompt from "@/components/EngagementPrompt";
 import ProductSurveyPrompt from "@/components/ProductSurveyPrompt";
 import SettingsSheet from "@/components/SettingsSheet";
@@ -73,6 +74,7 @@ import { logUsage, startDwellTracker, useUsageEvents } from "@/lib/usage-log";
 import { sessionsToday } from "@/lib/session-memory";
 import { apiFetch, anthropicFailMessage, parseStreamError, type AnthropicFailKind } from "@/lib/anthropic";
 import { aiRetryHint, reportAiFail, reportAiRecovered } from "@/lib/ai-fail-client";
+import { probeAiRecovery } from "@/lib/ai-recovery-client";
 import { needsWtpSurvey } from "@/lib/product-surveys";
 import {
   normalizeDuration,
@@ -204,6 +206,11 @@ export default function Home() {
       window.removeEventListener("elan:ai-dismiss", onDismiss);
     };
   }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    void probeAiRecovery({ force: true });
+  }, [ready]);
 
   useEffect(() => {
     setSituationText(
@@ -1246,11 +1253,15 @@ export default function Home() {
 
       <AiDegradedBanner
         liveKind={
-          liveAiKind === "credits" || liveAiKind === "quota"
+          liveAiKind === "credits" ||
+          liveAiKind === "quota" ||
+          liveAiKind === "no_key"
             ? liveAiKind
             : null
         }
       />
+
+      <ByokFallbackNotice />
 
       {wrapUp && (
         <div className="animate-rise mb-4 flex flex-col gap-3">

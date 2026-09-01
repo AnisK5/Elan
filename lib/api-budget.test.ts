@@ -3,7 +3,9 @@ import {
   envSharedDailyTokenLimit,
   isSharedTokenQuotaExempt,
   usesUserAnthropicKey,
+  checkSharedDailyBudget,
 } from "./api-budget";
+import { UNLIMITED_SHARED_DAILY_TOKEN_LIMIT } from "./app-config";
 import { ANTHROPIC_KEY_HEADER } from "./anthropic";
 
 describe("api-budget", () => {
@@ -39,5 +41,22 @@ describe("api-budget", () => {
     process.env.ELAN_ADMIN_EMAILS = "admin@test.fr";
     expect(isSharedTokenQuotaExempt("admin@test.fr")).toBe(true);
     expect(isSharedTokenQuotaExempt("user@test.fr")).toBe(false);
+  });
+
+  it("ignore le plafond quand la limite est illimitée", async () => {
+    const prev = process.env.ELAN_SHARED_DAILY_TOKEN_LIMIT;
+    process.env.ELAN_SHARED_DAILY_TOKEN_LIMIT = String(
+      UNLIMITED_SHARED_DAILY_TOKEN_LIMIT,
+    );
+    const req = new Request("http://localhost/api/plan");
+    const budget = await checkSharedDailyBudget(
+      req,
+      "user-123",
+      "user@test.fr",
+    );
+    expect(budget.applies).toBe(false);
+    expect(budget.allowed).toBe(true);
+    if (prev === undefined) delete process.env.ELAN_SHARED_DAILY_TOKEN_LIMIT;
+    else process.env.ELAN_SHARED_DAILY_TOKEN_LIMIT = prev;
   });
 });

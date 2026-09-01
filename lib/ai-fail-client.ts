@@ -3,7 +3,9 @@ import { clearAiDegraded, markAiDegraded } from "./ai-degraded-client";
 import { aiUserFailCopy, BYOK_HINT, LIST_HINT } from "./ai-user-messages";
 
 export function reportAiFail(kind: AnthropicFailKind | null | undefined): void {
-  if (kind === "credits" || kind === "quota") markAiDegraded(kind);
+  if (kind === "credits" || kind === "quota" || kind === "no_key") {
+    markAiDegraded(kind);
+  }
 }
 
 /** IA de nouveau dispo — enlève le bandeau « pause » pour la visite. */

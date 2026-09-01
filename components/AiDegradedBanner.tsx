@@ -37,7 +37,7 @@ export default function AiDegradedBanner({
   }, []);
 
   const kind: AiDegradedKind | null =
-    liveKind === "credits" || liveKind === "quota"
+    liveKind === "credits" || liveKind === "quota" || liveKind === "no_key"
       ? liveKind
       : stored;
 

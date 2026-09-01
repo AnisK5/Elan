@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Logo } from "@/components/home/Branding";
 import type { AdminSnapshot } from "@/lib/admin-stats";
 import AdminTokenLimitSettings from "@/components/admin/AdminTokenLimitSettings";
+import AdminAiHealth from "@/components/admin/AdminAiHealth";
 import { getSupabase } from "@/lib/supabase";
 
 async function adminGet(path: string): Promise<Response> {
@@ -118,7 +119,10 @@ export default function AdminPage() {
       </div>
 
       {error !== "auth" && error !== "forbidden" ? (
-        <AdminTokenLimitSettings />
+        <div className="mt-6 flex flex-col gap-4">
+          <AdminAiHealth />
+          <AdminTokenLimitSettings />
+        </div>
       ) : null}
 
       {error === "auth" && (

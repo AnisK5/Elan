@@ -3,6 +3,7 @@ import {
   DEFAULT_SHARED_DAILY_TOKEN_LIMIT,
   envSharedDailyTokenLimit,
   parseSharedTokenLimitInput,
+  UNLIMITED_SHARED_DAILY_TOKEN_LIMIT,
 } from "./app-config";
 
 describe("app-config", () => {
@@ -23,9 +24,20 @@ describe("app-config", () => {
     expect(envSharedDailyTokenLimit()).toBe(DEFAULT_SHARED_DAILY_TOKEN_LIMIT);
   });
 
+  it("accepte 0 en env pour illimité", () => {
+    process.env.ELAN_SHARED_DAILY_TOKEN_LIMIT = "0";
+    expect(envSharedDailyTokenLimit()).toBe(UNLIMITED_SHARED_DAILY_TOKEN_LIMIT);
+  });
+
   it("valide les bornes du plafond", () => {
     expect(parseSharedTokenLimitInput(120_000)).toBe(120_000);
     expect(parseSharedTokenLimitInput(5_000)).toBeNull();
     expect(parseSharedTokenLimitInput(2_000_000)).toBeNull();
+    expect(parseSharedTokenLimitInput(UNLIMITED_SHARED_DAILY_TOKEN_LIMIT)).toBe(
+      UNLIMITED_SHARED_DAILY_TOKEN_LIMIT,
+    );
+    expect(parseSharedTokenLimitInput("unlimited")).toBe(
+      UNLIMITED_SHARED_DAILY_TOKEN_LIMIT,
+    );
   });
 });
