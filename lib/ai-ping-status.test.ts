@@ -23,16 +23,15 @@ describe("resolveAiPingStatus", () => {
     expect(status.errorKind).toBe("no_key");
   });
 
-  it("conserve le ping app quand seul le quota utilisateur bloque", () => {
+  it("conserve le ping app même si le quota est dépassé", () => {
     const status = resolveAiPingStatus({
       userKeyActive: false,
       sharedKey: "sk-ant-shared",
-      blocked: "quota",
       quota: { used: 120_000, limit: 120_000 },
       app: { ok: true },
       user: null,
     });
-    expect(status.errorKind).toBe("quota");
+    expect(status.ok).toBe(true);
     expect(status.app?.ok).toBe(true);
   });
 });

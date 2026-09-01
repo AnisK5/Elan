@@ -1,15 +1,17 @@
+import { notifyAdminAiIssue } from "./admin-alert";
 import { resolveAnthropicKey } from "./anthropic";
 import { checkSharedDailyBudget, usesUserAnthropicKey } from "./api-budget";
 import { getUserFromBearer } from "./auth-request";
 
-export type AiBlockKind = "no_key" | "quota";
+export type AiBlockKind = "no_key";
 
 export interface AiAccess {
   apiKey: string | null;
   userId: string | null;
   usesSharedKey: boolean;
+  /** Présent quand le plafond journalier est dépassé — suivi seulement, sans bloquer. */
   blocked?: AiBlockKind;
-  quota?: { used: number; limit: number };
+  quota?: { used: number; limit: number; over: boolean };
 }
 
 export async function resolveAiAccess(req: Request): Promise<AiAccess> {
@@ -22,18 +24,22 @@ export async function resolveAiAccess(req: Request): Promise<AiAccess> {
     return { apiKey: null, userId, usesSharedKey: false, blocked: "no_key" };
   }
 
-  if (usesSharedKey) {
+  let quota: AiAccess["quota"];
+  if (usesSharedKey && userId) {
     const budget = await checkSharedDailyBudget(req, userId, user?.email);
-    if (budget.applies && !budget.allowed) {
-      return {
-        apiKey,
-        userId,
-        usesSharedKey: true,
-        blocked: "quota",
-        quota: { used: budget.used, limit: budget.limit },
-      };
+    if (budget.applies) {
+      const over = !budget.allowed;
+      quota = { used: budget.used, limit: budget.limit, over };
+      if (over) {
+        void notifyAdminAiIssue({
+          kind: "quota",
+          route: "budget-soft",
+          userId,
+          detail: `${budget.used}/${budget.limit} tok (alerte, pas de blocage)`,
+        });
+      }
     }
   }
 
-  return { apiKey, userId, usesSharedKey };
+  return { apiKey, userId, usesSharedKey, quota };
 }

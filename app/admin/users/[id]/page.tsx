@@ -9,7 +9,6 @@ import {
   ActivityWeightStrip,
   WeightedDayFrise,
 } from "@/components/admin/UserTimelineFrise";
-import { Logo } from "@/components/home/Branding";
 import type { AdminAnalyticsSnapshot } from "@/lib/admin-analytics";
 import type { AdminUserDetail } from "@/lib/admin-user-detail";
 import { getSupabase } from "@/lib/supabase";
@@ -124,22 +123,7 @@ export default function AdminUserPage({
   const e = detail?.engagement;
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col px-5 pb-20">
-      <header className="flex items-center justify-between py-6">
-        <Link href="/" className="flex items-center gap-2">
-          <Logo />
-          <span className="font-display text-lg font-semibold text-ink">
-            Élan
-          </span>
-        </Link>
-        <Link
-          href="/admin"
-          className="text-sm text-muted transition hover:text-ink"
-        >
-          Stats
-        </Link>
-      </header>
-
+    <>
       {error === "auth" && (
         <p className="mt-4 text-[15px] text-muted">Connecte-toi pour voir cette fiche.</p>
       )}
@@ -167,7 +151,7 @@ export default function AdminUserPage({
               href="/admin"
               className="text-[13px] text-muted transition hover:text-ink"
             >
-              ← Tous les inscrits
+              ← Utilisateurs
             </Link>
             <h1 className="mt-2 font-display text-[28px] font-semibold leading-tight text-ink">
               {p.name || p.email}
@@ -446,7 +430,7 @@ export default function AdminUserPage({
           </section>
         </>
       )}
-    </main>
+    </>
   );
 }
 

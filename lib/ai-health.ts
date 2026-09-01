@@ -61,10 +61,8 @@ export async function buildAiHealth(req: Request): Promise<AiHealthSnapshot> {
   } else if (!app.ok && app.errorKind === "credits") {
     diagnosis =
       "La clé sur Vercel répond « crédits épuisés » — recharge le compte lié à CETTE clé (console Anthropic → API keys).";
-  } else if (access.blocked === "quota") {
-    diagnosis = exempt
-      ? "Plafond tokens atteint mais ton e-mail devrait être exempt — vérifie ELAN_ADMIN_EMAILS sur Vercel."
-      : `Plafond journalier atteint (${budget.used}/${formatSharedTokenLimit(limit)}). Choisis « Illimité » dans /admin ou attends demain.`;
+  } else if (access.quota?.over) {
+    diagnosis = `Plafond journalaire dépassé (${access.quota.used}/${formatSharedTokenLimit(access.quota.limit)}) — alerte seulement, l'IA n'est plus bloquée. Choisis « Illimité » dans Réglages IA si besoin.`;
   } else if (userKeyActive) {
     diagnosis =
       "Une clé perso est envoyée dans les requêtes — vérifie Réglages → Clé Claude.";
@@ -80,7 +78,7 @@ export async function buildAiHealth(req: Request): Promise<AiHealthSnapshot> {
     appPingError: app.ok ? undefined : app.errorKind,
     userEmail: user?.email ?? null,
     quotaExempt: exempt,
-    quotaBlocked: access.blocked === "quota",
+    quotaBlocked: Boolean(access.quota?.over),
     quotaUsed: budget.used,
     quotaLimit: limit,
     diagnosis,

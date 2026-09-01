@@ -2,10 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Logo } from "@/components/home/Branding";
 import type { AdminSnapshot } from "@/lib/admin-stats";
-import AdminTokenLimitSettings from "@/components/admin/AdminTokenLimitSettings";
-import AdminAiHealth from "@/components/admin/AdminAiHealth";
 import { getSupabase } from "@/lib/supabase";
 
 async function adminGet(path: string): Promise<Response> {
@@ -84,46 +81,13 @@ export default function AdminPage() {
   const t = snap?.totals;
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-5 pb-16">
-      <header className="flex items-center justify-between py-6">
-        <Link href="/" className="flex items-center gap-2">
-          <Logo />
-          <span className="font-display text-lg font-semibold text-ink">
-            Élan
-          </span>
-        </Link>
-        <Link href="/" className="text-sm text-muted transition hover:text-ink">
-          Accueil
-        </Link>
-      </header>
-
-      <h1 className="font-display text-[28px] font-semibold leading-tight text-ink">
-        Usage
-      </h1>
-      <p className="mt-1.5 text-[15px] leading-relaxed text-muted">
+    <>
+      <h2 className="font-display text-lg font-semibold text-ink">
+        Utilisateurs
+      </h2>
+      <p className="mt-1 text-[15px] leading-relaxed text-muted">
         Rétention, séances, parcours — clique sur une personne pour le détail.
       </p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Link
-          href="/admin/analytics"
-          className="inline-flex rounded-xl border border-teal/30 bg-teal-soft/40 px-4 py-2 text-[14px] font-medium text-teal-ink transition hover:border-teal"
-        >
-          Dashboard tokens & séances →
-        </Link>
-        <Link
-          href="/admin/feedbacks"
-          className="inline-flex rounded-xl border border-line bg-surface px-4 py-2 text-[14px] font-medium text-muted transition hover:border-teal hover:text-ink"
-        >
-          Tous les retours →
-        </Link>
-      </div>
-
-      {error !== "auth" && error !== "forbidden" ? (
-        <div className="mt-6 flex flex-col gap-4">
-          <AdminAiHealth />
-          <AdminTokenLimitSettings />
-        </div>
-      ) : null}
 
       {error === "auth" && (
         <p className="mt-8 text-[15px] text-muted">
@@ -311,7 +275,7 @@ export default function AdminPage() {
           ) : null}
         </>
       )}
-    </main>
+    </>
   );
 }
 

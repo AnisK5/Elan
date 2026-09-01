@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Logo } from "@/components/home/Branding";
 import type { AdminFeedbacksSnapshot } from "@/lib/admin-feedbacks";
 import {
   formatFeedbackMood,
@@ -70,26 +69,9 @@ export default function AdminFeedbacksPage() {
   }, []);
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-5 pb-16">
-      <header className="flex items-center justify-between py-6">
-        <Link href="/" className="flex items-center gap-2">
-          <Logo />
-          <span className="font-display text-lg font-semibold text-ink">
-            Élan
-          </span>
-        </Link>
-        <Link
-          href="/admin"
-          className="text-sm text-muted transition hover:text-ink"
-        >
-          Usage
-        </Link>
-      </header>
-
-      <h1 className="font-display text-[28px] font-semibold leading-tight text-ink">
-        Retours
-      </h1>
-      <p className="mt-1.5 text-[15px] leading-relaxed text-muted">
+    <>
+      <h2 className="font-display text-lg font-semibold text-ink">Retours</h2>
+      <p className="mt-1 text-[15px] leading-relaxed text-muted">
         Messages envoyés via le formulaire — Réglages, aide, fin de séance.
       </p>
 
@@ -158,6 +140,6 @@ export default function AdminFeedbacksPage() {
           ) : null}
         </section>
       )}
-    </main>
+    </>
   );
 }

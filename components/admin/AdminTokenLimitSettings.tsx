@@ -11,7 +11,6 @@ import {
 } from "@/lib/app-config";
 
 const PRESETS = [
-  { label: "Illimité", value: UNLIMITED_SHARED_DAILY_TOKEN_LIMIT },
   { label: "80k · léger", value: 80_000 },
   { label: "120k · défaut", value: 120_000 },
   { label: "200k · confort", value: 200_000 },
@@ -108,31 +107,50 @@ export default function AdminTokenLimitSettings() {
         Plafond IA partagée
       </h2>
       <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
-        Tokens max / jour / personne sur la clé Anthropic (hors clé perso dans
-        Réglages, hors comptes admin). Actuel :{" "}
+        Tokens max / jour / personne sur la clé Anthropic (hors clé perso, hors
+        admin). Alerte admin si dépassé — ne bloque plus l&apos;IA. Actuel :{" "}
         <span className="font-medium text-ink">{formatSharedTokenLimit(limit)}</span>
         {source === "env" ? " (valeur par défaut)" : " (enregistré)"}.
       </p>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        {PRESETS.map((p) => (
-          <button
-            key={p.value}
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              setLimit(p.value);
-              void save(p.value);
-            }}
-            className={`rounded-xl border px-3 py-2 text-[13px] transition disabled:opacity-40 ${
-              limit === p.value
-                ? "border-teal bg-teal-soft/50 text-teal-ink"
-                : "border-line bg-paper text-muted hover:border-teal/30 hover:text-ink"
-            }`}
-          >
-            {p.label}
-          </button>
-        ))}
+      <div className="mt-3 flex flex-col gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            setLimit(UNLIMITED_SHARED_DAILY_TOKEN_LIMIT);
+            void save(UNLIMITED_SHARED_DAILY_TOKEN_LIMIT);
+          }}
+          className={`w-full rounded-xl border px-3 py-2.5 text-[14px] font-medium transition disabled:opacity-40 ${
+            limit === UNLIMITED_SHARED_DAILY_TOKEN_LIMIT
+              ? "border-teal bg-teal text-white"
+              : "border-teal/40 bg-teal-soft/40 text-teal-ink hover:border-teal"
+          }`}
+        >
+          Illimité — pas de plafond journalier
+        </button>
+        <div className="flex flex-wrap gap-2">
+          {PRESETS.filter(
+            (p) => p.value !== UNLIMITED_SHARED_DAILY_TOKEN_LIMIT,
+          ).map((p) => (
+            <button
+              key={p.value}
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setLimit(p.value);
+                void save(p.value);
+              }}
+              className={`rounded-xl border px-3 py-2 text-[13px] transition disabled:opacity-40 ${
+                limit === p.value
+                  ? "border-teal bg-teal-soft/50 text-teal-ink"
+                  : "border-line bg-paper text-muted hover:border-teal/30 hover:text-ink"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="mt-3 flex flex-wrap items-end gap-2">

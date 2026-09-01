@@ -39,20 +39,11 @@ export function resolveAiPingStatus(opts: {
         app,
       };
     }
-    if (blocked === "quota") {
-      return {
-        ok: false,
-        keySource: "shared",
-        errorKind: "quota",
-        blocked: "quota",
-        quota,
-        app,
-      };
-    }
     return {
       ok: app.ok,
       keySource: "shared",
       errorKind: app.ok ? undefined : app.errorKind,
+      quota,
       app,
     };
   }

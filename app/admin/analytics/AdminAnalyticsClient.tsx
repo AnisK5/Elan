@@ -1,9 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { Logo } from "@/components/home/Branding";
 import AnalyticsDashboard from "@/components/admin/AnalyticsDashboard";
 import UserAnalyticsPicker from "@/components/admin/UserAnalyticsPicker";
 import type { AdminAnalyticsSnapshot, UserTokenRow } from "@/lib/admin-analytics";
@@ -102,23 +100,9 @@ export default function AdminAnalyticsPage() {
     globalUsers.find((u) => u.userId === selectedUserId)?.email;
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-5 pb-16">
-      <header className="flex items-center justify-between py-6">
-        <Link href="/" className="flex items-center gap-2">
-          <Logo />
-          <span className="font-display text-lg font-semibold text-ink">
-            Élan
-          </span>
-        </Link>
-        <Link href="/admin" className="text-sm text-muted transition hover:text-ink">
-          Usage
-        </Link>
-      </header>
-
-      <h1 className="font-display text-[28px] font-semibold leading-tight text-ink">
-        Analytics tokens
-      </h1>
-      <p className="mt-1.5 text-[15px] leading-relaxed text-muted">
+    <>
+      <h2 className="font-display text-lg font-semibold text-ink">Tokens</h2>
+      <p className="mt-1 text-[15px] leading-relaxed text-muted">
         Consommation IA globale ou par personne — tokens, séances, heures,
         abandon.
       </p>
@@ -161,6 +145,6 @@ export default function AdminAnalyticsPage() {
           />
         </div>
       ) : null}
-    </main>
+    </>
   );
 }

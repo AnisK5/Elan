@@ -1,22 +1,15 @@
-import { apiFetch, looksLikeAnthropicKey, readUserAnthropicKey } from "./anthropic";
+import { apiFetch } from "./anthropic";
 import type { AiPingStatus } from "./ai-ping-status";
 import {
   clearByokFallback,
   markByokFallbackActive,
 } from "./anthropic-key-client";
-import { reportAiFail, reportAiRecovered } from "./ai-fail-client";
 import { readAiDegraded } from "./ai-degraded-client";
+import { reportAiFail, reportAiRecovered } from "./ai-fail-client";
 
 let probeInflight: Promise<boolean> | null = null;
 let lastProbeAt = 0;
-const PROBE_COOLDOWN_MS = 60_000;
-
-function shouldProbe(): boolean {
-  return (
-    Boolean(readAiDegraded()) ||
-    looksLikeAnthropicKey(readUserAnthropicKey())
-  );
-}
+const PROBE_COOLDOWN_MS = 30_000;
 
 function applyPingStatus(j: AiPingStatus): boolean {
   if (j.fallbackToApp) {
@@ -29,21 +22,25 @@ function applyPingStatus(j: AiPingStatus): boolean {
     reportAiRecovered();
     return true;
   }
-  if (j.errorKind === "credits" || j.errorKind === "quota" || j.errorKind === "no_key") {
+  if (
+    j.errorKind === "credits" ||
+    j.errorKind === "quota" ||
+    j.errorKind === "no_key"
+  ) {
     reportAiFail(j.errorKind);
   }
   return false;
 }
 
-/** Vérifie si l'IA est de nouveau joignable (crédits rechargés, repli clé app, etc.). */
+/** Vérifie si l'IA est joignable — appelé au chargement et après une erreur. */
 export async function probeAiRecovery(opts?: {
   force?: boolean;
 }): Promise<boolean> {
-  if (!shouldProbe()) return true;
-
   const now = Date.now();
   if (probeInflight) return probeInflight;
-  if (!opts?.force && now - lastProbeAt < PROBE_COOLDOWN_MS) return false;
+  if (!opts?.force && now - lastProbeAt < PROBE_COOLDOWN_MS) {
+    return !readAiDegraded();
+  }
 
   probeInflight = (async () => {
     lastProbeAt = Date.now();
@@ -60,4 +57,15 @@ export async function probeAiRecovery(opts?: {
   })();
 
   return probeInflight;
+}
+
+/** Vérifie d'abord si l'IA répond — évite un bandeau périmé. */
+export async function reportAiFailUnlessRecovered(
+  kind: AnthropicFailKind | null | undefined,
+): Promise<boolean> {
+  if (!kind) return false;
+  const recovered = await probeAiRecovery({ force: true });
+  if (recovered) return true;
+  reportAiFail(kind);
+  return false;
 }

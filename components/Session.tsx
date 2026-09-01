@@ -8,7 +8,8 @@ import {
   anthropicFailMessage,
   parseStreamError,
 } from "@/lib/anthropic";
-import { aiRetryHint, reportAiFail, reportAiRecovered } from "@/lib/ai-fail-client";
+import { aiRetryHint, reportAiRecovered } from "@/lib/ai-fail-client";
+import { reportAiFailUnlessRecovered } from "@/lib/ai-recovery-client";
 import AiRetryBanner from "@/components/AiRetryBanner";
 import {
   applyThreadOps,
@@ -203,9 +204,14 @@ export default function Session({
         acc += decoder.decode(value, { stream: true });
         const { clean, kind } = parseStreamError(acc);
         if (kind) {
-          reportAiFail(kind);
-          setError(anthropicFailMessage(kind));
-          setErrorHint(aiRetryHint(kind) ?? "");
+          const recovered = await reportAiFailUnlessRecovered(kind);
+          if (!recovered) {
+            setError(anthropicFailMessage(kind));
+            setErrorHint(aiRetryHint(kind) ?? "");
+          } else {
+            setError("");
+            setErrorHint("");
+          }
           setMessages(convo);
           return;
         }
@@ -215,9 +221,14 @@ export default function Session({
 
       const { clean, kind } = parseStreamError(acc);
       if (kind) {
-        reportAiFail(kind);
-        setError(anthropicFailMessage(kind));
-        setErrorHint(aiRetryHint(kind) ?? "");
+        const recovered = await reportAiFailUnlessRecovered(kind);
+        if (!recovered) {
+          setError(anthropicFailMessage(kind));
+          setErrorHint(aiRetryHint(kind) ?? "");
+        } else {
+          setError("");
+          setErrorHint("");
+        }
         setMessages(convo);
         return;
       }

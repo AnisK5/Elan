@@ -73,8 +73,8 @@ import {
 import { logUsage, startDwellTracker, useUsageEvents } from "@/lib/usage-log";
 import { sessionsToday } from "@/lib/session-memory";
 import { apiFetch, anthropicFailMessage, parseStreamError, type AnthropicFailKind } from "@/lib/anthropic";
-import { aiRetryHint, reportAiFail, reportAiRecovered } from "@/lib/ai-fail-client";
-import { probeAiRecovery } from "@/lib/ai-recovery-client";
+import { aiRetryHint, reportAiRecovered } from "@/lib/ai-fail-client";
+import { probeAiRecovery, reportAiFailUnlessRecovered } from "@/lib/ai-recovery-client";
 import { needsWtpSurvey } from "@/lib/product-surveys";
 import {
   normalizeDuration,
@@ -618,8 +618,14 @@ export default function Home() {
         setPlanUnreachable(unreachable);
         const errorKind = j?.errorKind as AnthropicFailKind | undefined;
         if (errorKind) {
-          reportAiFail(errorKind);
-          setLiveAiKind(errorKind);
+          void reportAiFailUnlessRecovered(errorKind).then((recovered) => {
+            if (recovered) {
+              setLiveAiKind(null);
+              setPlanAiNote("");
+            } else {
+              setLiveAiKind(errorKind);
+            }
+          });
         } else if (!unreachable) {
           reportAiRecovered();
           setLiveAiKind(null);
@@ -866,8 +872,14 @@ export default function Home() {
           const unreachable = Boolean(j.unreachable) || !msg;
           setPlanUnreachable(unreachable);
           if (j.errorKind) {
-            reportAiFail(j.errorKind);
-            setLiveAiKind(j.errorKind);
+            void reportAiFailUnlessRecovered(j.errorKind).then((recovered) => {
+              if (recovered) {
+                setLiveAiKind(null);
+                setPlanAiNote("");
+              } else {
+                setLiveAiKind(j.errorKind!);
+              }
+            });
           } else if (!unreachable) {
             reportAiRecovered();
             setLiveAiKind(null);
@@ -1131,9 +1143,14 @@ export default function Home() {
         answer += dec.decode(value, { stream: true });
         const { clean, kind } = parseStreamError(answer);
         if (kind) {
-          reportAiFail(kind);
-          setLiveAiKind(kind);
-          setPointError(anthropicFailMessage(kind));
+          const recovered = await reportAiFailUnlessRecovered(kind);
+          if (!recovered) {
+            setLiveAiKind(kind);
+            setPointError(anthropicFailMessage(kind));
+          } else {
+            setLiveAiKind(null);
+            setPointError("");
+          }
           setChat(withUser);
           writeChat(withUser);
           setPointBusy(false);
@@ -1147,9 +1164,14 @@ export default function Home() {
 
       const parsed = parseStreamError(answer);
       if (parsed.kind) {
-        reportAiFail(parsed.kind);
-        setLiveAiKind(parsed.kind);
-        setPointError(anthropicFailMessage(parsed.kind));
+        const recovered = await reportAiFailUnlessRecovered(parsed.kind);
+        if (!recovered) {
+          setLiveAiKind(parsed.kind);
+          setPointError(anthropicFailMessage(parsed.kind));
+        } else {
+          setLiveAiKind(null);
+          setPointError("");
+        }
         setChat(withUser);
         writeChat(withUser);
         setPointBusy(false);

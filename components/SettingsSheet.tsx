@@ -147,7 +147,7 @@ export default function SettingsSheet({
                   onClick={() => setOpen(false)}
                   className="rounded-xl border border-line px-4 py-3 text-[15px] text-muted transition hover:text-ink"
                 >
-                  Stats d&apos;usage
+                  Admin
                 </Link>
               ) : null}
             </div>
