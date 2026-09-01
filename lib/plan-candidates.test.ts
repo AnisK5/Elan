@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   hasRecentContactNote,
   hasFutureSoftTiming,
@@ -64,6 +64,14 @@ describe("hasRecentContactNote", () => {
 });
 
 describe("isDeskPlanCandidate — cas Claire", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 24, 12, 0, 0)); // 24 août — « 1er sept » encore futur
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("exclut un suivi dont la prochaine relance est dans 12j", () => {
     const t = thread({
       text: "relancer Claire",
@@ -230,6 +238,18 @@ describe("sorties et conditions jamais posées", () => {
     expect(
       hasUnverifiedCondition(
         thread({ text: "mettre le linge", note: "dans le bac" }),
+      ),
+    ).toBe(false);
+  });
+
+  it("ne re-demande pas quand la condition est déjà tranchée (patins à acheter)", () => {
+    expect(
+      hasUnverifiedCondition(
+        thread({
+          text: "Changer les patins des chaises",
+          note:
+            "À faire assez vite pour protéger le sol. Patins à acheter — pas encore disponible · listé sur Courses.",
+        }),
       ),
     ).toBe(false);
   });

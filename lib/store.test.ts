@@ -23,7 +23,7 @@ class MemoryStorage {
 const storage = new MemoryStorage();
 vi.stubGlobal("window", { localStorage: storage, dispatchEvent: () => true });
 
-const { applyThreadOps, snapshotThreads, restoreThreads, wakeSnoozed } = await import(
+const { applyThreadOps, snapshotThreads, restoreThreads, wakeSnoozed, mergeThreadNotes } = await import(
   "./store"
 );
 const { parseThreadOps } = await import("./ops");
@@ -212,5 +212,18 @@ describe("snapshot / restore — le filet de l'annulation", () => {
     restoreThreads(snap);
     expect(snapshotThreads().every((t) => t.status === "open")).toBe(true);
     expect(byId("a")?.note).toBe("avec accents : éàü");
+  });
+});
+
+describe("mergeThreadNotes", () => {
+  it("retire « À vérifier » quand la réponse arrive", () => {
+    expect(
+      mergeThreadNotes(
+        "À faire vite. À vérifier : patins déjà là ou à acheter.",
+        "Patins à acheter — pas encore disponible · listé sur Courses",
+      ),
+    ).toBe(
+      "À faire vite. · Patins à acheter — pas encore disponible · listé sur Courses",
+    );
   });
 });

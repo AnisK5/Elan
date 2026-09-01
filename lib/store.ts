@@ -24,6 +24,10 @@ import {
   parseDayPlan,
   type DayPlanCache,
 } from "./day-plan";
+import {
+  conditionAnsweredInNote,
+  stripUnverifiedConditionClause,
+} from "./plan-candidates";
 
 const THREADS_KEY = "elan.threads.v1";
 const PROJECTS_KEY = "elan.projects.v1";
@@ -584,11 +588,18 @@ export function mergeThreadNotes(
   prev: string | undefined,
   next: string | undefined,
 ): string {
-  const a = clean(prev);
+  let a = clean(prev);
   const b = clean(next);
   if (!b) return a;
   if (!a) return b;
   if (a === b) return a;
+  if (conditionAnsweredInNote(b)) {
+    a = stripUnverifiedConditionClause(a);
+    if (!a) return b;
+    if (b.includes(a)) return b;
+    if (a.includes(b)) return a;
+    return `${a} · ${b}`;
+  }
   if (b.includes(a)) return b;
   if (a.includes(b)) return a;
   const listLike =

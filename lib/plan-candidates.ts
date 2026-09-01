@@ -262,6 +262,24 @@ export function hasPendingPhysicalWork(text?: string, note?: string): boolean {
 const UNVERIFIED_CONDITION =
   /d[èe]s r[ée]ception|d[èe]s que|à v[ée]rifier|une fois arriv[ée]e?|pas encore ouverte|quand j['’]aurai|condition salaire/i;
 
+/** La personne a déjà répondu à « à vérifier ? » — ne plus reposer la question. */
+const CONDITION_ANSWERED =
+  /pas encore disponible|à acheter en priorité|patins à acheter|faut en acheter|n['']?ai pas (?:les )?patins|(?:listé|ajouté) (?:sur|aux) [Cc]ourses|en attente des courses|d[èe]j[àa] (?:l[àa]|disponibles?)|salaire (?:reçu|arriv[ée])/i;
+
+/** Retire une clause « À vérifier : … » devenue caduque après la réponse. */
+export function stripUnverifiedConditionClause(note: string): string {
+  return note
+    .replace(/\s*à\s+vérifier\s*:\s*[^·]+/gi, "")
+    .replace(/\s*·\s*·+/g, " · ")
+    .replace(/^\s*·\s*|\s*·\s*$/g, "")
+    .trim();
+}
+
+export function conditionAnsweredInNote(note: string | undefined): boolean {
+  if (!note?.trim()) return false;
+  return CONDITION_ANSWERED.test(note);
+}
+
 /** Ce truc exige de sortir : le 15 min bureau ne le portera jamais. */
 export function isOutdoorNeed(t: Thread): boolean {
   const blob = `${t.text}\n${t.note ?? ""}`;
@@ -275,7 +293,10 @@ export function isOutdoorNeed(t: Thread): boolean {
 export function hasUnverifiedCondition(t: Thread): boolean {
   if (hasFutureSoftTiming(t.note)) return false;
   if (needsPurchaseStep(t.text, t.note)) return false;
-  return UNVERIFIED_CONDITION.test(`${t.note ?? ""}\n${t.text}`);
+  const blob = `${t.note ?? ""}\n${t.text}`;
+  if (!UNVERIFIED_CONDITION.test(blob)) return false;
+  if (conditionAnsweredInNote(t.note)) return false;
+  return true;
 }
 
 export function splitDeskBuckets(candidates: Thread[]): {
