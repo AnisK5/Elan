@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import type { AiHealthSnapshot } from "@/lib/ai-health";
-import { formatSharedTokenLimit } from "@/lib/app-config";
-import { formatTokensWithEur } from "@/lib/token-display";
+import {
+  formatSharedTokenLimit,
+  isUnlimitedSharedTokenLimit,
+} from "@/lib/app-config";
+import { formatQuotaUsage } from "@/lib/token-display";
 
 async function adminGet(path: string): Promise<Response> {
   const sb = getSupabase();
@@ -16,31 +19,44 @@ async function adminGet(path: string): Promise<Response> {
   return fetch(path, { headers });
 }
 
+const PING_LABELS: Record<string, string> = {
+  credits: "crédits épuisés",
+  auth: "clé refusée",
+  rate: "limite de débit",
+  quota: "plafond",
+  no_key: "pas de clé",
+  unknown: "erreur inconnue",
+};
+
 export default function AdminAiHealth() {
   const [health, setHealth] = useState<AiHealthSnapshot | null>(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
-    adminGet("/api/admin/ai-health")
-      .then(async (res) => {
-        if (cancelled) return;
-        if (!res.ok) {
-          setError("Diagnostic indisponible.");
-          return;
-        }
-        setHealth((await res.json()) as AiHealthSnapshot);
-      })
-      .catch(() => {
-        if (!cancelled) setError("Diagnostic indisponible.");
-      });
-    return () => {
-      cancelled = true;
-    };
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await adminGet("/api/admin/ai-health");
+      if (!res.ok) {
+        setError("Diagnostic indisponible.");
+        setHealth(null);
+        return;
+      }
+      setHealth((await res.json()) as AiHealthSnapshot);
+    } catch {
+      setError("Diagnostic indisponible.");
+      setHealth(null);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  if (error) return null;
-  if (!health) {
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (loading && !health) {
     return (
       <div className="rounded-2xl border border-line bg-surface p-4 text-[13px] text-muted">
         Diagnostic IA…
@@ -48,7 +64,15 @@ export default function AdminAiHealth() {
     );
   }
 
+  if (error && !health) return null;
+  if (!health) return null;
+
   const ok = health.appPingOk && !health.quotaBlocked;
+  const pingLabel = health.appPingOk
+    ? "OK"
+    : (PING_LABELS[health.appPingError ?? "unknown"] ??
+      health.appPingError ??
+      "échec");
 
   return (
     <div
@@ -58,23 +82,40 @@ export default function AdminAiHealth() {
           : "border-amber/40 bg-amber-soft text-ink"
       }`}
     >
-      <p className="font-medium">
-        {ok ? "Clé de l'app OK" : "Problème IA détecté"}
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="font-medium">
+          {ok ? "Clé de l'app OK" : "Problème IA détecté"}
+        </p>
+        <button
+          type="button"
+          onClick={() => void load()}
+          disabled={loading}
+          className="shrink-0 text-[12px] font-medium text-teal hover:underline disabled:opacity-40"
+        >
+          {loading ? "…" : "Réessayer"}
+        </button>
+      </div>
       <p className="mt-1">{health.diagnosis}</p>
       <ul className="mt-2 space-y-0.5 text-[12px] text-muted">
         <li>
           Clé Vercel : {health.anthropicKeyConfigured ? "présente" : "absente"}
         </li>
+        <li>Ping Anthropic : {pingLabel}</li>
         <li>
-          Ping Anthropic : {health.appPingOk ? "OK" : (health.appPingError ?? "échec")}
+          Ta conso aujourd&apos;hui : {formatQuotaUsage(health.quotaUsed)}
+          {health.quotaExempt ? " (exempt du plafond)" : ""}
         </li>
+        {health.quotaExempt ? (
+          <li>
+            App (tous) aujourd&apos;hui :{" "}
+            {formatQuotaUsage(health.quotaUsedGlobal)}
+          </li>
+        ) : null}
         <li>
-          Tokens aujourd&apos;hui :{" "}
-          {health.quotaLimit === 0
+          Plafond par personne :{" "}
+          {isUnlimitedSharedTokenLimit(health.quotaLimit)
             ? "illimité"
-            : `${formatTokensWithEur(health.quotaUsed)} / ${formatSharedTokenLimit(health.quotaLimit)}`}
-          {health.quotaExempt ? " (admin exempt)" : ""}
+            : formatSharedTokenLimit(health.quotaLimit)}
         </li>
       </ul>
     </div>

@@ -40,6 +40,37 @@ export async function sumUserTokensToday(
   }
 }
 
+export async function getUserTokensTodayTotal(
+  userId: string,
+  day = new Date().toISOString().slice(0, 10),
+): Promise<number> {
+  const { input, output } = await sumUserTokensToday(userId, day);
+  return totalTokens(input, output);
+}
+
+export async function sumGlobalTokensToday(
+  day = new Date().toISOString().slice(0, 10),
+): Promise<number> {
+  const admin = getSupabaseAdmin();
+  if (!admin) return 0;
+  try {
+    const { data, error } = await admin
+      .from("elan_api_usage")
+      .select("input_tokens, output_tokens")
+      .eq("day", day);
+    if (error) return 0;
+    let input = 0;
+    let output = 0;
+    for (const row of data ?? []) {
+      input += row.input_tokens ?? 0;
+      output += row.output_tokens ?? 0;
+    }
+    return totalTokens(input, output);
+  } catch {
+    return 0;
+  }
+}
+
 export interface SharedBudgetStatus {
   applies: boolean;
   allowed: boolean;

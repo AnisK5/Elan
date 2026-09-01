@@ -24,6 +24,16 @@ export function formatTokensWithEur(
   return `${formatTokenCount(tokens)} · ${formatEur(eur)}`;
 }
 
+/** Affichage quota : 0 tok explicite au lieu de « — ». */
+export function formatQuotaUsage(tokens: number, costEur?: number): string {
+  if (tokens <= 0) {
+    return costEur != null && costEur > 0
+      ? `0 tok · ${formatEur(costEur)}`
+      : "0 tok";
+  }
+  return formatTokensWithEur(tokens, costEur);
+}
+
 export function formatSharedTokenLimitWithEur(limit: number): string {
   if (isUnlimitedSharedTokenLimit(limit)) return "Illimité";
   return formatTokensWithEur(limit);

@@ -1,12 +1,16 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { isAdminEmail } from "./admin";
 import { resolveAiAccess } from "./ai-access";
 import {
-  checkSharedDailyBudget,
+  getUserTokensTodayTotal,
   isSharedTokenQuotaExempt,
+  sumGlobalTokensToday,
   usesUserAnthropicKey,
 } from "./api-budget";
-import { formatSharedTokenLimit, resolveSharedDailyTokenLimit } from "./app-config";
+import {
+  formatSharedTokenLimit,
+  isUnlimitedSharedTokenLimit,
+  resolveSharedDailyTokenLimit,
+} from "./app-config";
 import { classifyAnthropicError, type AnthropicFailKind } from "./anthropic";
 import { getUserFromBearer } from "./auth-request";
 import { CLAUDE_HAIKU } from "./models";
@@ -15,17 +19,23 @@ export interface AiHealthSnapshot {
   anthropicKeyConfigured: boolean;
   appPingOk: boolean;
   appPingError?: AnthropicFailKind;
+  pingErrorDetail?: string;
   userEmail?: string | null;
   quotaExempt: boolean;
   quotaBlocked: boolean;
   quotaUsed: number;
+  quotaUsedGlobal: number;
   quotaLimit: number;
   diagnosis: string;
 }
 
-async function pingSharedKey(
-  apiKey: string,
-): Promise<{ ok: boolean; errorKind?: AnthropicFailKind }> {
+interface PingResult {
+  ok: boolean;
+  errorKind?: AnthropicFailKind;
+  errorDetail?: string;
+}
+
+async function pingSharedKey(apiKey: string): Promise<PingResult> {
   try {
     const client = new Anthropic({ apiKey });
     await client.messages.create({
@@ -35,7 +45,17 @@ async function pingSharedKey(
     });
     return { ok: true };
   } catch (e) {
-    return { ok: false, errorKind: classifyAnthropicError(e) };
+    const errorDetail =
+      e instanceof Error
+        ? e.message.slice(0, 240)
+        : typeof e === "string"
+          ? e.slice(0, 240)
+          : undefined;
+    return {
+      ok: false,
+      errorKind: classifyAnthropicError(e),
+      errorDetail,
+    };
   }
 }
 
@@ -44,13 +64,10 @@ export async function buildAiHealth(req: Request): Promise<AiHealthSnapshot> {
   const sharedKey = process.env.ANTHROPIC_API_KEY?.trim() ?? "";
   const access = await resolveAiAccess(req);
   const limit = await resolveSharedDailyTokenLimit();
-  const budget = await checkSharedDailyBudget(
-    req,
-    user?.id ?? null,
-    user?.email,
-  );
   const exempt = isSharedTokenQuotaExempt(user?.email);
   const userKeyActive = usesUserAnthropicKey(req);
+  const quotaUsed = user?.id ? await getUserTokensTodayTotal(user.id) : 0;
+  const quotaUsedGlobal = exempt ? await sumGlobalTokensToday() : 0;
 
   const app = sharedKey ? await pingSharedKey(sharedKey) : { ok: false };
 
@@ -60,26 +77,47 @@ export async function buildAiHealth(req: Request): Promise<AiHealthSnapshot> {
       "ANTHROPIC_API_KEY absente sur Vercel — ajoute-la en Production puis redéploie.";
   } else if (!app.ok && app.errorKind === "credits") {
     diagnosis =
-      "La clé sur Vercel répond « crédits épuisés » — recharge le compte lié à CETTE clé (console Anthropic → API keys).";
+      "Le ping Anthropic avec la clé Vercel échoue (crédits). Ce n'est pas le plafond tokens — vérifie que la clé Production correspond au compte rechargé (console Anthropic → API keys).";
+    if (app.errorDetail) {
+      diagnosis += ` Détail : « ${app.errorDetail} ».`;
+    }
+  } else if (!app.ok && app.errorKind === "auth") {
+    diagnosis =
+      "La clé sur Vercel est refusée par Anthropic — régénère-la et mets à jour ANTHROPIC_API_KEY sur Vercel.";
   } else if (access.quota?.over) {
-    diagnosis = `Plafond journalaire dépassé (${access.quota.used}/${formatSharedTokenLimit(access.quota.limit)}) — alerte seulement, l'IA n'est plus bloquée. Choisis « Illimité » dans Réglages IA si besoin.`;
+    diagnosis = `Plafond journalaire dépassé (${access.quota.used}/${formatSharedTokenLimit(access.quota.limit)}) — alerte seulement, l'IA n'est plus bloquée. Choisis « Illimité » ci-dessous si besoin.`;
   } else if (userKeyActive) {
     diagnosis =
       "Une clé perso est envoyée dans les requêtes — vérifie Réglages → Clé Claude.";
   } else if (app.ok) {
-    diagnosis = "La clé de l'app répond OK — le bandeau ne devrait pas rester.";
+    diagnosis = "La clé de l'app répond OK.";
+    if (exempt) {
+      diagnosis += " Ton compte admin est exempt du plafond journalier.";
+    }
+    if (
+      !isUnlimitedSharedTokenLimit(limit) &&
+      !exempt &&
+      access.quota
+    ) {
+      diagnosis += ` Plafond actuel : ${formatSharedTokenLimit(limit)}.`;
+    }
   } else {
     diagnosis = `Erreur API : ${app.errorKind ?? "inconnue"}.`;
+    if (app.errorDetail) {
+      diagnosis += ` Détail : « ${app.errorDetail} ».`;
+    }
   }
 
   return {
     anthropicKeyConfigured: Boolean(sharedKey),
     appPingOk: app.ok,
     appPingError: app.ok ? undefined : app.errorKind,
+    pingErrorDetail: app.errorDetail,
     userEmail: user?.email ?? null,
     quotaExempt: exempt,
     quotaBlocked: Boolean(access.quota?.over),
-    quotaUsed: budget.used,
+    quotaUsed,
+    quotaUsedGlobal,
     quotaLimit: limit,
     diagnosis,
   };
