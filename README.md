@@ -50,6 +50,8 @@ npm run dev
 | `ANTHROPIC_API_KEY` | Oui (repli) | Clé Claude de l'app. Chaque personne peut coller la sienne (réglage **Clé Claude**, stockée sur l'appareil). Les rappels matin côté serveur utilisent encore celle-ci. |
 | `NEXT_PUBLIC_SUPABASE_*` | Non | Compte + sync |
 | `ELAN_ADMIN_EMAILS` | Non | E-mails (virgules) qui voient `/admin` — rétention, DAU, par inscrit. Pas de joker. |
+| `ELAN_SHARED_DAILY_TOKEN_LIMIT` | Non | Repli si rien en base (défaut `120000`). Modifiable dans **Admin → Usage → Plafond IA**. |
+| `ELAN_USD_EUR` | Non | Taux USD→EUR pour l'estimation de coût dans `/admin/analytics` (défaut `0.92`). |
 
 Sans Supabase : **localStorage** uniquement. SQL (tables + cron push) : [docs/supabase-schema.sql](./docs/supabase-schema.sql).
 

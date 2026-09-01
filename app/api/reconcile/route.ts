@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { resolveAnthropicKey } from "@/lib/anthropic";
+import { resolveAiAccess } from "@/lib/ai-access";
+import { notifyAdminAiIssue } from "@/lib/admin-alert";
+import { classifyAnthropicError } from "@/lib/anthropic";
 import { recordMessageUsage } from "@/lib/api-usage";
 import { resolveUtilityModel } from "@/lib/models";
 import { systemPromptBlocks } from "@/lib/prompt-cache";
@@ -256,12 +258,13 @@ export async function POST(req: Request) {
     return Response.json({ updates: [], note: "" });
 
   const empty = { updates: [] as unknown[], note: "" };
-  const apiKey = resolveAnthropicKey(req);
-  if (!apiKey) {
+  const access = await resolveAiAccess(req);
+  if (!access.apiKey || access.blocked) {
     return Response.json(
       withWrites(threads, messages, empty, previousSituation),
     );
   }
+  const apiKey = access.apiKey;
 
   const client = new Anthropic({ apiKey });
   const startedAt = Date.now();
@@ -288,7 +291,14 @@ export async function POST(req: Request) {
     return Response.json(
       withWrites(threads, messages, parsed, previousSituation),
     );
-  } catch {
+  } catch (e) {
+    if (classifyAnthropicError(e) === "credits") {
+      void notifyAdminAiIssue({
+        kind: "credits",
+        route: "reconcile",
+        userId: access.userId,
+      });
+    }
     return Response.json(
       withWrites(threads, messages, empty, previousSituation),
     );

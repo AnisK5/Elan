@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { AdminAnalyticsSnapshot, UserTokenRow } from "@/lib/admin-analytics";
+import { formatEur } from "@/lib/anthropic-pricing";
 import {
   BarChart,
   HourHeatmap,
@@ -105,6 +106,11 @@ export default function AnalyticsDashboard({
 
       <MetricGrid
         items={[
+          {
+            label: "Coût estimé",
+            value: formatEur(t.costEur),
+            hint: `~${t.costUsd.toFixed(2)} $ · tarifs publics Anthropic`,
+          },
           {
             label: "Tokens total",
             value: t.totalTokens.toLocaleString("fr-FR"),

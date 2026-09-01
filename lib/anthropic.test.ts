@@ -53,7 +53,8 @@ describe("erreurs Anthropic", () => {
     const raw =
       '400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."}}';
     expect(classifyAnthropicError(new Error(raw))).toBe("credits");
-    expect(anthropicFailMessage("credits")).toMatch(/crédits/i);
+    expect(anthropicFailMessage("credits")).toMatch(/pause technique/i);
+    expect(anthropicFailMessage("quota")).toMatch(/beaucoup utilisé/i);
   });
 
   it("extrait le marqueur du flux", () => {

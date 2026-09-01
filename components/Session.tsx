@@ -8,6 +8,7 @@ import {
   anthropicFailMessage,
   parseStreamError,
 } from "@/lib/anthropic";
+import { aiRetryHint, reportAiFail } from "@/lib/ai-fail-client";
 import AiRetryBanner from "@/components/AiRetryBanner";
 import {
   applyThreadOps,
@@ -55,6 +56,7 @@ export default function Session({
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState("");
+  const [errorHint, setErrorHint] = useState("");
   const [elapsed, setElapsed] = useState(initial?.elapsedSec ?? 0);
   const [running, setRunning] = useState(true);
   const [panel, setPanel] = useState<"none" | "capture" | "threads">("none");
@@ -155,6 +157,7 @@ export default function Session({
 
   async function runTurn(convo: ChatMessage[], ending = false) {
     setError("");
+    setErrorHint("");
     retryRef.current = { convo, ending };
     setStreaming(true);
     const at = new Date().toISOString();
@@ -200,7 +203,9 @@ export default function Session({
         acc += decoder.decode(value, { stream: true });
         const { clean, kind } = parseStreamError(acc);
         if (kind) {
+          reportAiFail(kind);
           setError(anthropicFailMessage(kind));
+          setErrorHint(aiRetryHint(kind) ?? "");
           setMessages(convo);
           return;
         }
@@ -210,7 +215,9 @@ export default function Session({
 
       const { clean, kind } = parseStreamError(acc);
       if (kind) {
+        reportAiFail(kind);
         setError(anthropicFailMessage(kind));
+        setErrorHint(aiRetryHint(kind) ?? "");
         setMessages(convo);
         return;
       }
@@ -406,6 +413,7 @@ export default function Session({
           {error && (
             <AiRetryBanner
               message={error}
+              hint={errorHint}
               busy={streaming}
               onRetry={() => {
                 const r = retryRef.current;

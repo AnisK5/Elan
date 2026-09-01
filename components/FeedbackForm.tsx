@@ -1,23 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { logUsage } from "@/lib/usage-log";
 
-export type FeedbackMood = "bien" | "bof" | "bloque";
-export type FeedbackSource = "settings" | "wrap_up" | "home";
+export type FeedbackRating = "up" | "down";
+export type FeedbackMood = FeedbackRating | "bien" | "bof" | "bloque";
+export type FeedbackSource =
+  | "settings"
+  | "wrap_up"
+  | "home"
+  | "survey_wtp";
 
-const MOODS: { value: FeedbackMood; label: string }[] = [
-  { value: "bien", label: "Ça va" },
-  { value: "bof", label: "Bof" },
-  { value: "bloque", label: "Bloqué" },
-];
-
-async function postFeedback(
-  message: string,
-  mood: FeedbackMood | null,
-  source: FeedbackSource,
-): Promise<boolean> {
+async function postFeedback(opts: {
+  message?: string;
+  rating?: FeedbackRating | null;
+  mood?: FeedbackMood | null;
+  source: FeedbackSource;
+}): Promise<boolean> {
   const sb = getSupabase();
   const token = sb
     ? (await sb.auth.getSession()).data.session?.access_token
@@ -28,40 +28,81 @@ async function postFeedback(
   const res = await fetch("/api/feedback", {
     method: "POST",
     headers,
-    body: JSON.stringify({ message, mood, source }),
+    body: JSON.stringify({
+      message: opts.message ?? "",
+      rating: opts.rating ?? undefined,
+      mood: opts.mood ?? undefined,
+      source: opts.source,
+    }),
   });
   return res.ok;
+}
+
+function ThumbButton({
+  label,
+  active,
+  onClick,
+  children,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={active}
+      onClick={onClick}
+      className={`grid h-11 w-11 place-items-center rounded-xl border text-xl transition ${
+        active
+          ? "border-teal bg-teal-soft text-teal-ink"
+          : "border-line bg-paper text-muted hover:border-teal/30 hover:text-ink"
+      }`}
+    >
+      {children}
+    </button>
+  );
 }
 
 export default function FeedbackForm({
   source = "settings",
   compact = false,
   onSent,
+  title = "Un retour ?",
+  subtitle = "Ça va ou ça coince ? Dis-moi pourquoi si tu veux.",
 }: {
   source?: FeedbackSource;
   compact?: boolean;
   onSent?: () => void;
+  title?: string;
+  subtitle?: string;
 }) {
+  const [rating, setRating] = useState<FeedbackRating | null>(null);
   const [message, setMessage] = useState("");
-  const [mood, setMood] = useState<FeedbackMood | null>(null);
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
 
   async function submit() {
+    if (busy || !rating) return;
     const text = message.trim();
-    if (!text || busy) return;
     setBusy(true);
     setError("");
-    const ok = await postFeedback(text, mood, source).catch(() => false);
+    const ok = await postFeedback({
+      message: text || (rating === "up" ? "👍" : "👎"),
+      rating,
+      source,
+    }).catch(() => false);
     setBusy(false);
     if (!ok) {
       setError("Impossible d'envoyer — réessaie.");
       return;
     }
-    logUsage("feedback", { meta: { mood: mood ?? undefined } });
+    logUsage("feedback", { meta: { mood: rating } });
     setMessage("");
-    setMood(null);
+    setRating(null);
     setSent(true);
     onSent?.();
     window.setTimeout(() => setSent(false), 3000);
@@ -75,41 +116,41 @@ export default function FeedbackForm({
           : "rounded-xl border border-line bg-surface px-4 py-4"
       }
     >
-      <p className="text-[13px] font-medium text-ink">Un retour ?</p>
-      <p className="mt-0.5 text-[12px] text-muted">
-        Bug, idée, friction — ce que tu veux.
-      </p>
+      <p className="text-[13px] font-medium text-ink">{title}</p>
+      <p className="mt-0.5 text-[12px] text-muted">{subtitle}</p>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        {MOODS.map((m) => (
-          <button
-            key={m.value}
-            type="button"
-            onClick={() => setMood(mood === m.value ? null : m.value)}
-            className={`rounded-lg px-2.5 py-1 text-[12px] font-medium transition ${
-              mood === m.value
-                ? "bg-teal text-white"
-                : "bg-sink text-muted hover:text-ink"
-            }`}
-          >
-            {m.label}
-          </button>
-        ))}
+      <div className="mt-3 flex items-center gap-2">
+        <ThumbButton
+          label="Ça va"
+          active={rating === "up"}
+          onClick={() => setRating(rating === "up" ? null : "up")}
+        >
+          👍
+        </ThumbButton>
+        <ThumbButton
+          label="Ça coince"
+          active={rating === "down"}
+          onClick={() => setRating(rating === "down" ? null : "down")}
+        >
+          👎
+        </ThumbButton>
       </div>
 
-      <textarea
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        rows={compact ? 2 : 3}
-        placeholder="Dis-moi ce qui coince ou ce qui manque…"
-        className="mt-3 w-full resize-none rounded-xl border border-line bg-paper px-3 py-2 text-[14px] leading-relaxed text-ink outline-none placeholder:text-faint focus:border-teal"
-      />
+      {rating ? (
+        <textarea
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          rows={compact ? 2 : 3}
+          placeholder="Pourquoi ? (optionnel)"
+          className="mt-3 w-full resize-none rounded-xl border border-line bg-paper px-3 py-2 text-[14px] leading-relaxed text-ink outline-none placeholder:text-faint focus:border-teal"
+        />
+      ) : null}
 
       <div className="mt-2 flex items-center gap-3">
         <button
           type="button"
           onClick={submit}
-          disabled={!message.trim() || busy}
+          disabled={!rating || busy}
           className="rounded-lg bg-teal px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-teal-ink disabled:opacity-40"
         >
           {busy ? "…" : "Envoyer"}

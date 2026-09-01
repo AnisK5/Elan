@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { resolveAnthropicKey } from "@/lib/anthropic";
+import { resolveAiAccess } from "@/lib/ai-access";
+import { classifyAnthropicError } from "@/lib/anthropic";
 import { recordMessageUsage } from "@/lib/api-usage";
 import { resolveUtilityModel } from "@/lib/models";
 import { cachedSystemBlock } from "@/lib/prompt-cache";
@@ -43,8 +44,11 @@ function safeParse(text: string): { title: string; note: string | null } | null 
 }
 
 export async function POST(req: Request) {
-  const apiKey = resolveAnthropicKey(req);
-  if (!apiKey) return Response.json({ title: null, note: null });
+  const access = await resolveAiAccess(req);
+  if (!access.apiKey || access.blocked) {
+    return Response.json({ title: null, note: null });
+  }
+  const apiKey = access.apiKey;
 
   let body: Body;
   try {

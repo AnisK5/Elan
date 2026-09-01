@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { UserTokenRow } from "@/lib/admin-analytics";
+import { formatEur } from "@/lib/anthropic-pricing";
 
 export default function UserTokenTable({
   rows,
@@ -33,6 +34,7 @@ export default function UserTokenTable({
           <tr>
             <th className="px-3 py-2 font-medium">Personne</th>
             <th className="px-3 py-2 font-medium">Tokens</th>
+            <th className="px-3 py-2 font-medium">Coût est.</th>
             <th className="px-3 py-2 font-medium">Séances</th>
             <th className="px-3 py-2 font-medium">Appels</th>
             <th className="px-3 py-2 font-medium">Tok / séance</th>
@@ -63,6 +65,9 @@ export default function UserTokenTable({
                     {u.input.toLocaleString("fr-FR")} in ·{" "}
                     {u.output.toLocaleString("fr-FR")} out
                   </div>
+                </td>
+                <td className="px-3 py-2 tabular-nums text-ink">
+                  {formatEur(u.costEur)}
                 </td>
                 <td className="px-3 py-2 text-ink">{u.sessions}</td>
                 <td className="px-3 py-2 text-ink">{u.apiCalls}</td>

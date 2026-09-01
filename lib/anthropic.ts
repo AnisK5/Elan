@@ -1,5 +1,6 @@
 /** Clé Claude : celle de la personne si elle en a une, sinon celle de l'app. */
 
+import { aiUserFailMessage } from "@/lib/ai-user-messages";
 import { MODEL_PREF_HEADER, readModelPreference } from "@/lib/models";
 
 export const ANTHROPIC_KEY_HEADER = "x-elan-anthropic-key";
@@ -17,9 +18,14 @@ export function resolveAnthropicKey(req?: Request): string | null {
   return env || null;
 }
 
-export type AnthropicFailKind = "credits" | "auth" | "rate" | "unknown";
+export type AnthropicFailKind =
+  | "credits"
+  | "quota"
+  | "auth"
+  | "rate"
+  | "unknown";
 
-const STREAM_ERROR_RE = /⟦elan-error:(credits|auth|rate|unknown)⟧/;
+const STREAM_ERROR_RE = /⟦elan-error:(credits|quota|auth|rate|unknown)⟧/;
 
 export function classifyAnthropicError(err: unknown): AnthropicFailKind {
   const raw =
@@ -54,16 +60,12 @@ export function classifyAnthropicError(err: unknown): AnthropicFailKind {
 }
 
 export function anthropicFailMessage(kind: AnthropicFailKind): string {
-  if (kind === "credits") {
-    return "Plus de crédits Anthropic pour le moment. Recharge le compte, ou colle une autre clé dans Réglages.";
-  }
-  if (kind === "auth") {
-    return "La clé Claude n'est pas reconnue. Vérifie-la dans Réglages.";
-  }
-  if (kind === "rate") {
-    return "Anthropic est saturé un instant. Réessaie dans quelques secondes.";
-  }
-  return "Élan n'a pas pu répondre. Réessaie dans un instant.";
+  return aiUserFailMessage(kind);
+}
+
+/** Marqueur flux quand le plafond journalier partagé est atteint. */
+export function encodeQuotaError(): string {
+  return "⟦elan-error:quota⟧";
 }
 
 /** Marqueur dans le flux texte — jamais affiché tel quel. */
@@ -78,7 +80,9 @@ export function parseStreamError(text: string): {
   const m = STREAM_ERROR_RE.exec(text);
   if (!m) return { clean: text, kind: null };
   return {
-    clean: text.replace(/\s*⟦elan-error:(credits|auth|rate|unknown)⟧\s*/g, "").trim(),
+    clean: text
+      .replace(/\s*⟦elan-error:(credits|quota|auth|rate|unknown)⟧\s*/g, "")
+      .trim(),
     kind: m[1] as AnthropicFailKind,
   };
 }

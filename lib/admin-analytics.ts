@@ -1,4 +1,5 @@
 import type { ChatMessage } from "./types";
+import { estimateUsageCostEur, estimateUsageCostUsd } from "./anthropic-pricing";
 
 export interface RawApiUsageRow {
   userId: string | null;
@@ -28,6 +29,8 @@ export interface TokenDayRow {
   input: number;
   output: number;
   total: number;
+  costUsd: number;
+  costEur: number;
 }
 
 export interface RouteTokenRow {
@@ -35,6 +38,8 @@ export interface RouteTokenRow {
   input: number;
   output: number;
   calls: number;
+  costUsd: number;
+  costEur: number;
 }
 
 export interface UserTokenRow {
@@ -47,6 +52,8 @@ export interface UserTokenRow {
   sessions: number;
   apiCalls: number;
   avgTokensPerSession: number;
+  costUsd: number;
+  costEur: number;
 }
 
 export interface HourRow {
@@ -103,6 +110,8 @@ export interface AdminAnalyticsSnapshot {
     inputTokens: number;
     outputTokens: number;
     totalTokens: number;
+    costUsd: number;
+    costEur: number;
     apiCalls: number;
     sessions: number;
     avgSessionMin: number;
@@ -170,16 +179,22 @@ export function buildAdminAnalytics(
 
   let inputTokens = 0;
   let outputTokens = 0;
+  let costUsd = 0;
+  let costEur = 0;
   for (const u of usageRows) {
     inputTokens += u.inputTokens;
     outputTokens += u.outputTokens;
+    costUsd += estimateUsageCostUsd(u.model, u.inputTokens, u.outputTokens);
+    costEur += estimateUsageCostEur(u.model, u.inputTokens, u.outputTokens);
   }
 
-  const byDay = new Map<string, { input: number; output: number }>();
+  const byDay = new Map<string, { input: number; output: number; costUsd: number; costEur: number }>();
   for (const u of usageRows) {
-    const cur = byDay.get(u.day) ?? { input: 0, output: 0 };
+    const cur = byDay.get(u.day) ?? { input: 0, output: 0, costUsd: 0, costEur: 0 };
     cur.input += u.inputTokens;
     cur.output += u.outputTokens;
+    cur.costUsd += estimateUsageCostUsd(u.model, u.inputTokens, u.outputTokens);
+    cur.costEur += estimateUsageCostEur(u.model, u.inputTokens, u.outputTokens);
     byDay.set(u.day, cur);
   }
   const tokensByDay = [...byDay.entries()]
@@ -188,6 +203,8 @@ export function buildAdminAnalytics(
       input: v.input,
       output: v.output,
       total: v.input + v.output,
+      costUsd: v.costUsd,
+      costEur: v.costEur,
     }))
     .sort((a, b) => a.day.localeCompare(b.day))
     .slice(-30);
@@ -199,10 +216,14 @@ export function buildAdminAnalytics(
       input: 0,
       output: 0,
       calls: 0,
+      costUsd: 0,
+      costEur: 0,
     };
     cur.input += u.inputTokens;
     cur.output += u.outputTokens;
     cur.calls += 1;
+    cur.costUsd += estimateUsageCostUsd(u.model, u.inputTokens, u.outputTokens);
+    cur.costEur += estimateUsageCostEur(u.model, u.inputTokens, u.outputTokens);
     byRoute.set(u.route, cur);
   }
   const tokensByRoute = [...byRoute.values()].sort(
@@ -231,11 +252,15 @@ export function buildAdminAnalytics(
       sessions: 0,
       apiCalls: 0,
       avgTokensPerSession: 0,
+      costUsd: 0,
+      costEur: 0,
     };
     cur.input += u.inputTokens;
     cur.output += u.outputTokens;
     cur.total = cur.input + cur.output;
     cur.apiCalls += 1;
+    cur.costUsd += estimateUsageCostUsd(u.model, u.inputTokens, u.outputTokens);
+    cur.costEur += estimateUsageCostEur(u.model, u.inputTokens, u.outputTokens);
     byUser.set(u.userId, cur);
   }
   const sessionsByUser = new Map<string, number>();
@@ -255,6 +280,8 @@ export function buildAdminAnalytics(
         sessions: 0,
         apiCalls: 0,
         avgTokensPerSession: 0,
+        costUsd: 0,
+        costEur: 0,
       } satisfies UserTokenRow);
     cur.sessions = n;
     byUser.set(uid, cur);
@@ -377,6 +404,8 @@ export function buildAdminAnalytics(
       inputTokens,
       outputTokens,
       totalTokens: inputTokens + outputTokens,
+      costUsd,
+      costEur,
       apiCalls: usageRows.length,
       sessions: sessionCount,
       avgSessionMin:

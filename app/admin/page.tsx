@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Logo } from "@/components/home/Branding";
 import type { AdminSnapshot } from "@/lib/admin-stats";
+import AdminTokenLimitSettings from "@/components/admin/AdminTokenLimitSettings";
 import { getSupabase } from "@/lib/supabase";
 
 async function adminGet(path: string): Promise<Response> {
@@ -101,12 +102,24 @@ export default function AdminPage() {
       <p className="mt-1.5 text-[15px] leading-relaxed text-muted">
         Rétention, séances, parcours — clique sur une personne pour le détail.
       </p>
-      <Link
-        href="/admin/analytics"
-        className="mt-3 inline-flex rounded-xl border border-teal/30 bg-teal-soft/40 px-4 py-2 text-[14px] font-medium text-teal-ink transition hover:border-teal"
-      >
-        Dashboard tokens & séances →
-      </Link>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Link
+          href="/admin/analytics"
+          className="inline-flex rounded-xl border border-teal/30 bg-teal-soft/40 px-4 py-2 text-[14px] font-medium text-teal-ink transition hover:border-teal"
+        >
+          Dashboard tokens & séances →
+        </Link>
+        <Link
+          href="/admin/feedbacks"
+          className="inline-flex rounded-xl border border-line bg-surface px-4 py-2 text-[14px] font-medium text-muted transition hover:border-teal hover:text-ink"
+        >
+          Tous les retours →
+        </Link>
+      </div>
+
+      {error !== "auth" && error !== "forbidden" ? (
+        <AdminTokenLimitSettings />
+      ) : null}
 
       {error === "auth" && (
         <p className="mt-8 text-[15px] text-muted">
@@ -259,9 +272,17 @@ export default function AdminPage() {
 
           {snap.recentFeedback.length > 0 ? (
             <section className="mt-10">
-              <h2 className="font-display text-lg font-semibold text-ink">
-                Derniers retours
-              </h2>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="font-display text-lg font-semibold text-ink">
+                  Derniers retours
+                </h2>
+                <Link
+                  href="/admin/feedbacks"
+                  className="shrink-0 text-[13px] text-teal transition hover:underline"
+                >
+                  Voir tout →
+                </Link>
+              </div>
               <div className="mt-3 flex flex-col gap-2">
                 {snap.recentFeedback.map((f) => (
                   <Link

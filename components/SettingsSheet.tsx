@@ -10,6 +10,7 @@ import AnthropicKeySettings from "@/components/AnthropicKeySettings";
 import ModelSettings from "@/components/ModelSettings";
 import DiagnosticSettings from "@/components/DiagnosticSettings";
 import ImportData from "@/components/home/ImportData";
+import CreatorContact from "@/components/CreatorContact";
 import FeedbackForm from "@/components/FeedbackForm";
 import { useAuth } from "@/components/AuthProvider";
 import { getSupabase } from "@/lib/supabase";
@@ -35,10 +36,15 @@ export default function SettingsSheet({
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
     }
+    function onOpenRequest() {
+      setOpen(true);
+    }
     window.addEventListener("keydown", onKey);
+    window.addEventListener("elan:open-settings", onOpenRequest);
     document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("elan:open-settings", onOpenRequest);
       document.body.style.overflow = "";
     };
   }, [open]);
@@ -134,7 +140,10 @@ export default function SettingsSheet({
               <AnthropicKeySettings />
               <ModelSettings />
               <DiagnosticSettings />
-              <FeedbackForm source="settings" />
+              <div>
+                <FeedbackForm source="settings" />
+                <CreatorContact />
+              </div>
               <ImportData />
               {isAdmin ? (
                 <Link

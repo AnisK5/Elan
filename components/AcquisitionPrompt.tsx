@@ -6,7 +6,7 @@ import {
   type AcquisitionInfo,
 } from "@/lib/acquisition";
 
-export { needsAcquisitionPrompt } from "@/lib/acquisition";
+export { needsAcquisitionPrompt, isAcquisitionResolved } from "@/lib/acquisition";
 
 export default function AcquisitionPrompt({
   onSubmit,

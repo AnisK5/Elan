@@ -65,6 +65,8 @@ describe("buildAdminAnalytics", () => {
     );
 
     expect(snap.totals.totalTokens).toBe(1550);
+    expect(snap.totals.costUsd).toBeGreaterThan(0);
+    expect(snap.totals.costEur).toBeGreaterThan(0);
     expect(snap.totals.avgTurnsPerSession).toBe(2);
     expect(snap.tokensByUser[0].name).toBe("Alice");
     expect(snap.tokensByUser[0].apiCalls).toBe(2);

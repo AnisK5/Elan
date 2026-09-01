@@ -135,6 +135,23 @@ create policy "own elan_feedback select" on public.elan_feedback
 create index if not exists elan_feedback_user_idx
   on public.elan_feedback(user_id, created_at desc);
 
+-- ── Alertes admin (cooldown e-mail IA) ─────────────────────────────
+-- RLS activé, aucune policy : seul le service_role (API serveur) y accède.
+create table if not exists public.elan_admin_alerts (
+  kind     text primary key,
+  sent_at  timestamptz not null default now(),
+  meta     jsonb
+);
+alter table public.elan_admin_alerts enable row level security;
+
+-- ── Config app (plafond tokens, etc.) — service_role uniquement ─────
+create table if not exists public.elan_app_config (
+  key        text primary key,
+  value      jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.elan_app_config enable row level security;
+
 -- ── Consommation API Claude (tokens) ───────────────────────────────
 create table if not exists public.elan_api_usage (
   id               uuid primary key default gen_random_uuid(),

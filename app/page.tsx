@@ -24,9 +24,11 @@ import {
   type ActiveSession,
 } from "@/lib/store";
 import Session from "@/components/Session";
+import AiDegradedBanner from "@/components/AiDegradedBanner";
 import EngagementPrompt from "@/components/EngagementPrompt";
+import ProductSurveyPrompt from "@/components/ProductSurveyPrompt";
 import SettingsSheet from "@/components/SettingsSheet";
-import FeedbackForm from "@/components/FeedbackForm";
+import SessionPulseFeedback from "@/components/SessionPulseFeedback";
 import { useRitualReminder } from "@/components/useRitualReminder";
 import {
   buildOfflinePlanHint,
@@ -48,6 +50,7 @@ import Welcome from "@/components/Welcome";
 import HelpButton from "@/components/HelpButton";
 import AcquisitionPrompt, {
   needsAcquisitionPrompt,
+  isAcquisitionResolved,
 } from "@/components/AcquisitionPrompt";
 import BacklogPeek from "@/components/home/BacklogPeek";
 import SessionPick from "@/components/home/SessionPick";
@@ -68,7 +71,9 @@ import {
 } from "@/lib/acquisition";
 import { logUsage, startDwellTracker, useUsageEvents } from "@/lib/usage-log";
 import { sessionsToday } from "@/lib/session-memory";
-import { apiFetch, anthropicFailMessage, parseStreamError } from "@/lib/anthropic";
+import { apiFetch, anthropicFailMessage, parseStreamError, type AnthropicFailKind } from "@/lib/anthropic";
+import { aiRetryHint, reportAiFail } from "@/lib/ai-fail-client";
+import { needsWtpSurvey } from "@/lib/product-surveys";
 import {
   normalizeDuration,
   OUTDOOR_DURATION,
@@ -123,6 +128,9 @@ export default function Home() {
   );
   const [planLoading, setPlanLoading] = useState(false);
   const [planUnreachable, setPlanUnreachable] = useState(false);
+  const [planAiNote, setPlanAiNote] = useState("");
+  const [liveAiKind, setLiveAiKind] = useState<AnthropicFailKind | null>(null);
+  const [showWtpSurvey, setShowWtpSurvey] = useState(false);
   const [diagnosticOn, setDiagnosticOn] = useState(false);
   const [planDiag, setPlanDiag] = useState<PlanDiagnosticData | null>(null);
   const appliedSig = useRef("");
@@ -456,6 +464,27 @@ export default function Home() {
     hasPushSub,
   ]);
 
+  useEffect(() => {
+    if (!ready || !user || showAcquisition || engagementPrompt) {
+      setShowWtpSurvey(false);
+      return;
+    }
+    setShowWtpSurvey(
+      needsWtpSurvey({
+        sessionsCount: sessions.length,
+        modalShownThisVisit: wasModalShownThisVisit(),
+        acquisitionResolved: isAcquisitionResolved(settings.acquisition),
+      }),
+    );
+  }, [
+    ready,
+    user,
+    showAcquisition,
+    engagementPrompt,
+    sessions.length,
+    settings.acquisition,
+  ]);
+
   useRitualReminder({
     enabled: Boolean(settings.notifyEnabled),
     notifyTime: settings.notifyTime,
@@ -555,6 +584,14 @@ export default function Home() {
         const msg = (j?.message ?? "").trim();
         const unreachable = Boolean(j?.unreachable) || !msg;
         setPlanUnreachable(unreachable);
+        const errorKind = j?.errorKind as AnthropicFailKind | undefined;
+        if (errorKind) {
+          reportAiFail(errorKind);
+          setLiveAiKind(errorKind);
+        }
+        setPlanAiNote(
+          unreachable && errorKind ? anthropicFailMessage(errorKind) : "",
+        );
         // Même en cas d'échec Claude, on garde un conseil concret (serveur ou
         // secours local) pour pouvoir lancer la séance sans attendre.
         const pick = j?.pick ?? "15";
@@ -604,6 +641,7 @@ export default function Home() {
         if (cancelled) return;
         if (planReq.current !== reqId || planCtxRef.current !== context) return;
         setPlanUnreachable(true);
+        setPlanAiNote("");
         const hint = buildOfflinePlanHint(openThreads, duration);
         setPlan(hint);
         if (manualPickSig.current !== planSig) {
@@ -778,6 +816,7 @@ export default function Home() {
           pick?: string;
           why?: string;
           unreachable?: boolean;
+          errorKind?: AnthropicFailKind;
           debug?: {
             candidates?: string[];
             waiting?: string[];
@@ -790,6 +829,15 @@ export default function Home() {
           const msg = (j.message ?? "").trim();
           const unreachable = Boolean(j.unreachable) || !msg;
           setPlanUnreachable(unreachable);
+          if (j.errorKind) {
+            reportAiFail(j.errorKind);
+            setLiveAiKind(j.errorKind);
+          }
+          setPlanAiNote(
+            unreachable && j.errorKind
+              ? anthropicFailMessage(j.errorKind)
+              : "",
+          );
           const pick = opts?.chosen
             ? String(opts.chosen)
             : (j.pick ?? "15");
@@ -827,6 +875,7 @@ export default function Home() {
         }
       } else if (planReq.current === reqId && planCtxRef.current === ctx) {
         setPlanUnreachable(true);
+        setPlanAiNote("");
         const hint = buildOfflinePlanHint(
           openThreads,
           opts?.chosen ?? duration,
@@ -844,6 +893,7 @@ export default function Home() {
     } catch {
       if (planReq.current === reqId && planCtxRef.current === ctx) {
         setPlanUnreachable(true);
+        setPlanAiNote("");
         setPlan(
           (prev) =>
             prev ??
@@ -1041,6 +1091,8 @@ export default function Home() {
         answer += dec.decode(value, { stream: true });
         const { clean, kind } = parseStreamError(answer);
         if (kind) {
+          reportAiFail(kind);
+          setLiveAiKind(kind);
           setPointError(anthropicFailMessage(kind));
           setChat(withUser);
           writeChat(withUser);
@@ -1055,6 +1107,8 @@ export default function Home() {
 
       const parsed = parseStreamError(answer);
       if (parsed.kind) {
+        reportAiFail(parsed.kind);
+        setLiveAiKind(parsed.kind);
         setPointError(anthropicFailMessage(parsed.kind));
         setChat(withUser);
         writeChat(withUser);
@@ -1155,6 +1209,14 @@ export default function Home() {
         </div>
       </header>
 
+      <AiDegradedBanner
+        liveKind={
+          liveAiKind === "credits" || liveAiKind === "quota"
+            ? liveAiKind
+            : null
+        }
+      />
+
       {wrapUp && (
         <div className="animate-rise mb-4 flex flex-col gap-3">
           <div className="rounded-2xl border border-teal-soft bg-teal-soft px-4 py-3 text-sm text-teal-ink">
@@ -1174,7 +1236,7 @@ export default function Home() {
               </>
             )}
           </div>
-          <FeedbackForm source="wrap_up" compact />
+          <SessionPulseFeedback />
         </div>
       )}
 
@@ -1263,7 +1325,8 @@ export default function Home() {
                     />
                     {planUnreachable ? (
                       <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
-                        Conseil de secours — Élan n&apos;a pas répondu à temps.
+                        {planAiNote ||
+                          "Conseil de secours — Élan n'a pas répondu à temps."}
                       </p>
                     ) : null}
                   </div>
@@ -1401,6 +1464,10 @@ export default function Home() {
         onSubmit={submitAcquisition}
         onDismiss={dismissAcquisition}
       />
+    ) : null}
+
+    {showWtpSurvey && !showAcquisition && !engagementPrompt ? (
+      <ProductSurveyPrompt onClose={() => setShowWtpSurvey(false)} />
     ) : null}
     </>
   );

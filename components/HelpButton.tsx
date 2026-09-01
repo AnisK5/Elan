@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ExplainerBody } from "./Explainer";
+import CreatorContact from "./CreatorContact";
 import FeedbackForm from "./FeedbackForm";
 import { useAuth } from "./AuthProvider";
 
@@ -73,6 +74,7 @@ export default function HelpButton({
             {user ? (
               <div className="mt-8 border-t border-line pt-6">
                 <FeedbackForm source="home" compact />
+                <CreatorContact compact />
               </div>
             ) : null}
 

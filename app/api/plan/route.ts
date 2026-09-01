@@ -1,5 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { classifyAnthropicError, resolveAnthropicKey } from "@/lib/anthropic";
+import { resolveAiAccess } from "@/lib/ai-access";
+import { notifyAdminAiIssue } from "@/lib/admin-alert";
+import {
+  classifyAnthropicError,
+  type AnthropicFailKind,
+} from "@/lib/anthropic";
 import { recordMessageUsage } from "@/lib/api-usage";
 import type { ChatMessage, SessionContext, Thread } from "@/lib/types";
 import {
@@ -529,13 +534,25 @@ export async function POST(req: Request) {
 
   const context = body.context ?? "desk";
   const open = (body.threads ?? []).filter((t) => t.status === "open");
-  const apiKey = resolveAnthropicKey(req);
-  if (!apiKey) {
+  const access = await resolveAiAccess(req);
+  const apiKey = access.apiKey;
+  if (!apiKey || access.blocked) {
     const plan = fallbackPlan(context, open, body.chosen);
+    const errorKind: AnthropicFailKind =
+      access.blocked === "quota" ? "quota" : "credits";
+    if (access.blocked === "quota" && access.quota) {
+      void notifyAdminAiIssue({
+        kind: "quota",
+        route: "plan",
+        userId: access.userId,
+        detail: `${access.quota.used}/${access.quota.limit} tok`,
+      });
+    }
     return Response.json({
       message: plan.message,
       pick: plan.pick,
       unreachable: true,
+      errorKind,
     });
   }
 
@@ -718,6 +735,14 @@ export async function POST(req: Request) {
   } catch (e) {
     const kind = classifyAnthropicError(e);
     console.error("[plan] échec:", kind, e instanceof Error ? e.message : e);
+    if (kind === "credits") {
+      void notifyAdminAiIssue({
+        kind: "credits",
+        route: "plan",
+        userId: access.userId,
+        detail: e instanceof Error ? e.message.slice(0, 200) : undefined,
+      });
+    }
     const plan = forNotify
       ? fallbackNotifyPlan(open, body.sourceMessage)
       : fallbackPlan(context, open, body.chosen);

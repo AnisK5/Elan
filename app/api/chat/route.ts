@@ -1,5 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { resolveAnthropicKey, encodeStreamError } from "@/lib/anthropic";
+import { resolveAiAccess } from "@/lib/ai-access";
+import { notifyAdminAiIssue } from "@/lib/admin-alert";
+import {
+  classifyAnthropicError,
+  encodeQuotaError,
+  encodeStreamError,
+} from "@/lib/anthropic";
 import {
   resolveConversationModel,
   resolveModelPreference,
@@ -69,13 +75,28 @@ ${renderReguliersForPlan(threads)}`;
 }
 
 export async function POST(req: Request) {
-  const apiKey = resolveAnthropicKey(req);
-  if (!apiKey) {
-    return Response.json(
-      { error: "Clé API manquante. Colle la tienne dans Clé Claude, ou configure ANTHROPIC_API_KEY." },
-      { status: 400 },
-    );
+  const access = await resolveAiAccess(req);
+  if (!access.apiKey || access.blocked) {
+    if (access.blocked === "quota" && access.quota) {
+      void notifyAdminAiIssue({
+        kind: "quota",
+        route: "chat",
+        userId: access.userId,
+        detail: `${access.quota.used}/${access.quota.limit} tok`,
+      });
+    }
+    const marker =
+      access.blocked === "quota" ? encodeQuotaError() : encodeStreamError(
+        new Error("Your credit balance is too low to access the Anthropic API"),
+      );
+    return new Response(marker, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    });
   }
+  const apiKey = access.apiKey;
 
   let body: Body;
   try {
@@ -121,6 +142,15 @@ export async function POST(req: Request) {
           }
         }
       } catch (err) {
+        const kind = classifyAnthropicError(err);
+        if (kind === "credits") {
+          void notifyAdminAiIssue({
+            kind: "credits",
+            route: "chat",
+            userId: access.userId,
+            detail: err instanceof Error ? err.message.slice(0, 200) : undefined,
+          });
+        }
         controller.enqueue(encoder.encode(encodeStreamError(err)));
       } finally {
         void recordStreamUsage(
