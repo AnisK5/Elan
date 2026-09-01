@@ -9,6 +9,8 @@ import {
   MIN_SHARED_DAILY_TOKEN_LIMIT,
   UNLIMITED_SHARED_DAILY_TOKEN_LIMIT,
 } from "@/lib/app-config";
+import { estimateEurFromTotalTokens, formatEur } from "@/lib/anthropic-pricing";
+import { formatTokensWithEur } from "@/lib/token-display";
 
 const PRESETS = [
   { label: "80k · léger", value: 80_000 },
@@ -148,6 +150,9 @@ export default function AdminTokenLimitSettings() {
               }`}
             >
               {p.label}
+              <span className="ml-1 text-[11px] opacity-80">
+                ({formatEur(estimateEurFromTotalTokens(p.value))}/j)
+              </span>
             </button>
           ))}
         </div>
@@ -189,7 +194,7 @@ export default function AdminTokenLimitSettings() {
       </div>
 
       <p className="mt-3 text-[11px] leading-relaxed text-faint">
-        Repli env : {envDefault.toLocaleString("fr-FR")} tok (
+        Repli env : {formatTokensWithEur(envDefault)} (
         <code className="text-muted">ELAN_SHARED_DAILY_TOKEN_LIMIT</code>
         ). Migration SQL : table{" "}
         <code className="text-muted">elan_app_config</code>.

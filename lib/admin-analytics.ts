@@ -77,6 +77,7 @@ export interface ExchangeKindRow {
   kind: string;
   count: number;
   tokens: number;
+  costEur: number;
 }
 
 export interface ContextRow {
@@ -85,6 +86,7 @@ export interface ContextRow {
   avgMin: number;
   avgTurns: number;
   tokens: number;
+  costEur: number;
 }
 
 export interface SessionInsightRow {
@@ -96,6 +98,7 @@ export interface SessionInsightRow {
   messages: number;
   inputTokens: number;
   outputTokens: number;
+  costEur: number;
 }
 
 export interface AdminAnalyticsViewUser {
@@ -230,12 +233,24 @@ export function buildAdminAnalytics(
     (a, b) => b.input + b.output - (a.input + a.output),
   );
 
-  const tokensBySession = new Map<string, { input: number; output: number }>();
+  const tokensBySession = new Map<
+    string,
+    { input: number; output: number; costEur: number }
+  >();
   for (const u of usageRows) {
     if (!u.sessionId) continue;
-    const cur = tokensBySession.get(u.sessionId) ?? { input: 0, output: 0 };
+    const cur = tokensBySession.get(u.sessionId) ?? {
+      input: 0,
+      output: 0,
+      costEur: 0,
+    };
     cur.input += u.inputTokens;
     cur.output += u.outputTokens;
+    cur.costEur += estimateUsageCostEur(
+      u.model,
+      u.inputTokens,
+      u.outputTokens,
+    );
     tokensBySession.set(u.sessionId, cur);
   }
 
@@ -336,9 +351,19 @@ export function buildAdminAnalytics(
   const kindMap = new Map<string, ExchangeKindRow>();
   for (const u of usageRows) {
     const kind = u.exchangeKind ?? u.route;
-    const cur = kindMap.get(kind) ?? { kind, count: 0, tokens: 0 };
+    const cur = kindMap.get(kind) ?? {
+      kind,
+      count: 0,
+      tokens: 0,
+      costEur: 0,
+    };
     cur.count += 1;
     cur.tokens += u.inputTokens + u.outputTokens;
+    cur.costEur += estimateUsageCostEur(
+      u.model,
+      u.inputTokens,
+      u.outputTokens,
+    );
     kindMap.set(kind, cur);
   }
   const exchangeKinds = [...kindMap.values()].sort((a, b) => b.tokens - a.tokens);
@@ -352,12 +377,14 @@ export function buildAdminAnalytics(
       avgMin: 0,
       avgTurns: 0,
       tokens: 0,
+      costEur: 0,
     };
     cur.sessions += 1;
     cur.avgMin += s.durationMin;
     cur.avgTurns += countUserTurns(s.transcript);
     const tok = tokensBySession.get(s.id);
     cur.tokens += tok ? tok.input + tok.output : 0;
+    cur.costEur += tok?.costEur ?? 0;
     ctxMap.set(ctx, cur);
   }
   const contextBreakdown = [...ctxMap.values()].map((c) => ({
@@ -374,7 +401,11 @@ export function buildAdminAnalytics(
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 15)
     .map((s) => {
-      const tok = tokensBySession.get(s.id) ?? { input: 0, output: 0 };
+      const tok = tokensBySession.get(s.id) ?? {
+        input: 0,
+        output: 0,
+        costEur: 0,
+      };
       return {
         id: s.id,
         date: s.date,
@@ -384,6 +415,7 @@ export function buildAdminAnalytics(
         messages: s.transcript.length,
         inputTokens: tok.input,
         outputTokens: tok.output,
+        costEur: tok.costEur,
       };
     });
 

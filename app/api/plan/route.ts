@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { resolveAiAccess } from "@/lib/ai-access";
 import { notifyAdminAiIssue } from "@/lib/admin-alert";
+import { formatSharedTokenLimit } from "@/lib/app-config";
+import { formatTokensWithEur } from "@/lib/token-display";
 import {
   classifyAnthropicError,
   type AnthropicFailKind,
@@ -549,7 +551,7 @@ export async function POST(req: Request) {
         kind: "quota",
         route: "plan",
         userId: access.userId,
-        detail: `${access.quota.used}/${access.quota.limit} tok`,
+        detail: `${formatTokensWithEur(access.quota.used)}/${formatSharedTokenLimit(access.quota.limit)}`,
       });
     }
     return Response.json({

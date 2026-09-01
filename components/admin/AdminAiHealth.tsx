@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import type { AiHealthSnapshot } from "@/lib/ai-health";
+import { formatSharedTokenLimit } from "@/lib/app-config";
+import { formatTokensWithEur } from "@/lib/token-display";
 
 async function adminGet(path: string): Promise<Response> {
   const sb = getSupabase();
@@ -71,7 +73,7 @@ export default function AdminAiHealth() {
           Tokens aujourd&apos;hui :{" "}
           {health.quotaLimit === 0
             ? "illimité"
-            : `${health.quotaUsed.toLocaleString("fr-FR")} / ${health.quotaLimit.toLocaleString("fr-FR")}`}
+            : `${formatTokensWithEur(health.quotaUsed)} / ${formatSharedTokenLimit(health.quotaLimit)}`}
           {health.quotaExempt ? " (admin exempt)" : ""}
         </li>
       </ul>

@@ -62,3 +62,10 @@ export function formatUsd(amount: number): string {
     maximumFractionDigits: amount < 1 ? 2 : 2,
   }).format(amount);
 }
+
+/** Estimation quand on n'a que le total (ex. plafond journalier). Répartition 50/50 in/out, Sonnet. */
+export function estimateEurFromTotalTokens(totalTokens: number): number {
+  if (totalTokens <= 0) return 0;
+  const half = totalTokens / 2;
+  return estimateUsageCostEur("claude-sonnet-4-6", half, half);
+}

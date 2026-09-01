@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import type { UserTokenRow } from "@/lib/admin-analytics";
-import { formatEur } from "@/lib/anthropic-pricing";
+import { estimateEurFromTotalTokens, formatEur } from "@/lib/anthropic-pricing";
+import TokensCost from "@/components/admin/TokensCost";
 
 export default function UserTokenTable({
   rows,
@@ -60,7 +61,7 @@ export default function UserTokenTable({
                   ) : null}
                 </td>
                 <td className="px-3 py-2 tabular-nums text-ink">
-                  {u.total.toLocaleString("fr-FR")}
+                  <TokensCost tokens={u.total} costEur={u.costEur} stack />
                   <div className="text-[10px] text-faint">
                     {u.input.toLocaleString("fr-FR")} in ·{" "}
                     {u.output.toLocaleString("fr-FR")} out
@@ -72,9 +73,14 @@ export default function UserTokenTable({
                 <td className="px-3 py-2 text-ink">{u.sessions}</td>
                 <td className="px-3 py-2 text-ink">{u.apiCalls}</td>
                 <td className="px-3 py-2 text-muted">
-                  {u.avgTokensPerSession > 0
-                    ? u.avgTokensPerSession.toLocaleString("fr-FR")
-                    : "—"}
+                  {u.avgTokensPerSession > 0 ? (
+                    <TokensCost
+                      tokens={u.avgTokensPerSession}
+                      costEur={estimateEurFromTotalTokens(u.avgTokensPerSession)}
+                    />
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2">

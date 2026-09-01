@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { UserTokenRow } from "@/lib/admin-analytics";
+import { formatTokensWithEur } from "@/lib/token-display";
 
 export default function UserAnalyticsPicker({
   users,
@@ -35,7 +36,7 @@ export default function UserAnalyticsPicker({
               <option key={u.userId} value={u.userId}>
                 {u.name || u.email}
                 {u.total > 0
-                  ? ` — ${u.total.toLocaleString("fr-FR")} tok`
+                  ? ` — ${formatTokensWithEur(u.total, u.costEur)}`
                   : u.sessions > 0
                     ? ` — ${u.sessions} séance${u.sessions > 1 ? "s" : ""}`
                     : ""}

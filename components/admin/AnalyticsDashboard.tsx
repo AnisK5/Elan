@@ -2,12 +2,17 @@
 
 import Link from "next/link";
 import type { AdminAnalyticsSnapshot, UserTokenRow } from "@/lib/admin-analytics";
-import { formatEur } from "@/lib/anthropic-pricing";
+import {
+  estimateEurFromTotalTokens,
+  formatEur,
+} from "@/lib/anthropic-pricing";
+import { formatTokensWithEur } from "@/lib/token-display";
 import {
   BarChart,
   HourHeatmap,
   MetricGrid,
 } from "@/components/admin/AnalyticsCharts";
+import TokensCost from "@/components/admin/TokensCost";
 import UserTokenTable from "@/components/admin/UserTokenTable";
 
 function fmtDay(iso: string): string {
@@ -113,7 +118,7 @@ export default function AnalyticsDashboard({
           },
           {
             label: "Tokens total",
-            value: t.totalTokens.toLocaleString("fr-FR"),
+            value: formatTokensWithEur(t.totalTokens, t.costEur),
             hint: `${t.inputTokens.toLocaleString("fr-FR")} in · ${t.outputTokens.toLocaleString("fr-FR")} out`,
           },
           {
@@ -127,7 +132,10 @@ export default function AnalyticsDashboard({
           },
           {
             label: "Tokens / séance",
-            value: String(t.avgTokensPerSession),
+            value: formatTokensWithEur(
+              t.avgTokensPerSession,
+              estimateEurFromTotalTokens(t.avgTokensPerSession),
+            ),
           },
         ]}
       />
@@ -144,9 +152,11 @@ export default function AnalyticsDashboard({
             rows={data.tokensByDay.map((d) => ({
               label: fmtDay(d.day),
               total: d.total,
+              costEur: d.costEur,
             }))}
             labelKey="label"
             valueKey="total"
+            costEurKey="costEur"
           />
         </div>
       </section>
@@ -164,9 +174,11 @@ export default function AnalyticsDashboard({
               rows={data.tokensByRoute.map((r) => ({
                 label: r.route,
                 total: r.input + r.output,
+                costEur: r.costEur,
               }))}
               labelKey="label"
               valueKey="total"
+              costEurKey="costEur"
             />
           </div>
         </section>
@@ -183,9 +195,11 @@ export default function AnalyticsDashboard({
               rows={data.exchangeKinds.map((k) => ({
                 label: k.kind,
                 total: k.tokens,
+                costEur: k.costEur,
               }))}
               labelKey="label"
               valueKey="total"
+              costEurKey="costEur"
             />
           </div>
         </section>
@@ -256,7 +270,7 @@ export default function AnalyticsDashboard({
                 <th className="px-3 py-2 font-medium">Séances</th>
                 <th className="px-3 py-2 font-medium">Durée moy.</th>
                 <th className="px-3 py-2 font-medium">Échanges moy.</th>
-                <th className="px-3 py-2 font-medium">Tokens</th>
+                <th className="px-3 py-2 font-medium">Tokens · coût</th>
               </tr>
             </thead>
             <tbody>
@@ -267,7 +281,7 @@ export default function AnalyticsDashboard({
                   <td className="px-3 py-2 text-muted">{c.avgMin} min</td>
                   <td className="px-3 py-2 text-muted">{c.avgTurns}</td>
                   <td className="px-3 py-2 text-ink">
-                    {c.tokens.toLocaleString("fr-FR")}
+                    <TokensCost tokens={c.tokens} costEur={c.costEur} stack />
                   </td>
                 </tr>
               ))}
@@ -292,7 +306,7 @@ export default function AnalyticsDashboard({
                   <th className="px-3 py-2 font-medium">Contexte</th>
                   <th className="px-3 py-2 font-medium">Durée</th>
                   <th className="px-3 py-2 font-medium">Échanges</th>
-                  <th className="px-3 py-2 font-medium">Tokens</th>
+                  <th className="px-3 py-2 font-medium">Tokens · coût</th>
                 </tr>
               </thead>
               <tbody>
@@ -303,7 +317,11 @@ export default function AnalyticsDashboard({
                     <td className="px-3 py-2 text-ink">{s.durationMin} min</td>
                     <td className="px-3 py-2 text-ink">{s.userTurns}</td>
                     <td className="px-3 py-2 text-ink">
-                      {(s.inputTokens + s.outputTokens).toLocaleString("fr-FR")}
+                      <TokensCost
+                        tokens={s.inputTokens + s.outputTokens}
+                        costEur={s.costEur}
+                        stack
+                      />
                     </td>
                   </tr>
                 ))}

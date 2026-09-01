@@ -118,6 +118,8 @@ describe("buildAdminUserDetail", () => {
     expect(detail.timeline[0].at >= detail.timeline[1].at).toBe(true);
     expect(detail.dayBands.length).toBeGreaterThan(0);
     expect(detail.activityDays).toHaveLength(90);
+    expect(detail.sessions[0].costEur).toBeGreaterThan(0);
+    expect(detail.totals.costEurTotal).toBeGreaterThan(0);
     expect(detail.totals.tokensTotal).toBe(150);
     expect(detail.totals.apiCalls).toBe(1);
   });

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import SessionTranscript from "@/components/admin/SessionTranscript";
+import TokensCost from "@/components/admin/TokensCost";
 import type { AdminSessionDetail } from "@/lib/admin-user-detail";
 
 function fmtWhen(iso: string): string {
@@ -112,10 +113,10 @@ export default function UserConversationsPanel({
               </div>
               <div className="flex shrink-0 items-center gap-3 text-[11px] text-muted">
                 {s.inputTokens + s.outputTokens > 0 ? (
-                  <span>
-                    {(s.inputTokens + s.outputTokens).toLocaleString("fr-FR")}{" "}
-                    tok
-                  </span>
+                  <TokensCost
+                    tokens={s.inputTokens + s.outputTokens}
+                    costEur={s.costEur}
+                  />
                 ) : null}
                 <span>{open ? "▲" : "▼"}</span>
               </div>

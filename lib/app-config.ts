@@ -1,5 +1,6 @@
 /** Config app modifiable depuis l'admin — repli sur les variables d'env. */
 
+import { formatSharedTokenLimitWithEur } from "./token-display";
 import { getSupabaseAdmin } from "./supabase-admin";
 
 export const SHARED_TOKEN_LIMIT_CONFIG_KEY = "shared_daily_token_limit";
@@ -31,9 +32,7 @@ export function isUnlimitedSharedTokenLimit(limit: number): boolean {
 }
 
 export function formatSharedTokenLimit(limit: number): string {
-  return isUnlimitedSharedTokenLimit(limit)
-    ? "Illimité"
-    : `${limit.toLocaleString("fr-FR")} tok`;
+  return formatSharedTokenLimitWithEur(limit);
 }
 
 export function parseSharedTokenLimitInput(value: unknown): number | null {

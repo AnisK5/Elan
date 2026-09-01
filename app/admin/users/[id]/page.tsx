@@ -5,12 +5,14 @@ import { useEffect, useState } from "react";
 import AnalyticsDashboard from "@/components/admin/AnalyticsDashboard";
 import UserConversationsPanel from "@/components/admin/UserConversationsPanel";
 import HomeChatPanel from "@/components/admin/HomeChatPanel";
+import TokensCost from "@/components/admin/TokensCost";
 import {
   ActivityWeightStrip,
   WeightedDayFrise,
 } from "@/components/admin/UserTimelineFrise";
 import type { AdminAnalyticsSnapshot } from "@/lib/admin-analytics";
 import type { AdminUserDetail } from "@/lib/admin-user-detail";
+import { formatTokensWithEur } from "@/lib/token-display";
 import { getSupabase } from "@/lib/supabase";
 
 async function adminGet(path: string): Promise<Response> {
@@ -167,7 +169,10 @@ export default function AdminUserPage({
               ) : null}
               {detail.totals.tokensTotal > 0 ? (
                 <Badge>
-                  {detail.totals.tokensTotal.toLocaleString("fr-FR")} tok
+                  {formatTokensWithEur(
+                    detail.totals.tokensTotal,
+                    detail.totals.costEurTotal,
+                  )}
                 </Badge>
               ) : null}
             </div>
@@ -288,7 +293,7 @@ export default function AdminUserPage({
                       <th className="px-3 py-2 font-medium">Quand</th>
                       <th className="px-3 py-2 font-medium">Route</th>
                       <th className="px-3 py-2 font-medium">Type</th>
-                      <th className="px-3 py-2 font-medium">Tokens</th>
+                      <th className="px-3 py-2 font-medium">Tokens · coût</th>
                       <th className="px-3 py-2 font-medium">Modèle</th>
                     </tr>
                   </thead>
@@ -304,9 +309,11 @@ export default function AdminUserPage({
                           {u.exchangeIndex != null ? ` #${u.exchangeIndex}` : ""}
                         </td>
                         <td className="px-3 py-2 text-ink">
-                          {(u.inputTokens + u.outputTokens).toLocaleString(
-                            "fr-FR",
-                          )}
+                          <TokensCost
+                            tokens={u.inputTokens + u.outputTokens}
+                            costEur={u.costEur}
+                            stack
+                          />
                         </td>
                         <td className="px-3 py-2 text-faint">{u.model}</td>
                       </tr>

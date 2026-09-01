@@ -2,6 +2,8 @@ import { notifyAdminAiIssue } from "./admin-alert";
 import { resolveAnthropicKey } from "./anthropic";
 import { checkSharedDailyBudget, usesUserAnthropicKey } from "./api-budget";
 import { getUserFromBearer } from "./auth-request";
+import { formatSharedTokenLimit } from "./app-config";
+import { formatTokensWithEur } from "./token-display";
 
 export type AiBlockKind = "no_key";
 
@@ -35,7 +37,7 @@ export async function resolveAiAccess(req: Request): Promise<AiAccess> {
           kind: "quota",
           route: "budget-soft",
           userId,
-          detail: `${budget.used}/${budget.limit} tok (alerte, pas de blocage)`,
+          detail: `${formatTokensWithEur(budget.used)}/${formatSharedTokenLimit(budget.limit)} (alerte, pas de blocage)`,
         });
       }
     }

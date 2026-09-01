@@ -3,6 +3,8 @@ import type { AcquisitionInfo } from "./acquisition";
 import { formatAcquisitionLabel } from "./acquisition";
 import type { AdminUserRow } from "./admin-stats";
 import { countUserTurns } from "./admin-analytics";
+import { estimateUsageCostEur } from "./anthropic-pricing";
+import { formatTokensWithEur } from "./token-display";
 
 export interface AdminThreadFull {
   id: string;
@@ -35,6 +37,7 @@ export interface AdminSessionDetail {
   userTurns: number;
   inputTokens: number;
   outputTokens: number;
+  costEur: number;
   transcript: ChatMessage[];
   preview: string;
 }
@@ -54,6 +57,7 @@ export interface AdminUsageLogEntry {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  costEur: number;
   exchangeKind: string | null;
   exchangeIndex: number | null;
   sessionId: string | null;
@@ -135,6 +139,7 @@ export interface AdminUserDetail {
   totals: {
     weightMin90: number;
     tokensTotal: number;
+    costEurTotal: number;
     apiCalls: number;
   };
 }
@@ -385,12 +390,24 @@ export function buildAdminUserDetail(
       doneAt: t.doneAt,
     }));
 
-  const tokensBySession = new Map<string, { input: number; output: number }>();
+  const tokensBySession = new Map<
+    string,
+    { input: number; output: number; costEur: number }
+  >();
   for (const u of usageLog) {
     if (!u.sessionId) continue;
-    const cur = tokensBySession.get(u.sessionId) ?? { input: 0, output: 0 };
+    const cur = tokensBySession.get(u.sessionId) ?? {
+      input: 0,
+      output: 0,
+      costEur: 0,
+    };
     cur.input += u.inputTokens;
     cur.output += u.outputTokens;
+    cur.costEur += estimateUsageCostEur(
+      u.model,
+      u.inputTokens,
+      u.outputTokens,
+    );
     tokensBySession.set(u.sessionId, cur);
   }
 
@@ -398,7 +415,11 @@ export function buildAdminUserDetail(
     .slice()
     .sort((a, b) => b.date.localeCompare(a.date))
     .map((s) => {
-      const tok = tokensBySession.get(s.id) ?? { input: 0, output: 0 };
+      const tok = tokensBySession.get(s.id) ?? {
+        input: 0,
+        output: 0,
+        costEur: 0,
+      };
       return {
         id: s.id,
         date: s.date,
@@ -408,6 +429,7 @@ export function buildAdminUserDetail(
         userTurns: countUserTurns(s.transcript),
         inputTokens: tok.input,
         outputTokens: tok.output,
+        costEur: tok.costEur,
         transcript: s.transcript,
         preview: transcriptPreview(s.transcript),
       };
@@ -451,7 +473,10 @@ export function buildAdminUserDetail(
         `${s.durationMin} min`,
         `${s.userTurns} échanges`,
         s.inputTokens + s.outputTokens > 0
-          ? `${(s.inputTokens + s.outputTokens).toLocaleString("fr-FR")} tok`
+          ? formatTokensWithEur(
+              s.inputTokens + s.outputTokens,
+              s.costEur,
+            )
           : null,
       ]
         .filter(Boolean)
@@ -486,6 +511,12 @@ export function buildAdminUserDetail(
 
   for (const u of usageLog) {
     if (u.route === "session" && u.sessionId) continue;
+    const callTokens = u.inputTokens + u.outputTokens;
+    const callCostEur = estimateUsageCostEur(
+      u.model,
+      u.inputTokens,
+      u.outputTokens,
+    );
     timeline.push({
       at: u.at,
       kind: "api",
@@ -493,13 +524,13 @@ export function buildAdminUserDetail(
       detail: [
         u.exchangeKind,
         u.exchangeIndex != null ? `#${u.exchangeIndex}` : null,
-        `${u.inputTokens + u.outputTokens} tok`,
+        callTokens > 0 ? formatTokensWithEur(callTokens, callCostEur) : null,
       ]
         .filter(Boolean)
         .join(" · "),
-      weightMin: Math.max(0.15, (u.inputTokens + u.outputTokens) / 8000),
+      weightMin: Math.max(0.15, callTokens / 8000),
       sessionId: u.sessionId ?? undefined,
-      tokens: u.inputTokens + u.outputTokens,
+      tokens: callTokens,
       eventKind: u.exchangeKind ?? u.route,
     });
   }
@@ -515,6 +546,7 @@ export function buildAdminUserDetail(
     model: u.model,
     inputTokens: u.inputTokens,
     outputTokens: u.outputTokens,
+    costEur: estimateUsageCostEur(u.model, u.inputTokens, u.outputTokens),
     exchangeKind: u.exchangeKind,
     exchangeIndex: u.exchangeIndex,
     sessionId: u.sessionId,
@@ -526,6 +558,11 @@ export function buildAdminUserDetail(
   const weightMin90 = dayBands.reduce((a, b) => a + b.totalWeightMin, 0);
   const tokensTotal = usageLog.reduce(
     (a, u) => a + u.inputTokens + u.outputTokens,
+    0,
+  );
+  const costEurTotal = usageLog.reduce(
+    (a, u) =>
+      a + estimateUsageCostEur(u.model, u.inputTokens, u.outputTokens),
     0,
   );
 
@@ -574,6 +611,7 @@ export function buildAdminUserDetail(
     totals: {
       weightMin90: Math.round(weightMin90 * 10) / 10,
       tokensTotal,
+      costEurTotal,
       apiCalls: usageLog.length,
     },
   };

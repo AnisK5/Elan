@@ -73,6 +73,9 @@ describe("buildAdminAnalytics", () => {
     expect(snap.tokensByUser[0].avgTokensPerSession).toBe(1550);
     expect(snap.dropoffTurns.find((d) => d.turns === 2)?.count).toBe(1);
     expect(snap.recentSessions[0].inputTokens).toBe(1000);
+    expect(snap.recentSessions[0].costEur).toBeGreaterThan(0);
+    expect(snap.exchangeKinds[0].costEur).toBeGreaterThan(0);
+    expect(snap.contextBreakdown[0].costEur).toBeGreaterThan(0);
   });
 
   it("filtre par utilisateur et expose viewUser", () => {

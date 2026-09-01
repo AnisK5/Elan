@@ -1,16 +1,20 @@
 "use client";
 
+import { formatEur } from "@/lib/anthropic-pricing";
+
 export function BarChart({
   rows,
   valueKey,
   labelKey,
   suffix = "",
+  costEurKey,
   maxBars = 12,
 }: {
   rows: Array<Record<string, string | number>>;
   valueKey: string;
   labelKey: string;
   suffix?: string;
+  costEurKey?: string;
   maxBars?: number;
 }) {
   const slice = rows.slice(0, maxBars);
@@ -21,6 +25,8 @@ export function BarChart({
       {slice.map((row, i) => {
         const val = Number(row[valueKey]) || 0;
         const pct = Math.round((val / max) * 100);
+        const costEur =
+          costEurKey != null ? Number(row[costEurKey]) || 0 : undefined;
         return (
           <div key={i} className="grid grid-cols-[72px_1fr_auto] items-center gap-2">
             <span className="truncate text-[11px] text-muted">
@@ -32,9 +38,16 @@ export function BarChart({
                 style={{ width: `${pct}%` }}
               />
             </div>
-            <span className="text-[11px] tabular-nums text-ink">
-              {val.toLocaleString("fr-FR")}
-              {suffix}
+            <span className="text-right text-[11px] tabular-nums text-ink">
+              <span>
+                {val.toLocaleString("fr-FR")}
+                {suffix}
+              </span>
+              {costEur != null && costEur > 0 ? (
+                <span className="block text-[10px] text-faint">
+                  {formatEur(costEur)}
+                </span>
+              ) : null}
             </span>
           </div>
         );
