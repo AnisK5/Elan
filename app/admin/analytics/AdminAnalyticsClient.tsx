@@ -1,8 +1,11 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import AnalyticsDashboard from "@/components/admin/AnalyticsDashboard";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import UsageMonitorDashboard, {
+  type MonitorFilters,
+  type MonitorTab,
+} from "@/components/admin/UsageMonitorDashboard";
 import UserAnalyticsPicker from "@/components/admin/UserAnalyticsPicker";
 import type { AdminAnalyticsSnapshot, UserTokenRow } from "@/lib/admin-analytics";
 import { getSupabase } from "@/lib/supabase";
@@ -17,10 +20,51 @@ async function adminGet(path: string): Promise<Response> {
   return fetch(path, { headers });
 }
 
+function parseTab(raw: string | null): MonitorTab {
+  if (
+    raw === "hourly" ||
+    raw === "routes" ||
+    raw === "journal" ||
+    raw === "limits"
+  ) {
+    return raw;
+  }
+  return "overview";
+}
+
+function parseDays(raw: string | null): number {
+  const n = raw ? Number.parseInt(raw, 10) : 30;
+  if (!Number.isFinite(n)) return 30;
+  return Math.min(90, Math.max(1, n));
+}
+
+function buildQuery(filters: MonitorFilters): string {
+  const p = new URLSearchParams();
+  if (filters.userId) p.set("userId", filters.userId);
+  if (filters.day) p.set("day", filters.day);
+  else p.set("days", String(filters.days));
+  if (filters.route !== "all") p.set("route", filters.route);
+  if (filters.model !== "all") p.set("model", filters.model);
+  if (filters.tab !== "overview") p.set("tab", filters.tab);
+  const q = p.toString();
+  return q ? `?${q}` : "";
+}
+
 export default function AdminAnalyticsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const selectedUserId = searchParams.get("userId");
+
+  const filters = useMemo((): MonitorFilters => {
+    const day = searchParams.get("day") ?? "";
+    return {
+      userId: searchParams.get("userId"),
+      days: day ? 1 : parseDays(searchParams.get("days")),
+      route: searchParams.get("route") ?? "all",
+      model: searchParams.get("model") ?? "all",
+      day,
+      tab: parseTab(searchParams.get("tab")),
+    };
+  }, [searchParams]);
 
   const [globalUsers, setGlobalUsers] = useState<UserTokenRow[]>([]);
   const [data, setData] = useState<AdminAnalyticsSnapshot | null>(null);
@@ -29,16 +73,25 @@ export default function AdminAnalyticsPage() {
   >(null);
   const [loading, setLoading] = useState(true);
 
-  const setUserFilter = useCallback(
-    (userId: string | null) => {
-      router.push(userId ? `/admin/analytics?userId=${userId}` : "/admin/analytics");
+  const patchFilters = useCallback(
+    (patch: Partial<MonitorFilters>) => {
+      const next = { ...filters, ...patch };
+      if (patch.userId !== undefined) {
+        next.userId = patch.userId;
+      }
+      router.push(`/admin/analytics${buildQuery(next)}`);
     },
-    [router],
+    [filters, router],
+  );
+
+  const setUserFilter = useCallback(
+    (userId: string | null) => patchFilters({ userId }),
+    [patchFilters],
   );
 
   useEffect(() => {
     let cancelled = false;
-    adminGet("/api/admin/analytics")
+    adminGet("/api/admin/analytics?days=90")
       .then(async (res) => {
         if (cancelled) return;
         if (res.ok) {
@@ -55,9 +108,7 @@ export default function AdminAnalyticsPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    const path = selectedUserId
-      ? `/api/admin/analytics?userId=${selectedUserId}`
-      : "/api/admin/analytics";
+    const path = `/api/admin/analytics${buildQuery(filters)}`;
 
     adminGet(path)
       .then(async (res) => {
@@ -91,20 +142,20 @@ export default function AdminAnalyticsPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedUserId]);
+  }, [filters]);
 
   const viewLabel =
     data?.viewUser?.name ||
     data?.viewUser?.email ||
-    globalUsers.find((u) => u.userId === selectedUserId)?.name ||
-    globalUsers.find((u) => u.userId === selectedUserId)?.email;
+    globalUsers.find((u) => u.userId === filters.userId)?.name ||
+    globalUsers.find((u) => u.userId === filters.userId)?.email;
 
   return (
     <>
-      <h2 className="font-display text-lg font-semibold text-ink">Tokens</h2>
+      <h2 className="font-display text-lg font-semibold text-ink">Monitoring IA</h2>
       <p className="mt-1 text-[15px] leading-relaxed text-muted">
-        Consommation IA globale ou par personne — tokens, séances, heures,
-        abandon.
+        Coûts, appels par heure, journal, plafonds — filtres dans l&apos;URL,
+        plus besoin de SQL.
       </p>
 
       {error === "auth" && (
@@ -124,7 +175,7 @@ export default function AdminAnalyticsPage() {
         <div className="mt-6">
           <UserAnalyticsPicker
             users={globalUsers}
-            selectedUserId={selectedUserId}
+            selectedUserId={filters.userId}
             onSelectUser={setUserFilter}
             viewLabel={viewLabel}
           />
@@ -137,10 +188,11 @@ export default function AdminAnalyticsPage() {
 
       {!error && !loading && data ? (
         <div className="mt-8">
-          <AnalyticsDashboard
+          <UsageMonitorDashboard
             data={data}
+            filters={filters}
+            onFiltersChange={patchFilters}
             globalUsers={globalUsers}
-            selectedUserId={selectedUserId}
             onSelectUser={setUserFilter}
           />
         </div>

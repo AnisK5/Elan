@@ -1,4 +1,5 @@
 import type { ChatMessage } from "./types";
+import { buildUsageMonitor, type UsageMonitorSnapshot } from "./admin-usage-monitor";
 import { estimateUsageCostEur, estimateUsageCostUsd } from "./anthropic-pricing";
 
 export interface RawApiUsageRow {
@@ -109,6 +110,12 @@ export interface AdminAnalyticsViewUser {
 
 export interface AdminAnalyticsSnapshot {
   viewUser?: AdminAnalyticsViewUser;
+  filters: {
+    days: number;
+    route: string;
+    model: string;
+    day?: string;
+  };
   totals: {
     inputTokens: number;
     outputTokens: number;
@@ -130,6 +137,7 @@ export interface AdminAnalyticsSnapshot {
   exchangeKinds: ExchangeKindRow[];
   contextBreakdown: ContextRow[];
   recentSessions: SessionInsightRow[];
+  monitor: UsageMonitorSnapshot;
 }
 
 const CONTEXT_LABELS: Record<string, string> = {
@@ -172,6 +180,12 @@ export function buildAdminAnalytics(
   userEmails: Map<string, string>,
   userNames: Map<string, string>,
   filterUserId?: string,
+  filters?: {
+    days: number;
+    route: string;
+    model: string;
+    day?: string;
+  },
 ): AdminAnalyticsSnapshot {
   const usageRows = filterUserId
     ? usage.filter((u) => u.userId === filterUserId)
@@ -432,6 +446,7 @@ export function buildAdminAnalytics(
 
   return {
     viewUser,
+    filters: filters ?? { days: 30, route: "all", model: "all" },
     totals: {
       inputTokens,
       outputTokens,
@@ -460,5 +475,6 @@ export function buildAdminAnalytics(
     exchangeKinds,
     contextBreakdown,
     recentSessions,
+    monitor: buildUsageMonitor(usageRows, userEmails, userNames),
   };
 }

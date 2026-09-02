@@ -4,7 +4,7 @@ import { getSupabaseAdmin } from "./supabase-admin";
 
 const COOLDOWN_MS = 60 * 60 * 1000;
 
-export type AdminAiAlertKind = "credits" | "quota";
+export type AdminAiAlertKind = "credits" | "quota" | "plan_rate_limit";
 
 export async function notifyAdminAiIssue(opts: {
   kind: AdminAiAlertKind;
@@ -23,12 +23,16 @@ export async function notifyAdminAiIssue(opts: {
   const subject =
     opts.kind === "credits"
       ? "Élan · crédits Anthropic épuisés"
-      : "Élan · quota journalier IA atteint";
+      : opts.kind === "quota"
+        ? "Élan · quota journalier IA atteint"
+        : "Élan · plafond plan/heure dépassé";
 
   const lines = [
     opts.kind === "credits"
       ? "La clé partagée Anthropic est à sec — les utilisateurs sans clé perso sont en mode dégradé."
-      : "Un utilisateur a atteint le plafond journalier sur la clé partagée.",
+      : opts.kind === "quota"
+        ? "Un utilisateur a atteint le plafond journalier sur la clé partagée."
+        : "Plafond de 10 appels /api/plan par heure dépassé — probable boucle ou abus.",
     "",
     `Route : ${opts.route}`,
     opts.userId ? `Utilisateur : ${opts.userId}` : null,

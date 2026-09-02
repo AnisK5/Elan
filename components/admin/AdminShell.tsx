@@ -6,7 +6,7 @@ import { Logo } from "@/components/home/Branding";
 
 const TABS = [
   { href: "/admin", label: "Utilisateurs" },
-  { href: "/admin/analytics", label: "Tokens" },
+  { href: "/admin/analytics", label: "Monitoring" },
   { href: "/admin/feedbacks", label: "Retours" },
   { href: "/admin/settings", label: "Réglages IA" },
 ] as const;
@@ -26,7 +26,7 @@ export default function AdminShell({
   const pathname = usePathname() ?? "";
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col px-5 pb-16">
+    <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-5 pb-16">
       <header className="flex items-center justify-between py-6">
         <Link href="/" className="flex items-center gap-2">
           <Logo />

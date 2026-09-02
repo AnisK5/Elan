@@ -33,6 +33,12 @@ async function listAuthUsers(
   return out;
 }
 
+function parseDays(raw: string | null): number {
+  const n = raw ? Number.parseInt(raw, 10) : 30;
+  if (!Number.isFinite(n)) return 30;
+  return Math.min(90, Math.max(1, n));
+}
+
 export async function GET(req: Request) {
   const user = await getUserFromBearer(req);
   if (!user) {
@@ -49,23 +55,36 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const userId = url.searchParams.get("userId") ?? undefined;
+  const days = parseDays(url.searchParams.get("days"));
+  const routeFilter = url.searchParams.get("route") ?? "all";
+  const modelFilter = url.searchParams.get("model") ?? "all";
+  const dayFilter = url.searchParams.get("day") ?? undefined;
+
+  const since = dayFilter
+    ? `${dayFilter}T00:00:00.000Z`
+    : new Date(Date.now() - days * 86_400_000).toISOString();
 
   try {
-    const since90 = new Date(Date.now() - 90 * 86_400_000).toISOString();
-
     const [authUsers, usageRes, sessionsRes, settingsRes] = await Promise.all([
       listAuthUsers(admin),
-      admin
-        .from("elan_api_usage")
-        .select(
-          "user_id, at, day, route, model, input_tokens, output_tokens, session_id, session_context, exchange_index, exchange_kind",
-        )
-        .gte("at", since90)
-        .order("at", { ascending: false }),
+      (() => {
+        let q = admin
+          .from("elan_api_usage")
+          .select(
+            "user_id, at, day, route, model, input_tokens, output_tokens, session_id, session_context, exchange_index, exchange_kind",
+          )
+          .order("at", { ascending: false });
+        if (dayFilter) q = q.eq("day", dayFilter);
+        else q = q.gte("at", since);
+        if (userId) q = q.eq("user_id", userId);
+        if (routeFilter !== "all") q = q.eq("route", routeFilter);
+        if (modelFilter !== "all") q = q.eq("model", modelFilter);
+        return q.limit(5000);
+      })(),
       admin
         .from("elan_sessions")
         .select("user_id, id, date, duration_min, context, transcript")
-        .gte("date", since90)
+        .gte("date", since)
         .order("date", { ascending: false }),
       admin.from("elan_settings").select("user_id, name"),
     ]);
@@ -134,6 +153,12 @@ export async function GET(req: Request) {
         userEmails,
         userNames,
         userId,
+        {
+          days: dayFilter ? 1 : days,
+          route: routeFilter,
+          model: modelFilter,
+          day: dayFilter,
+        },
       ),
     );
   } catch {

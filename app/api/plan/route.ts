@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { resolveAiAccess } from "@/lib/ai-access";
 import { notifyAdminAiIssue } from "@/lib/admin-alert";
+import { checkPlanRateLimit } from "@/lib/plan-rate-limit";
 import {
   classifyAnthropicError,
   type AnthropicFailKind,
@@ -594,6 +595,23 @@ export async function POST(req: Request) {
     context === "courses" ||
     context === "sortie" ||
     context === "regulier";
+
+  const rate = await checkPlanRateLimit(access.userId);
+  if (!rate.allowed) {
+    void notifyAdminAiIssue({
+      kind: "plan_rate_limit",
+      route: "plan",
+      userId: access.userId,
+      detail: `${rate.used}/${rate.limit} appels plan/heure`,
+    });
+    const plan = fallbackPlan(context, open, body.chosen);
+    return Response.json({
+      message: plan.message,
+      pick: plan.pick,
+      rateLimited: true,
+      ...(debug ? { debug: debugPayload(open) } : {}),
+    });
+  }
 
   try {
     const baseSystem = forNotify
