@@ -188,10 +188,13 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    function onAiRecovered() {
+    function onAiRecovered(e: Event) {
       setLiveAiKind(null);
       setPlanAiNote("");
       setPlanUnreachable(false);
+      const refresh = (e as CustomEvent<{ refreshPlan?: boolean }>).detail
+        ?.refreshPlan;
+      if (!refresh) return;
       skipPlanCacheOnceRef.current = true;
       setPlanRecoveryTick((t) => t + 1);
     }
@@ -627,7 +630,6 @@ export default function Home() {
             }
           });
         } else if (!unreachable) {
-          reportAiRecovered();
           setLiveAiKind(null);
           setPlanAiNote("");
         }
@@ -867,6 +869,7 @@ export default function Home() {
             candidates?: string[];
             waiting?: string[];
             why?: string;
+            review?: string;
             system?: string;
             user?: string;
           };
@@ -885,7 +888,6 @@ export default function Home() {
               }
             });
           } else if (!unreachable) {
-            reportAiRecovered();
             setLiveAiKind(null);
             setPlanAiNote("");
           }
