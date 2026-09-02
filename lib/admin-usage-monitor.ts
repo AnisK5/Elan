@@ -1,6 +1,6 @@
 import type { RawApiUsageRow } from "./admin-analytics";
 import { estimateUsageCostEur } from "./anthropic-pricing";
-import { PLAN_CALLS_PER_HOUR } from "./plan-rate-limit";
+import { DEFAULT_PLAN_CALLS_PER_HOUR } from "./app-config";
 
 export interface AdminUsageFilters {
   days: number;
@@ -69,6 +69,7 @@ export interface RateLimitNowRow {
 }
 
 export interface UsageMonitorSnapshot {
+  planCallsPerHourLimit: number;
   hourly: HourlyUsageRow[];
   hourlyByRoute: HourlyRouteRow[];
   apiJournal: ApiCallLogRow[];
@@ -130,6 +131,7 @@ export function buildUsageMonitor(
   usage: RawApiUsageRow[],
   userEmails: Map<string, string>,
   userNames: Map<string, string>,
+  planCallsPerHourLimit = DEFAULT_PLAN_CALLS_PER_HOUR,
 ): UsageMonitorSnapshot {
   const routes = new Set<string>();
   const models = new Set<string>();
@@ -202,7 +204,8 @@ export function buildUsageMonitor(
           overLimit: false,
         } satisfies PlanRateHourRow);
       pu.planCalls += 1;
-      pu.overLimit = pu.planCalls > PLAN_CALLS_PER_HOUR;
+      pu.overLimit =
+        planCallsPerHourLimit > 0 && pu.planCalls > planCallsPerHourLimit;
       planHourUser.set(puKey, pu);
     }
   }
@@ -229,12 +232,12 @@ export function buildUsageMonitor(
   const anomalies: UsageAnomaly[] = [];
   for (const h of hourly) {
     const planCalls = h.byRoute.plan ?? 0;
-    if (planCalls > PLAN_CALLS_PER_HOUR) {
+    if (planCallsPerHourLimit > 0 && planCalls > planCallsPerHourLimit) {
       anomalies.push({
         kind: "plan_burst",
         hourKey: h.hourKey,
         hourLabel: h.hourLabel,
-        detail: `${planCalls} appels plan (plafond ${PLAN_CALLS_PER_HOUR}/h)`,
+        detail: `${planCalls} appels plan (plafond ${planCallsPerHourLimit}/h)`,
         planCalls,
         costEur: h.costEur,
       });
@@ -267,7 +270,9 @@ export function buildUsageMonitor(
         overLimit: false,
       } satisfies RateLimitNowRow);
     cur.planCallsLastHour += 1;
-    cur.overLimit = cur.planCallsLastHour >= PLAN_CALLS_PER_HOUR;
+    cur.overLimit =
+      planCallsPerHourLimit > 0 &&
+      cur.planCallsLastHour >= planCallsPerHourLimit;
     rateMap.set(key, cur);
   }
 
@@ -289,6 +294,7 @@ export function buildUsageMonitor(
     }));
 
   return {
+    planCallsPerHourLimit,
     hourly,
     hourlyByRoute,
     apiJournal,

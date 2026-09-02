@@ -1,5 +1,6 @@
 import type { ChatMessage } from "./types";
 import { buildUsageMonitor, type UsageMonitorSnapshot } from "./admin-usage-monitor";
+import { DEFAULT_PLAN_CALLS_PER_HOUR } from "./app-config";
 import { estimateUsageCostEur, estimateUsageCostUsd } from "./anthropic-pricing";
 
 export interface RawApiUsageRow {
@@ -186,6 +187,7 @@ export function buildAdminAnalytics(
     model: string;
     day?: string;
   },
+  planCallsPerHourLimit = DEFAULT_PLAN_CALLS_PER_HOUR,
 ): AdminAnalyticsSnapshot {
   const usageRows = filterUserId
     ? usage.filter((u) => u.userId === filterUserId)
@@ -475,6 +477,11 @@ export function buildAdminAnalytics(
     exchangeKinds,
     contextBreakdown,
     recentSessions,
-    monitor: buildUsageMonitor(usageRows, userEmails, userNames),
+    monitor: buildUsageMonitor(
+      usageRows,
+      userEmails,
+      userNames,
+      planCallsPerHourLimit,
+    ),
   };
 }

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { PLAN_CALLS_PER_HOUR } from "./plan-rate-limit";
+import { DEFAULT_PLAN_CALLS_PER_HOUR } from "./app-config";
 
 describe("plan-rate-limit constants", () => {
-  it("plafond à 10 appels plan / heure", () => {
-    expect(PLAN_CALLS_PER_HOUR).toBe(10);
+  it("défaut documenté à 10", () => {
+    expect(DEFAULT_PLAN_CALLS_PER_HOUR).toBe(10);
   });
 });

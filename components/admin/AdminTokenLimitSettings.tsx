@@ -55,12 +55,12 @@ export default function AdminTokenLimitSettings() {
         }
         const j = (await res.json()) as {
           sharedDailyTokenLimit: number;
-          source: "db" | "env";
-          envDefault: number;
+          sharedDailyTokenSource: "db" | "env";
+          sharedDailyTokenEnvDefault: number;
         };
         setLimit(j.sharedDailyTokenLimit);
-        setSource(j.source);
-        setEnvDefault(j.envDefault);
+        setSource(j.sharedDailyTokenSource);
+        setEnvDefault(j.sharedDailyTokenEnvDefault);
         setLoading(false);
       })
       .catch(() => {

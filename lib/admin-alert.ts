@@ -32,7 +32,7 @@ export async function notifyAdminAiIssue(opts: {
       ? "La clé partagée Anthropic est à sec — les utilisateurs sans clé perso sont en mode dégradé."
       : opts.kind === "quota"
         ? "Un utilisateur a atteint le plafond journalier sur la clé partagée."
-        : "Plafond de 10 appels /api/plan par heure dépassé — probable boucle ou abus.",
+        : "Plafond plan/heure dépassé — probable boucle ou abus.",
     "",
     `Route : ${opts.route}`,
     opts.userId ? `Utilisateur : ${opts.userId}` : null,

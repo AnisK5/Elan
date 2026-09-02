@@ -4,6 +4,7 @@ import {
   type RawAnalyticsSession,
   type RawApiUsageRow,
 } from "@/lib/admin-analytics";
+import { resolvePlanCallsPerHour } from "@/lib/app-config";
 import { getUserFromBearer } from "@/lib/auth-request";
 import type { ChatMessage } from "@/lib/types";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -146,6 +147,8 @@ export async function GET(req: Request) {
       transcript: r.transcript ?? [],
     }));
 
+    const planCallsPerHour = await resolvePlanCallsPerHour();
+
     return Response.json(
       buildAdminAnalytics(
         usage,
@@ -159,6 +162,7 @@ export async function GET(req: Request) {
           model: modelFilter,
           day: dayFilter,
         },
+        planCallsPerHour,
       ),
     );
   } catch {

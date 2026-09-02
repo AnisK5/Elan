@@ -1,7 +1,8 @@
+import { resolvePlanCallsPerHour } from "./app-config";
 import { getSupabaseAdmin } from "./supabase-admin";
 
-/** Plafond hard — évite une boucle plan (ex. 101 appels/h). */
-export const PLAN_CALLS_PER_HOUR = 10;
+/** Défaut documenté — préférer resolvePlanCallsPerHour() à l'exécution. */
+export { DEFAULT_PLAN_CALLS_PER_HOUR as PLAN_CALLS_PER_HOUR } from "./app-config";
 
 const MS_HOUR = 3_600_000;
 
@@ -9,6 +10,7 @@ export interface PlanRateLimitStatus {
   allowed: boolean;
   used: number;
   limit: number;
+  enabled: boolean;
 }
 
 export async function countPlanCallsLastHour(
@@ -36,10 +38,13 @@ export async function countPlanCallsLastHour(
 export async function checkPlanRateLimit(
   userId: string | null,
 ): Promise<PlanRateLimitStatus> {
+  const limit = await resolvePlanCallsPerHour();
   const used = await countPlanCallsLastHour(userId);
+  const enabled = limit > 0;
   return {
-    allowed: used < PLAN_CALLS_PER_HOUR,
+    allowed: !enabled || used < limit,
     used,
-    limit: PLAN_CALLS_PER_HOUR,
+    limit,
+    enabled,
   };
 }

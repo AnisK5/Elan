@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useCallback, useMemo } from "react";
 import type { AdminAnalyticsSnapshot, UserTokenRow } from "@/lib/admin-analytics";
-import { PLAN_CALLS_PER_HOUR } from "@/lib/plan-rate-limit";
 import { formatEur } from "@/lib/anthropic-pricing";
 import { formatTokensWithEur } from "@/lib/token-display";
 import {
@@ -158,6 +157,7 @@ export default function UsageMonitorDashboard({
 }) {
   const t = data.totals;
   const mon = data.monitor;
+  const planLimit = mon.planCallsPerHourLimit;
   const viewUser = data.viewUser;
   const viewLabel = viewUser?.name || viewUser?.email;
   const scopeHint = viewLabel ? ` — ${viewLabel}` : "";
@@ -285,7 +285,10 @@ export default function UsageMonitorDashboard({
                   data.tokensByRoute.find((r) => r.route === "plan")?.calls ??
                     0,
                 ),
-                hint: `plafond ${PLAN_CALLS_PER_HOUR}/h`,
+                hint:
+                  planLimit > 0
+                    ? `plafond ${planLimit}/h`
+                    : "plafond désactivé",
               },
               {
                 label: "Séances",
@@ -499,12 +502,20 @@ export default function UsageMonitorDashboard({
 
       {filters.tab === "limits" ? (
         <>
+          <p className="text-[13px] text-muted">
+            Plafond configurable dans{" "}
+            <a href="/admin/settings" className="font-medium text-teal hover:underline">
+              Réglages IA → Plafond plan / heure
+            </a>
+            .
+          </p>
           <MetricGrid
             items={[
               {
                 label: "Plafond plan",
-                value: `${PLAN_CALLS_PER_HOUR} / h`,
-                hint: "Hard limit côté /api/plan",
+                value:
+                  planLimit > 0 ? `${planLimit} / h` : "Désactivé",
+                hint: "Réglages IA → Plafond plan",
               },
               {
                 label: "Heures en dépassement",
@@ -538,10 +549,13 @@ export default function UsageMonitorDashboard({
                       <tr key={r.userId ?? "null"} className="border-t border-line">
                         <td className="px-3 py-2 text-ink">{r.userLabel}</td>
                         <td className="px-3 py-2 tabular-nums font-medium">
-                          {r.planCallsLastHour} / {PLAN_CALLS_PER_HOUR}
+                          {r.planCallsLastHour} /{" "}
+                          {planLimit > 0 ? planLimit : "∞"}
                         </td>
                         <td className="px-3 py-2">
-                          {r.overLimit ? (
+                          {planLimit <= 0 ? (
+                            <span className="text-muted">—</span>
+                          ) : r.overLimit ? (
                             <span className="text-amber">Bloqué</span>
                           ) : (
                             <span className="text-teal">OK</span>
