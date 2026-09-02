@@ -2,9 +2,10 @@
 
 import { useState, type ReactNode } from "react";
 import { getSupabase } from "@/lib/supabase";
+import { shouldInstantSendThumb, type FeedbackRating } from "@/lib/feedback-submit-policy";
 import { logUsage } from "@/lib/usage-log";
 
-export type FeedbackRating = "up" | "down";
+export type { FeedbackRating };
 export type FeedbackMood = FeedbackRating | "bien" | "bof" | "bloque";
 export type FeedbackSource =
   | "settings"
@@ -69,6 +70,7 @@ function ThumbButton({
 export default function FeedbackForm({
   source = "settings",
   compact = false,
+  instantUp = true,
   onSent,
   title = "Contact",
   subtitle = "Bug, idée, question — un bouton pour nous écrire.",
@@ -76,6 +78,8 @@ export default function FeedbackForm({
 }: {
   source?: FeedbackSource;
   compact?: boolean;
+  /** 👍 seul part tout de suite ; avec un mot → Envoyer. */
+  instantUp?: boolean;
   onSent?: () => void;
   title?: string;
   subtitle?: string;
@@ -89,16 +93,25 @@ export default function FeedbackForm({
   const [error, setError] = useState("");
 
   const canSend = Boolean(rating || message.trim());
+  const hint =
+    instantUp && !compact
+      ? "👍 seul part tout de suite · avec un mot, passe par Envoyer."
+      : instantUp
+        ? "👍 seul = direct · un mot → Envoyer."
+        : null;
 
-  async function submit() {
-    const text = message.trim();
-    if (busy || (!rating && !text)) return;
+  async function submit(
+    nextRating: FeedbackRating | null = rating,
+    nextMessage: string = message,
+  ) {
+    const text = nextMessage.trim();
+    if (busy || (!nextRating && !text)) return;
     setBusy(true);
     setError("");
     const ok = await postFeedback({
       message:
-        text || (rating === "up" ? "👍" : rating === "down" ? "👎" : ""),
-      rating,
+        text || (nextRating === "up" ? "👍" : nextRating === "down" ? "👎" : ""),
+      rating: nextRating,
       source,
     }).catch(() => false);
     setBusy(false);
@@ -106,12 +119,30 @@ export default function FeedbackForm({
       setError("Impossible d'envoyer — réessaie.");
       return;
     }
-    if (rating) logUsage("feedback", { meta: { mood: rating } });
+    if (nextRating) logUsage("feedback", { meta: { mood: nextRating } });
     setMessage("");
     setRating(null);
     setSent(true);
     onSent?.();
     window.setTimeout(() => setSent(false), 3000);
+  }
+
+  function pickThumb(next: FeedbackRating) {
+    if (busy) return;
+    if (rating === next) {
+      setRating(null);
+      return;
+    }
+    setRating(next);
+    if (
+      shouldInstantSendThumb({
+        rating: next,
+        message,
+        instantUp,
+      })
+    ) {
+      void submit(next, "");
+    }
   }
 
   return (
@@ -129,18 +160,22 @@ export default function FeedbackForm({
         <ThumbButton
           label="Ça va"
           active={rating === "up"}
-          onClick={() => setRating(rating === "up" ? null : "up")}
+          onClick={() => pickThumb("up")}
         >
           👍
         </ThumbButton>
         <ThumbButton
           label="Ça coince"
           active={rating === "down"}
-          onClick={() => setRating(rating === "down" ? null : "down")}
+          onClick={() => pickThumb("down")}
         >
           👎
         </ThumbButton>
       </div>
+
+      {hint ? (
+        <p className="mt-2 text-[11px] text-faint">{hint}</p>
+      ) : null}
 
       <textarea
         value={message}

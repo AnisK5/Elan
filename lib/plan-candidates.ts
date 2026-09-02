@@ -264,7 +264,7 @@ const UNVERIFIED_CONDITION =
 
 /** La personne a déjà répondu à « à vérifier ? » — ne plus reposer la question. */
 const CONDITION_ANSWERED =
-  /pas encore disponible|à acheter en priorité|patins à acheter|faut en acheter|n['']?ai pas (?:les )?patins|(?:listé|ajouté) (?:sur|aux) [Cc]ourses|en attente des courses|d[èe]j[àa] (?:l[àa]|disponibles?)|salaire (?:reçu|arriv[ée])/i;
+  /pas encore disponible|à acheter en priorité|patins à acheter|faut en acheter|faut les acheter|sont à acheter|n['']?ai pas (?:les )?patins|(?:listé|ajouté) (?:sur|aux) [Cc]ourses|en attente des courses|d[èe]j[àa] (?:l[àa]|disponibles?)|salaire (?:reçu|arriv[ée])/i;
 
 /** Retire une clause « À vérifier : … » devenue caduque après la réponse. */
 export function stripUnverifiedConditionClause(note: string): string {

@@ -3,20 +3,18 @@
 export const PLAN_PICKS = ["5", "15", "30", "50", "sortie"] as const;
 export type PlanPick = (typeof PLAN_PICKS)[number];
 
-export type PlanJson = { message: string; pick: string; why?: string };
+export type PlanJson = { message: string; pick: string; why?: string; review?: string };
 
 export const CONSEIL_TOOL_NAME = "conseil_du_jour";
 
 /**
- * Force un JSON {why, message, pick}.
- * why EN PREMIER : l'arbitrage écrit guide le conseil visible (qualité).
- * Budget max_tokens côté /api/plan doit être assez large pour ne pas
- * tronquer avant message/pick.
+ * Force un JSON {why, review, message, pick}.
+ * why + review EN PREMIER : arbitrage puis relecture invisible avant le conseil visible.
  */
 export const CONSEIL_TOOL = {
   name: CONSEIL_TOOL_NAME,
   description:
-    "Le conseil du jour. Remplis why EN PREMIER (les 6 points d'arbitrage), puis message et pick, en cohérence avec why.",
+    "Le conseil du jour. Ordre strict : why (6 points), review (relecture invisible), puis message et pick alignés.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -25,18 +23,23 @@ export const CONSEIL_TOOL = {
         description:
           "Les 6 points d'ARBITRAGE SILENCIEUX, une phrase courte chacun, numérotés 1) à 6). Factuel, pour le développeur. JAMAIS repris dans message.",
       },
+      review: {
+        type: "string",
+        description:
+          "Relecture INVISIBLE (jamais dans message). Réponds en 1–3 phrases à : « Un pas ou une question serait-il mal calé — condition déjà tranchée (à acheter, pas dispo, relancé récemment), mauvais lieu, relance reportée, question absurde (ex. patins déjà là alors qu'il faut les acheter) ? » Si oui, dis ce que tu corriges. Sinon « OK » + une phrase. message et pick DOIVENT suivre.",
+      },
       message: {
         type: "string",
         description:
-          "2 à 4 phrases, françaises, sans markdown. La conclusion seulement — en cohérence avec why.",
+          "2 à 4 phrases, françaises, sans markdown. La conclusion seulement — en cohérence avec why et review.",
       },
       pick: {
         type: "string",
         enum: [...PLAN_PICKS],
-        description: "Durée du créneau, ou sortie. Doit suivre why.",
+        description: "Durée du créneau, ou sortie. Doit suivre why et review.",
       },
     },
-    required: ["why", "message", "pick"],
+    required: ["why", "review", "message", "pick"],
   },
 };
 
@@ -87,10 +90,12 @@ export function parsePlanJson(text: string): PlanJson | null {
   const pick = blob.match(/"pick"\s*:\s*"(5|15|30|50|sortie)"/);
   if (!msg || !pick) return null;
   const why = blob.match(/"why"\s*:\s*"((?:\\.|[^"\\])*)"/);
+  const review = blob.match(/"review"\s*:\s*"((?:\\.|[^"\\])*)"/);
   return {
     message: unquote(msg[1]),
     pick: pick[1],
     why: why ? unquote(why[1]).trim() : undefined,
+    review: review ? unquote(review[1]).trim() : undefined,
   };
 }
 
@@ -103,6 +108,7 @@ export function planFromUnknown(input: unknown): PlanJson | null {
     message: o.message,
     pick: o.pick,
     why: typeof o.why === "string" ? o.why.trim() : undefined,
+    review: typeof o.review === "string" ? o.review.trim() : undefined,
   };
 }
 

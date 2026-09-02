@@ -75,6 +75,7 @@ export default function HelpButton({
                 <FeedbackForm
                   source="home"
                   compact
+                  instantUp
                   title="Contact"
                   subtitle="Un mot suffit — on le lit."
                   contactHint

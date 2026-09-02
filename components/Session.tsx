@@ -156,6 +156,27 @@ export default function Session({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remaining, streaming, messages]);
 
+  /** Dernier reconcile greffier — à attendre avant de quitter la séance. */
+  const reconcileInflightRef = useRef<Promise<void> | null>(null);
+
+  function trackReconcile(p: Promise<void>) {
+    reconcileInflightRef.current = p;
+    void p.finally(() => {
+      if (reconcileInflightRef.current === p) {
+        reconcileInflightRef.current = null;
+      }
+    });
+  }
+
+  async function flushReconcile(msgs: ChatMessage[]) {
+    if (reconcileInflightRef.current) {
+      await reconcileInflightRef.current;
+    }
+    if (msgs.some((m) => m.role === "user" && m.content.trim())) {
+      await reconcile(msgs);
+    }
+  }
+
   async function runTurn(convo: ChatMessage[], ending = false) {
     setError("");
     setErrorHint("");
@@ -234,8 +255,16 @@ export default function Session({
       }
 
       const lastWasUser = convo[convo.length - 1]?.role === "user";
-      if (!ending && lastWasUser && clean.trim()) {
-        void reconcile([...convo, { role: "assistant", content: clean }]);
+      if (lastWasUser && clean.trim()) {
+        const msgs: ChatMessage[] = [
+          ...convo,
+          { role: "assistant", content: clean, at },
+        ];
+        if (ending) {
+          await reconcile(msgs);
+        } else {
+          trackReconcile(reconcile(msgs));
+        }
       }
       reportAiRecovered();
     } catch {
@@ -372,11 +401,13 @@ export default function Session({
           )}
           <button
             onClick={() => {
-              clearActiveSession();
-              onEnd(
-                messages.filter((m) => m.content.trim()),
-                sessionIdRef.current,
-              );
+              void (async () => {
+                if (streaming) return;
+                const transcript = messages.filter((m) => m.content.trim());
+                await flushReconcile(transcript);
+                clearActiveSession();
+                onEnd(transcript, sessionIdRef.current);
+              })();
             }}
             className="rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-paper transition hover:opacity-90"
           >

@@ -29,7 +29,7 @@ export function pileSignature(openThreads: Thread[]): string {
   return openThreads
     .map(
       (t) =>
-        `${t.id}:${t.due ?? ""}:${t.effort ?? ""}:${t.kind}:${t.text}:${t.note ?? ""}`,
+        `${t.id}:${t.due ?? ""}:${t.plannedFor ?? ""}:${t.snoozedUntil ?? ""}:${t.effort ?? ""}:${t.kind}:${t.text}:${t.note ?? ""}`,
     )
     .sort()
     .join("|");

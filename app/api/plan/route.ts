@@ -230,6 +230,14 @@ ARBITRAGE SILENCIEUX (OBLIGATOIRE — avant de choisir durée + truc ; NE PAS é
 5) CE QU'ON LAISSE — sois RÉALISTE, pas confortable. Pour 2–4 candidats laissés : le mode normal les traitera-t-il un jour ? Ce que le contexte écarte (pas chez elle) n'est pas oublié : c'est reporté, pas un filet. « OK au rythme actuel » est FAUX si ce rythme ne peut pas porter le reste. Dis l'impact. Si l'impact n'est pas OK : change de pick, ou la question porte dessus — seulement si elle peut y répondre là où elle est.
 6) VALIDATION : une fois les points tenus, seulement alors tu rédiges "message" + "pick". Le message ne montre que la conclusion — jamais le parcours.
 
+CHAMP "review" (OBLIGATOIRE — invisible pour la personne, JAMAIS copié dans "message") :
+Avant message/pick, réponds en 1–3 phrases à cette question interne :
+« Est-ce qu'un des pas ou questions que je m'apprête à proposer serait mal calé — condition déjà tranchée dans une note (à acheter, pas encore dispo, relancé récemment), mauvais lieu (vérifier chez elle alors qu'elle n'y est pas), relance alors qu'on vient de reporter, ou question absurde (ex. « les patins sont-ils là ? » alors qu'il faut les acheter) ? »
+Si oui : dis ce que tu corriges (pick, truc, ou question-filet). Si non : « OK » + une phrase. message et pick DOIVENT respecter review — en cas de doute mineur, garde un petit pas plutôt que paralyser.
+
+RÉPONDS via l'outil conseil_du_jour, rien d'autre. Ordre strict dans l'outil : "why" (6 points), "review", "message", "pick".
+Le message est la CONCLUSION — jamais le parcours ni review. "pick" = "5"|"15"|"30"|"50"|"sortie", en cohérence avec why et review.
+
 DURÉE (champ "pick"), une seule valeur parmi "5", "15", "30", "50", ou "sortie" :
 - "sortie" = le créneau du jour EST une Sortie (bouton Sortie). À utiliser quand ce qui pèse vraiment exige de se déplacer.
 - "5" = ~5 min : quasi rien à faire, ou juste faire le point / poser un truc / un micro-pas pour se lancer.
@@ -282,9 +290,6 @@ RÉGULIERS (fil conteneur — loyer, URSSAF, draps, tout ce qui REVIENT et que L
 - Un régulier dont la fenêtre est ouverte peut entrer dans la composition du jour — pèse-le avec conséquences, stagnation, fit créneau. Pas de lane VIP.
 - Formule « ça fait X semaines / un mois » — jamais « en retard ».
 - Si aucun régulier n'est mûr, n'en parle pas dans le message.
-
-RÉPONDS via l'outil conseil_du_jour, rien d'autre. Ordre : "why" (les 6 points, une phrase chacun), puis "message", puis "pick".
-Le message est la CONCLUSION — jamais le parcours. "pick" = "5"|"15"|"30"|"50"|"sortie", en cohérence avec why.
 
 SES TRUCS :
 ${render}
@@ -506,6 +511,7 @@ function debugPayload(
   threads: Thread[],
   opts?: {
     why?: string;
+    review?: string;
     system?: string;
     user?: string;
   },
@@ -513,6 +519,7 @@ function debugPayload(
   return {
     ...buildPlanViewSnapshot(threads),
     ...(opts?.why ? { why: opts.why } : {}),
+    ...(opts?.review ? { review: opts.review } : {}),
     ...(opts?.system ? { system: opts.system } : {}),
     ...(opts?.user ? { user: opts.user } : {}),
   };
@@ -718,6 +725,7 @@ export async function POST(req: Request) {
         ? {
             debug: debugPayload(open, {
               why,
+              review: parsed.review,
               system: baseSystem,
               user: userCue,
             }),

@@ -665,6 +665,8 @@ export default function Home() {
           setPlanDiag({
             view,
             why: typeof j?.debug?.why === "string" ? j.debug.why : (j?.why ?? ""),
+            review:
+              typeof j?.debug?.review === "string" ? j.debug.review : undefined,
             system:
               typeof j?.debug?.system === "string"
                 ? j.debug.system
@@ -747,6 +749,8 @@ export default function Home() {
     setResume(null);
     setContext("desk");
     planCtxRef.current = "desk";
+    skipPlanCacheOnceRef.current = true;
+    setPlanRecoveryTick((t) => t + 1);
     setView("home");
     setRitualBrief(null);
     sessionBriefRef.current = null;
@@ -917,6 +921,8 @@ export default function Home() {
             setPlanDiag({
               view,
               why: j.debug?.why ?? (j.why ?? ""),
+              review:
+                typeof j.debug?.review === "string" ? j.debug.review : undefined,
               system: j.debug?.system,
               user: j.debug?.user,
               source: "api",

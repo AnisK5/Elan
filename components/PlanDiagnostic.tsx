@@ -6,6 +6,8 @@ import type { PlanViewSnapshot } from "@/lib/plan-candidates";
 export interface PlanDiagnosticData {
   view: PlanViewSnapshot;
   why?: string;
+  /** Relecture invisible (champ review) — diagnostic only. */
+  review?: string;
   /** Prompt system exact envoyé au modèle (diagnostic only). */
   system?: string;
   /** Message user / cue envoyé avec le system. */
@@ -25,6 +27,7 @@ export default function PlanDiagnostic({ data }: { data: PlanDiagnosticData }) {
       `pick: ${data.pick}`,
       `message: ${data.message}`,
       data.why ? `why: ${data.why}` : "why: (pas encore)",
+      data.review ? `review: ${data.review}` : "review: (pas encore)",
       "",
       "CANDIDATS BUREAU:",
       ...(data.view.candidates.length
@@ -79,6 +82,14 @@ export default function PlanDiagnostic({ data }: { data: PlanDiagnosticData }) {
             Pourquoi · absent (le modèle n&apos;a pas rempli why)
           </p>
         )}
+        {data.review ? (
+          <div>
+            <p className="text-faint">Relecture (invisible)</p>
+            <p className="mt-0.5 whitespace-pre-wrap text-[12px] leading-relaxed text-ink/85">
+              {data.review}
+            </p>
+          </div>
+        ) : null}
         <div>
           <p className="text-faint">Candidats bureau</p>
           <pre className="mt-0.5 whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-ink/80">

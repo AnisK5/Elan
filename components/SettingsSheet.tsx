@@ -139,7 +139,7 @@ export default function SettingsSheet({
               <AnthropicKeySettings />
               <ModelSettings />
               <DiagnosticSettings />
-              <FeedbackForm source="settings" contactHint />
+              <FeedbackForm source="settings" instantUp={false} contactHint />
               <ImportData />
               {isAdmin ? (
                 <Link
