@@ -4,6 +4,7 @@ import {
   dayPlanMatches,
   dayPlanPileMatches,
   isDayPlanStale,
+  markMomentsProgress,
   planDateKey,
   shouldAutoFetchPlan,
   todaySlot,
@@ -125,5 +126,19 @@ describe("todaySlot + shouldAutoFetchPlan + isDayPlanStale", () => {
     expect(
       isDayPlanStale(plan, [t("1", "papa"), t("2", "courses")], "", date),
     ).toBe(true);
+  });
+});
+
+describe("markMomentsProgress", () => {
+  it("coche un moment quand un truc done matche", () => {
+    const next = markMomentsProgress(
+      [
+        { label: "Relancer Laura", match: "Laura" },
+        { label: "Loyer", mode: "regulier" },
+      ],
+      ["Relancer Laura — message"],
+    );
+    expect(next?.[0].done).toBe(true);
+    expect(next?.[1].done).toBeFalsy();
   });
 });

@@ -3,12 +3,24 @@ import type { SessionContext, Thread } from "./types";
 
 export type DayPlanContext = Exclude<SessionContext, "deposer">;
 
+export interface DayPlanMoment {
+  /** Court : « Relancer Laura », « Loyer (Régulier) ». */
+  label: string;
+  /** Mode suggéré pour ce moment. */
+  mode?: DayPlanContext;
+  /** Sous-chaîne pour marquer « fait » quand un truc matching est done. */
+  match?: string;
+  done?: boolean;
+}
+
 export interface DayPlanSlot {
   why: string;
   message: string;
   pick: string;
   /** Messages user du chat au moment du conseil — pour le bouton stale. */
   chatLen?: number;
+  /** 1–2 moments de la journée (carte indépendante des boutons). */
+  moments?: DayPlanMoment[];
 }
 
 export interface DayPlanCache {
@@ -54,6 +66,58 @@ export function isDayPlanContext(ctx: string): ctx is DayPlanContext {
   );
 }
 
+function parseMoments(raw: unknown): DayPlanMoment[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: DayPlanMoment[] = [];
+  for (const item of raw.slice(0, 3)) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    if (typeof o.label !== "string" || !o.label.trim()) continue;
+    const mode =
+      typeof o.mode === "string" && isDayPlanContext(o.mode) ? o.mode : undefined;
+    out.push({
+      label: o.label.trim().slice(0, 80),
+      ...(mode ? { mode } : {}),
+      ...(typeof o.match === "string" && o.match.trim()
+        ? { match: o.match.trim().slice(0, 80) }
+        : {}),
+      ...(o.done === true ? { done: true } : {}),
+    });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+function normMatch(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Marque les moments faits quand un libellé done matche label/match. */
+export function markMomentsProgress(
+  moments: DayPlanMoment[] | undefined,
+  doneLabels: string[],
+): DayPlanMoment[] | undefined {
+  if (!moments?.length) return moments;
+  const done = doneLabels.map(normMatch).filter(Boolean);
+  if (done.length === 0) return moments;
+  let changed = false;
+  const next = moments.map((m) => {
+    if (m.done) return m;
+    const needles = [m.match, m.label].filter(Boolean).map((x) => normMatch(x!));
+    const hit = needles.some((n) =>
+      done.some((d) => d.includes(n) || n.includes(d)),
+    );
+    if (!hit) return m;
+    changed = true;
+    return { ...m, done: true };
+  });
+  return changed ? next : moments;
+}
+
 export function parseDayPlan(raw: unknown): DayPlanCache | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
@@ -72,11 +136,13 @@ export function parseDayPlan(raw: unknown): DayPlanCache | null {
     if (typeof slot.why !== "string" || !slot.why.trim()) continue;
     if (typeof slot.message !== "string" || !slot.message.trim()) continue;
     if (typeof slot.pick !== "string") continue;
+    const moments = parseMoments(slot.moments);
     slots[key] = {
       why: slot.why.trim(),
       message: slot.message.trim(),
       pick: slot.pick,
       ...(typeof slot.chatLen === "number" ? { chatLen: slot.chatLen } : {}),
+      ...(moments ? { moments } : {}),
     };
   }
   return { v: o.v, date: o.date, sig: o.sig, slots };
@@ -177,6 +243,12 @@ export function mergeDayPlans(
         why: a.why || b.why,
         message: a.message || b.message,
         pick: a.pick || b.pick,
+        ...(a.chatLen != null || b.chatLen != null
+          ? { chatLen: a.chatLen ?? b.chatLen }
+          : {}),
+        ...(a.moments?.length || b.moments?.length
+          ? { moments: a.moments?.length ? a.moments : b.moments }
+          : {}),
       };
     } else {
       slots[k] = a ?? b;

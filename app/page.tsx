@@ -89,6 +89,7 @@ import { trucLabels } from "@/lib/emphasize-truc";
 import {
   backlogCounts,
   hasReguliersContainer,
+  reguliersDueFromThreads,
 } from "@/lib/entretiens";
 import {
   readRitualLaunch,
@@ -100,6 +101,7 @@ import {
   dayPlanMatches,
   dayPlanPileMatches,
   isDayPlanContext,
+  markMomentsProgress,
   planDateKey,
   shouldAutoFetchPlan,
   slotOf,
@@ -107,7 +109,14 @@ import {
   upsertDayPlanSlot,
   whySignature,
   type DayPlanContext,
+  type DayPlanMoment,
 } from "@/lib/day-plan";
+
+type PlanView = {
+  message: string;
+  pick: string;
+  moments?: DayPlanMoment[];
+};
 
 // Écran d'accueil — orchestration UI. Doc : docs/GUIDE.md
 
@@ -129,9 +138,7 @@ export default function Home() {
   });
   const [wrapUp, setWrapUp] = useState(false);
   const [resume, setResume] = useState<ActiveSession | null>(null);
-  const [plan, setPlan] = useState<{ message: string; pick: string } | null>(
-    null,
-  );
+  const [plan, setPlan] = useState<PlanView | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
   /** Conseil du jour encore affiché mais plus aligné (pile / chat) — bouton refresh. */
   const [planStale, setPlanStale] = useState(false);
@@ -394,7 +401,12 @@ export default function Home() {
 
   function persistPlanSlot(
     ctx: DayPlanContext,
-    slot: { why: string; message: string; pick: string },
+    slot: {
+      why: string;
+      message: string;
+      pick: string;
+      moments?: DayPlanMoment[];
+    },
   ) {
     const chatLen = chatUserCount();
     writeDayPlan(
@@ -413,6 +425,53 @@ export default function Home() {
     skipPlanCacheOnceRef.current = true;
     setPlanRecoveryTick((t) => t + 1);
   }
+
+  function momentsFromApi(raw: unknown): DayPlanMoment[] | undefined {
+    if (!Array.isArray(raw)) return undefined;
+    const out: DayPlanMoment[] = [];
+    for (const item of raw.slice(0, 2)) {
+      if (!item || typeof item !== "object") continue;
+      const o = item as Record<string, unknown>;
+      if (typeof o.label !== "string" || !o.label.trim()) continue;
+      const mode =
+        typeof o.mode === "string" && isDayPlanContext(o.mode)
+          ? o.mode
+          : undefined;
+      out.push({
+        label: o.label.trim().slice(0, 80),
+        ...(mode ? { mode } : {}),
+        ...(typeof o.match === "string" && o.match.trim()
+          ? { match: o.match.trim().slice(0, 80) }
+          : {}),
+      });
+    }
+    return out.length > 0 ? out : undefined;
+  }
+
+  /** Coche les moments quand des trucs matching sont faits (séance ou chat). */
+  useEffect(() => {
+    if (!ready || !isDayPlanContext(context)) return;
+    const cached = readDayPlan();
+    const slot = todaySlot(cached, context);
+    if (!slot?.moments?.length) return;
+    const doneLabels = threads
+      .filter((t) => t.status === "done")
+      .map((t) => t.text);
+    const next = markMomentsProgress(slot.moments, doneLabels);
+    if (!next || next === slot.moments) return;
+    writeDayPlan(
+      upsertDayPlanSlot(
+        cached,
+        cached?.sig ?? planSig,
+        context,
+        { ...slot, moments: next },
+        planDateKey(),
+      ),
+    );
+    setPlan((prev) =>
+      prev ? { ...prev, moments: next } : prev,
+    );
+  }, [ready, threads, context, planSig]);
 
   useEffect(() => {
     if (!ready) return;
@@ -664,7 +723,11 @@ export default function Home() {
     });
 
     if (!auto && softSlot) {
-      setPlan({ message: softSlot.message, pick: softSlot.pick });
+      setPlan({
+        message: softSlot.message,
+        pick: softSlot.pick,
+        moments: softSlot.moments,
+      });
       setPlanLoading(false);
       setPlanUnreachable(false);
       planChatLenRef.current = softSlot.chatLen ?? 0;
@@ -723,10 +786,16 @@ export default function Home() {
           unreachable && errorKind ? anthropicFailMessage(errorKind) : "",
         );
         const pick = j?.pick ?? "15";
+        const moments =
+          momentsFromApi(j?.moments) ?? softSlot?.moments;
         const effective = msg
-          ? { message: msg, pick }
+          ? { message: msg, pick, moments }
           : softSlot
-            ? { message: softSlot.message, pick: softSlot.pick }
+            ? {
+                message: softSlot.message,
+                pick: softSlot.pick,
+                moments: softSlot.moments,
+              }
             : buildOfflinePlanHint(openThreads, duration);
         setPlan(effective);
         if (manualPickSig.current !== planSig) {
@@ -740,6 +809,7 @@ export default function Home() {
               why,
               message: msg,
               pick: effective.pick,
+              moments,
             });
           }
         } else if (softSlot) {
@@ -774,7 +844,11 @@ export default function Home() {
         setPlanUnreachable(true);
         setPlanAiNote("");
         if (softSlot) {
-          setPlan({ message: softSlot.message, pick: softSlot.pick });
+          setPlan({
+            message: softSlot.message,
+            pick: softSlot.pick,
+            moments: softSlot.moments,
+          });
           setPlanStale(true);
         } else {
           const hint = buildOfflinePlanHint(openThreads, duration);
@@ -867,9 +941,8 @@ export default function Home() {
     setView("session");
   }
 
-  // Choisir soi-même une durée doit changer le conseil : on ne veut pas lire
-  // « je te propose 15 min » alors qu'on vient de cliquer sur 50.
-  async function pickDuration(d: number) {
+  // Choisir une durée = lancer CE créneau ; la carte du jour reste.
+  function pickDuration(d: number) {
     ritualLockRef.current = false;
     setRitualBrief(null);
     planSkipFetchRef.current = true;
@@ -879,7 +952,6 @@ export default function Home() {
     durationSettled.current = true;
     appliedSig.current = planSig;
     manualPickSig.current = planSig;
-    await fetchPlan({ chosen: d, ctx: "desk" });
   }
 
   function startDeposer() {
@@ -908,7 +980,11 @@ export default function Home() {
     const slot = todayPlanSlot(ctx);
     const fresh = cachedPlanSlot(ctx);
     if (slot) {
-      setPlan({ message: slot.message, pick: slot.pick });
+      setPlan({
+        message: slot.message,
+        pick: slot.pick,
+        moments: slot.moments,
+      });
       setPlanLoading(false);
       setPlanUnreachable(false);
       planChatLenRef.current = slot.chatLen ?? 0;
@@ -965,6 +1041,7 @@ export default function Home() {
           message?: string;
           pick?: string;
           why?: string;
+          moments?: unknown;
           unreachable?: boolean;
           errorKind?: AnthropicFailKind;
           debug?: {
@@ -1001,12 +1078,19 @@ export default function Home() {
           const pick = opts?.chosen
             ? String(opts.chosen)
             : (j.pick ?? "15");
+          const moments = momentsFromApi(j.moments) ?? soft?.moments;
           const effective = msg
-            ? { message: msg, pick }
-            : buildOfflinePlanHint(
-                openThreads,
-                opts?.chosen ?? duration,
-              );
+            ? { message: msg, pick, moments }
+            : soft
+              ? {
+                  message: soft.message,
+                  pick: soft.pick,
+                  moments: soft.moments,
+                }
+              : buildOfflinePlanHint(
+                  openThreads,
+                  opts?.chosen ?? duration,
+                );
           setPlan(effective);
           if (msg && !unreachable) {
             markPlanFresh();
@@ -1016,6 +1100,7 @@ export default function Home() {
                 why,
                 message: msg,
                 pick: effective.pick,
+                moments,
               });
             }
           }
@@ -1040,7 +1125,11 @@ export default function Home() {
         setPlanUnreachable(true);
         setPlanAiNote("");
         if (soft) {
-          setPlan({ message: soft.message, pick: soft.pick });
+          setPlan({
+            message: soft.message,
+            pick: soft.pick,
+            moments: soft.moments,
+          });
           setPlanStale(true);
         } else {
           const hint = buildOfflinePlanHint(
@@ -1474,20 +1563,9 @@ export default function Home() {
               pas à la fois.
             </p>
 
-            {/* La durée est au-dessus du conseil : c'est elle qui le
-                détermine, la lire après serait lire l'effet avant la cause. */}
-            <div className="mt-4 min-w-0">
-              <SessionPick
-                duration={duration}
-                context={context}
-                onPickDuration={pickDuration}
-                onPickContext={pickContext}
-              />
-            </div>
-
             {showPlanBlock ? (
               <div
-                className={`mt-3 rounded-xl border px-4 py-3 ${
+                className={`mt-4 rounded-xl border px-4 py-3 ${
                   planStale && !planLoading
                     ? "border-amber/40 bg-amber/10"
                     : "border-teal-soft bg-teal-soft/50"
@@ -1508,7 +1586,7 @@ export default function Home() {
                       ? context === "desk"
                         ? plan?.message
                           ? "Mise à jour du conseil…"
-                          : "Élan réfléchit à ce format…"
+                          : "Élan réfléchit à ta journée…"
                         : context === "regulier"
                           ? "Élan regarde tes réguliers…"
                           : context === "deposer"
@@ -1516,17 +1594,44 @@ export default function Home() {
                             : "Élan regarde ce qu'il y a dehors…"
                       : planStale
                         ? "Le conseil n'est plus à jour"
-                        : context === "desk"
-                          ? "Élan te conseille pour aujourd'hui"
-                          : context === "sortie"
-                            ? "Élan pour ta sortie"
-                            : context === "regulier"
-                              ? "Élan pour ton régulier"
-                              : context === "deposer"
-                                ? "Élan pour déposer"
-                                : "Élan pour tes courses"}
+                        : "Élan te conseille pour aujourd'hui"}
                   </span>
                 </div>
+                {plan?.moments && plan.moments.length > 0 && !planLoading ? (
+                  <ul className="mb-2 space-y-1">
+                    {plan.moments.map((m, i) => (
+                      <li
+                        key={`${m.label}-${i}`}
+                        className={`flex items-start gap-2 text-[13px] ${
+                          m.done ? "text-faint line-through" : "text-teal-ink"
+                        }`}
+                      >
+                        <span
+                          className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
+                            m.done ? "bg-faint" : "bg-teal"
+                          }`}
+                          aria-hidden
+                        />
+                        <span>
+                          {m.label}
+                          {m.mode && m.mode !== "desk" ? (
+                            <span className="text-faint">
+                              {" "}
+                              ·{" "}
+                              {m.mode === "regulier"
+                                ? "Régulier"
+                                : m.mode === "sortie"
+                                  ? "Sortie"
+                                  : m.mode === "courses"
+                                    ? "Courses"
+                                    : m.mode}
+                            </span>
+                          ) : null}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
                 {planLoading && !plan?.message ? (
                   <div className="flex flex-col gap-1.5 py-0.5">
                     <span className="h-3 w-4/5 animate-pulse rounded bg-teal/15" />
@@ -1576,13 +1681,22 @@ export default function Home() {
                 ) : null}
               </div>
             ) : (
-              <p className="mt-3 text-[15px] leading-relaxed text-muted">
+              <p className="mt-4 text-[15px] leading-relaxed text-muted">
                 Rien d&apos;ici aujourd&apos;hui — et c&apos;est ok. Tu peux
                 quand même passer : déposer ce qui te trotte, glisser une info,
                 ou ajouter un truc pour plus tard.
               </p>
             )}
 
+            <div className="mt-4 min-w-0">
+              <SessionPick
+                duration={duration}
+                context={context}
+                onPickDuration={pickDuration}
+                onPickContext={pickContext}
+                regulierDue={reguliersDueFromThreads(openThreads).length > 0}
+              />
+            </div>
             <button
               onClick={() =>
                 context === "deposer" ? startDeposer() : startFresh()

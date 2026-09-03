@@ -42,6 +42,7 @@ describe("extractPlanFromContent", () => {
           review: "OK — pas de question patins, note dit à acheter.",
           message: "Je te propose un créneau de 15 min, pour un rappel.",
           pick: "15",
+          moments: [{ label: "Rappel papa", match: "papa", mode: "desk" }],
         },
       },
     ]);
@@ -49,6 +50,7 @@ describe("extractPlanFromContent", () => {
     expect(plan?.message).toContain("rappel");
     expect(plan?.why).toContain("Vienne");
     expect(plan?.review).toContain("patins");
+    expect(plan?.moments?.[0].label).toBe("Rappel papa");
   });
 
   it("lit aussi l'outil de recalage de durée", () => {
