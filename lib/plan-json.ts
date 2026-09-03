@@ -6,7 +6,8 @@ export type PlanPick = (typeof PLAN_PICKS)[number];
 export type PlanMomentJson = {
   label: string;
   mode?: "desk" | "sortie" | "courses" | "regulier";
-  match?: string;
+  /** Durée proposée (peut être 25 — accrochée au bouton le plus proche). */
+  mins?: number;
 };
 
 export type PlanJson = {
@@ -26,7 +27,7 @@ export const CONSEIL_TOOL_NAME = "conseil_du_jour";
 export const CONSEIL_TOOL = {
   name: CONSEIL_TOOL_NAME,
   description:
-    "Carte du jour. Ordre : why (6 points), review, message (forme de la journée), pick (suggestion pour lancer MAINTENANT), moments (1–2).",
+    "Carte du jour. Ordre : why (6 points), review, message (1 phrase d'intro), pick (prochain lancement), moments (1–2 séances avec mins).",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -43,7 +44,7 @@ export const CONSEIL_TOOL = {
       message: {
         type: "string",
         description:
-          "2 à 4 phrases : la FORME de la journée (1 ou 2 moments), pas un texte collé au seul bouton. Français, sans markdown.",
+          "UNE seule phrase d'intro humaine (ex. « Aujourd'hui, je te propose 2 séances de 25 min pour avancer sur des urgences et tes habitudes. »). Pas de détail des tâches — ça va dans moments. Français, sans markdown.",
       },
       pick: {
         type: "string",
@@ -54,7 +55,7 @@ export const CONSEIL_TOOL = {
       moments: {
         type: "array",
         description:
-          "1 ou 2 moments du jour. Si 2 : natures différentes (ex. urgent desk + régulier, ou desk + sortie).",
+          "1 ou 2 séances du jour (= bullets). Chaque objet = une séance : label court + mins (durée). Le détail vit dans la séance, pas ici.",
         minItems: 1,
         maxItems: 2,
         items: {
@@ -62,16 +63,19 @@ export const CONSEIL_TOOL = {
           properties: {
             label: {
               type: "string",
-              description: "Court : « Relancer Laura », « Loyer (Régulier) ».",
+              description:
+                "Titre court SANS durée (ex. « Message à papa + PS », « Linge de lit »). Max ~50 car.",
+            },
+            mins: {
+              type: "number",
+              description:
+                "Durée proposée en minutes (5–50). Obligatoire pour desk / regulier. Ex. 25.",
             },
             mode: {
               type: "string",
               enum: ["desk", "sortie", "courses", "regulier"],
-            },
-            match: {
-              type: "string",
               description:
-                "Sous-chaîne du truc pour marquer fait (ex. Laura, loyer).",
+                "desk ou regulier = séance bureau ; sortie / courses = hors bureau",
             },
           },
           required: ["label"],
@@ -124,12 +128,12 @@ function parseMomentsJson(raw: unknown): PlanMomentJson[] | undefined {
       o.mode === "regulier"
         ? o.mode
         : undefined;
+    const mins =
+      typeof o.mins === "number" && o.mins > 0 ? Math.round(o.mins) : undefined;
     out.push({
       label: o.label.trim().slice(0, 80),
       ...(mode ? { mode } : {}),
-      ...(typeof o.match === "string" && o.match.trim()
-        ? { match: o.match.trim().slice(0, 80) }
-        : {}),
+      ...(mins != null ? { mins } : {}),
     });
   }
   return out.length > 0 ? out : undefined;

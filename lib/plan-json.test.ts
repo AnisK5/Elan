@@ -42,7 +42,7 @@ describe("extractPlanFromContent", () => {
           review: "OK — pas de question patins, note dit à acheter.",
           message: "Je te propose un créneau de 15 min, pour un rappel.",
           pick: "15",
-          moments: [{ label: "Rappel papa", match: "papa", mode: "desk" }],
+          moments: [{ label: "Rappel papa", mins: 15, mode: "desk" }],
         },
       },
     ]);

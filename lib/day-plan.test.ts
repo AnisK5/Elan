@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { PLAN_VERSION } from "./constants";
 import {
+  completeNextMoment,
   dayPlanMatches,
   dayPlanPileMatches,
+  durationHintCounts,
   isDayPlanStale,
-  markMomentsProgress,
   planDateKey,
   shouldAutoFetchPlan,
+  snapDeskMins,
   todaySlot,
   upsertDayPlanSlot,
   whySignature,
@@ -129,15 +131,42 @@ describe("todaySlot + shouldAutoFetchPlan + isDayPlanStale", () => {
   });
 });
 
-describe("markMomentsProgress", () => {
-  it("coche un moment quand un truc done matche", () => {
-    const next = markMomentsProgress(
+describe("snapDeskMins + durationHintCounts + completeNextMoment", () => {
+  it("accroche 25 min sur 30 (plus proche)", () => {
+    expect(snapDeskMins(25)).toBe(30);
+    expect(snapDeskMins(5)).toBe(5);
+    expect(snapDeskMins(20)).toBe(15);
+    expect(snapDeskMins(30)).toBe(30);
+  });
+
+  it("compte les pastilles sur les durées encore ouvertes", () => {
+    expect(
+      durationHintCounts([
+        { label: "A", mins: 25 },
+        { label: "B", mins: 25, done: true },
+        { label: "C", mins: 25 },
+        { label: "Sortie", mode: "sortie" },
+      ]),
+    ).toEqual({ 30: 2 });
+  });
+
+  it("valide le prochain moment (préfère le mode de la séance)", () => {
+    const next = completeNextMoment(
       [
-        { label: "Relancer Laura", match: "Laura" },
-        { label: "Loyer", mode: "regulier" },
+        { label: "Relancer Laura", mins: 15, mode: "desk" },
+        { label: "Loyer", mins: 15, mode: "regulier" },
       ],
-      ["Relancer Laura — message"],
+      "regulier",
     );
+    expect(next?.[0].done).toBeFalsy();
+    expect(next?.[1].done).toBe(true);
+  });
+
+  it("valide le premier ouvert si pas de mode préféré", () => {
+    const next = completeNextMoment([
+      { label: "A", mins: 15 },
+      { label: "B", mins: 15 },
+    ]);
     expect(next?.[0].done).toBe(true);
     expect(next?.[1].done).toBeFalsy();
   });

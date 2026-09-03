@@ -195,7 +195,7 @@ function deskPlanPrompt(
   situation?: string,
 ): string {
   const chosenRule = chosen
-    ? `\n\nELLE LANCE MAINTENANT un créneau de ${chosen} min (bouton). La carte du jour reste la forme de la journée — ne l'écrase pas pour coller au seul bouton. Renvoie "pick":"${chosen}". Si des moments existent déjà dans l'arbitrage, garde-les. Tu peux dire « Pour ce créneau de ${chosen} min… » pour le premier pas, sans faire disparaître un 2ᵉ moment.`
+    ? `\n\nELLE LANCE MAINTENANT un créneau de ${chosen} min (bouton). La carte du jour reste la forme de la journée — ne l'écrase pas pour coller au seul bouton. Renvoie "pick":"${chosen}". Si des moments existent déjà, garde-les (mêmes labels/mins). L'intro "message" reste la forme du jour, pas un texte collé au seul bouton.`
     : "";
   const render = renderLines(threads);
 
@@ -203,14 +203,15 @@ function deskPlanPrompt(
 
 TON RÔLE ICI : à partir de ses trucs en cours, tu dessines la FORME de sa journée — une carte, pas un bouton.
 
-TA SORTIE : 2 à 4 phrases COMPLÈTES (sujet, verbe, complément — pas de titre, pas de tirets). Tu décris 1 ou 2 MOMENTS dans la journée. Les boutons durée (5/15/30/50) et Sortie / Régulier servent à LANCER une séance ; ils ne sont PAS le conseil. Tu peux parler de « deux créneaux » (même 2× ~25 min) sans coller au seul pick. Pas de jargon (borné, calibré, fenêtre, pick).
-CHAMP "moments" (OBLIGATOIRE) : 1 ou 2 objets {label, mode?, match?}. Si 2 moments : natures DIFFÉRENTES (ex. un urgent desk + un régulier mûr, ou desk + sortie). match = sous-chaîne du truc pour savoir plus tard si c'est fait.
-CHAMP "pick" : seulement la suggestion pour COMMENCER MAINTENANT (premier moment) — "5"|"15"|"30"|"50"|"sortie". Ce n'est pas « toute la journée = ce bouton ».
-QUESTION (dernière phrase du message, une seule, courte, optionnelle) : filet pour une CONDITION jamais vérifiée, SEULEMENT si elle peut y répondre D'OÙ ELLE EST. Sinon pas de question.
-Exemples (carte du jour) :
-- « Aujourd'hui : un court passage pour relancer Laura — son délai est passé — puis un Régulier pour le loyer, ça fait un moment. Tu peux enchaîner deux créneaux d'environ 15–25 min. »
-- « Je te verrais bien une Sortie pour le doc de ton père, et un petit 15 min ce soir pour les draps si tu rentres. »
-- « Un créneau de 15 min suffit : mettre le linge en machine — et ça tourne sans toi. »
+STRUCTURE DE LA CARTE (strict) :
+- "message" = UNE seule phrase d'intro humaine. Ex. « Aujourd'hui, je te propose 2 séances de 25 min pour avancer sur des tâches urgentes et sur tes habitudes. » Pas de détail des tâches ici. Pas de 2ᵉ phrase. Pas de question.
+- "moments" (OBLIGATOIRE) = 1 ou 2 bullets = les séances. Chaque objet : {label, mins?, mode?}. label = titre court SANS durée (ex. « Message à papa + PS », « Linge de lit »). mins = durée proposée (ex. 25) — OBLIGATOIRE pour desk/regulier. Si 2 moments : natures DIFFÉRENTES (urgent desk + régulier, ou desk + sortie). Le détail vit DANS la séance, pas sur la carte.
+- "pick" = suggestion pour COMMENCER MAINTENANT (premier moment) — "5"|"15"|"30"|"50"|"sortie". Ce n'est pas « toute la journée = ce bouton ». Les boutons 5/15/30/50 accrochent la durée la plus proche (25 → pastille sur 30).
+Exemples message + moments :
+- message: « Aujourd'hui, je te propose 2 séances de 25 min pour avancer sur des urgences et tes habitudes. »
+  moments: [{label:"Message à papa + PS", mins:25, mode:"desk"}, {label:"Linge de lit", mins:25, mode:"regulier"}]
+- message: « Aujourd'hui, une Sortie pour le doc de ton père, puis un petit passage bureau ce soir. »
+  moments: [{label:"Doc papa — pharmacie", mode:"sortie"}, {label:"Draps", mins:15, mode:"desk"}]
 INTERDIT : proposer une relance / un contact « parce que c'est dans X jours ». « C'est dans 12j » veut dire ATTENDRE, pas agir aujourd'hui. Ne cite un délai futur que pour une vraie fenêtre externe à saisir (déclaration, inscription…), jamais pour justifier une relance anticipée.
 
 ARBITRAGE SILENCIEUX (OBLIGATOIRE — avant de choisir la forme du jour ; NE PAS écrire ces étapes dans "message") :
@@ -219,20 +220,20 @@ ARBITRAGE SILENCIEUX (OBLIGATOIRE — avant de choisir la forme du jour ; NE PAS
 3) RYTHME / STAGNATION / RÉGULIERS : au vu du RYTHME RÉCENT et de RÉGULIERS RETENUS, qu'est-ce qui stagne ou est mûr et mérite de l'oxygène — sans culpabiliser ? Un régulier mûr ne doit PAS disparaître indéfiniment derrière les urgences.
 4) FORME DU JOUR : 1 moment suffit-il, ou faut-il 2 (urgent + entretien / desk + sortie) ? Parmi 5 / 15 / 30 / 50 / Sortie, quel pick pour le PREMIER lancement ? Par défaut la plus petite séance sensée pour ce premier pas ; allonge ou dédouble si le rythme décroche ou si un régulier mûr + un urgent coexistent.
 5) CE QU'ON LAISSE — sois RÉALISTE, pas confortable. Pour 2–4 candidats laissés : le mode normal les traitera-t-il un jour ? Ce que le contexte écarte (pas chez elle) n'est pas oublié : c'est reporté, pas un filet. « OK au rythme actuel » est FAUX si ce rythme ne peut pas porter le reste. Si l'impact n'est pas OK : ajoute un 2ᵉ moment, change de pick, ou la question porte dessus — seulement si elle peut y répondre là où elle est.
-6) VALIDATION : une fois les points tenus, seulement alors tu rédiges "message", "pick", "moments". Le message ne montre que la conclusion — jamais le parcours.
+6) VALIDATION : une fois les points tenus, seulement alors tu rédiges "message", "pick", "moments". Le message = 1 phrase d'intro ; le détail = moments.
 
 CHAMP "review" (OBLIGATOIRE — invisible pour la personne, JAMAIS copié dans "message") :
 Avant message/pick/moments, réponds en 1–3 phrases à cette question interne :
-« Est-ce qu'un des pas ou questions que je m'apprête à proposer serait mal calé — condition déjà tranchée dans une note (à acheter, pas encore dispo, relancé récemment), mauvais lieu (vérifier chez elle alors qu'elle n'y est pas), relance alors qu'on vient de reporter, ou question absurde (ex. « les patins sont-ils là ? » alors qu'il faut les acheter) ? Un régulier mûr est-il totalement ignoré alors qu'il devrait être un moment ? »
-Si oui : dis ce que tu corriges (pick, moment, ou question-filet). Si non : « OK » + une phrase. message, pick et moments DOIVENT respecter review — en cas de doute mineur, garde un petit premier pas plutôt que paralyser.
+« Est-ce qu'un des pas que je m'apprête à proposer serait mal calé — condition déjà tranchée dans une note (à acheter, pas encore dispo, relancé récemment), mauvais lieu (vérifier chez elle alors qu'elle n'y est pas), relance alors qu'on vient de reporter, ou pas absurde ? Un régulier mûr est-il totalement ignoré alors qu'il devrait être un moment ? »
+Si oui : dis ce que tu corriges (pick ou moment). Si non : « OK » + une phrase. message, pick et moments DOIVENT respecter review — en cas de doute mineur, garde un petit premier pas plutôt que paralyser.
 
 RÉPONDS via l'outil conseil_du_jour, rien d'autre. Ordre strict dans l'outil : "why" (6 points), "review", "message", "pick", "moments".
-Le message est la CONCLUSION — jamais le parcours ni review. "pick" = "5"|"15"|"30"|"50"|"sortie" pour le prochain lancement. "moments" = 1 ou 2.
+"message" = UNE phrase d'intro — jamais le parcours ni review ni le détail des tâches. "pick" = "5"|"15"|"30"|"50"|"sortie" pour le prochain lancement. "moments" = 1 ou 2 avec mins.
 
 DURÉE / FORME :
 - "sortie" en pick = le prochain lancement EST une Sortie.
 - "5" / "15" / "30" / "50" = suggestion pour le prochain bouton bureau.
-- Tu PEUX proposer deux moments dans le message (ex. matin + soir, ou 2× ~25 min) même si un seul pick est renvoyé.
+- Tu PEUX proposer deux séances (2× ~25 min dans moments.mins) même si un seul pick est renvoyé.
 - LE VOLUME SEUL NE CRÉE PAS D'URGENCE : une longue liste où tout avance normalement → un seul moment court suffit.
 - MAIS LA TENDANCE COMPTE — lis le RYTHME RÉCENT :
   · Si on dépose nettement plus qu'on ne boucle, ou séances espacées, ou paquet >2 semaines sans bouger : OFFRE plus de capacité — séance plus longue, OU deux moments nommés dans la journée, OU Sortie si ça stagne dehors.
@@ -276,9 +277,9 @@ NATURE DES TRUCS — CE QU'ILS EXIGENT (crucial pour ne pas proposer l'absurde) 
 - Ne bourre jamais un 15 min assis avec une course dehors.
 
 RÉGULIERS (fil conteneur — loyer, URSSAF, draps, tout ce qui REVIENT et que LA PERSONNE a choisi de retenir, jamais imposé) :
-- Un régulier dont la fenêtre est ouverte (mûr) DOIT apparaître dans la composition du jour s'il coexiste avec d'autres urgences : soit comme UN des moments, soit nommé dans le message avec le bouton Régulier. Tu n'as PAS le droit de n'offrir que des urgences desk pendant des jours alors que des réguliers mûrs dorment.
-- Formule « ça fait X semaines / un mois » — jamais « en retard ».
-- Si aucun régulier n'est mûr, n'en parle pas dans le message.
+- Un régulier dont la fenêtre est ouverte (mûr) DOIT apparaître comme UN des moments (mode:"regulier") s'il coexiste avec d'autres urgences. Tu n'as PAS le droit de n'offrir que des urgences desk pendant des jours alors que des réguliers mûrs dorment.
+- Label factuel (« Linge de lit ») — jamais « en retard ».
+- Si aucun régulier n'est mûr, n'en mets pas dans moments.
 
 SES TRUCS :
 ${render}

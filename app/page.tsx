@@ -89,7 +89,6 @@ import { trucLabels } from "@/lib/emphasize-truc";
 import {
   backlogCounts,
   hasReguliersContainer,
-  reguliersDueFromThreads,
 } from "@/lib/entretiens";
 import {
   readRitualLaunch,
@@ -98,10 +97,12 @@ import {
   type RitualLaunch,
 } from "@/lib/ritual-pending";
 import {
+  completeNextMoment,
   dayPlanMatches,
   dayPlanPileMatches,
+  durationHintCounts,
   isDayPlanContext,
-  markMomentsProgress,
+  modeHintSet,
   planDateKey,
   shouldAutoFetchPlan,
   slotOf,
@@ -440,38 +441,13 @@ export default function Home() {
       out.push({
         label: o.label.trim().slice(0, 80),
         ...(mode ? { mode } : {}),
-        ...(typeof o.match === "string" && o.match.trim()
-          ? { match: o.match.trim().slice(0, 80) }
+        ...(typeof o.mins === "number" && o.mins > 0
+          ? { mins: Math.round(o.mins) }
           : {}),
       });
     }
     return out.length > 0 ? out : undefined;
   }
-
-  /** Coche les moments quand des trucs matching sont faits (séance ou chat). */
-  useEffect(() => {
-    if (!ready || !isDayPlanContext(context)) return;
-    const cached = readDayPlan();
-    const slot = todaySlot(cached, context);
-    if (!slot?.moments?.length) return;
-    const doneLabels = threads
-      .filter((t) => t.status === "done")
-      .map((t) => t.text);
-    const next = markMomentsProgress(slot.moments, doneLabels);
-    if (!next || next === slot.moments) return;
-    writeDayPlan(
-      upsertDayPlanSlot(
-        cached,
-        cached?.sig ?? planSig,
-        context,
-        { ...slot, moments: next },
-        planDateKey(),
-      ),
-    );
-    setPlan((prev) =>
-      prev ? { ...prev, moments: next } : prev,
-    );
-  }, [ready, threads, context, planSig]);
 
   useEffect(() => {
     if (!ready) return;
@@ -911,12 +887,46 @@ export default function Home() {
           (t) => t.status === "done" && t.touchedAt && t.touchedAt >= start,
         ).length
       : 0;
+    const sessionCtx = context;
+    // Valider le prochain moment de la carte du jour (séance ≠ tâches).
+    let momentsStillOpen = false;
+    if (sessionCtx !== "deposer") {
+      const cached = readDayPlan();
+      const slot = todaySlot(cached, "desk");
+      if (slot?.moments?.length) {
+        const prefer =
+          sessionCtx === "sortie" ||
+          sessionCtx === "courses" ||
+          sessionCtx === "regulier" ||
+          sessionCtx === "desk"
+            ? sessionCtx
+            : undefined;
+        const next = completeNextMoment(slot.moments, prefer);
+        if (next) {
+          writeDayPlan(
+            upsertDayPlanSlot(
+              cached,
+              cached?.sig ?? planSig,
+              "desk",
+              { ...slot, moments: next },
+              planDateKey(),
+            ),
+          );
+          setPlan((prev) => (prev ? { ...prev, moments: next } : prev));
+          momentsStillOpen = next.some((m) => !m.done);
+        }
+      }
+    }
     clearActiveSession();
     setResume(null);
     setContext("desk");
     planCtxRef.current = "desk";
-    skipPlanCacheOnceRef.current = true;
-    setPlanRecoveryTick((t) => t + 1);
+    // S'il reste des séances sur la carte, on garde la progression ;
+    // sinon on rafraîchit le conseil (comportement après séance).
+    if (!momentsStillOpen) {
+      skipPlanCacheOnceRef.current = true;
+      setPlanRecoveryTick((t) => t + 1);
+    }
     setView("home");
     setRitualBrief(null);
     sessionBriefRef.current = null;
@@ -1567,71 +1577,10 @@ export default function Home() {
               <div
                 className={`mt-4 rounded-xl border px-4 py-3 ${
                   planStale && !planLoading
-                    ? "border-amber/40 bg-amber/10"
+                    ? "border-teal/25 bg-sink"
                     : "border-teal-soft bg-teal-soft/50"
                 }`}
               >
-                <div className="mb-1.5 flex items-center gap-2">
-                  <span
-                    className={`h-2 w-2 rounded-full ${
-                      planStale && !planLoading ? "bg-amber" : "bg-teal"
-                    } ${planLoading ? "animate-breathe" : ""}`}
-                  />
-                  <span
-                    className={`text-xs font-medium tracking-wide ${
-                      planStale && !planLoading ? "text-amber" : "text-teal"
-                    }`}
-                  >
-                    {planLoading
-                      ? context === "desk"
-                        ? plan?.message
-                          ? "Mise à jour du conseil…"
-                          : "Élan réfléchit à ta journée…"
-                        : context === "regulier"
-                          ? "Élan regarde tes réguliers…"
-                          : context === "deposer"
-                            ? "Élan t'attend…"
-                            : "Élan regarde ce qu'il y a dehors…"
-                      : planStale
-                        ? "Le conseil n'est plus à jour"
-                        : "Élan te conseille pour aujourd'hui"}
-                  </span>
-                </div>
-                {plan?.moments && plan.moments.length > 0 && !planLoading ? (
-                  <ul className="mb-2 space-y-1">
-                    {plan.moments.map((m, i) => (
-                      <li
-                        key={`${m.label}-${i}`}
-                        className={`flex items-start gap-2 text-[13px] ${
-                          m.done ? "text-faint line-through" : "text-teal-ink"
-                        }`}
-                      >
-                        <span
-                          className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
-                            m.done ? "bg-faint" : "bg-teal"
-                          }`}
-                          aria-hidden
-                        />
-                        <span>
-                          {m.label}
-                          {m.mode && m.mode !== "desk" ? (
-                            <span className="text-faint">
-                              {" "}
-                              ·{" "}
-                              {m.mode === "regulier"
-                                ? "Régulier"
-                                : m.mode === "sortie"
-                                  ? "Sortie"
-                                  : m.mode === "courses"
-                                    ? "Courses"
-                                    : m.mode}
-                            </span>
-                          ) : null}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
                 {planLoading && !plan?.message ? (
                   <div className="flex flex-col gap-1.5 py-0.5">
                     <span className="h-3 w-4/5 animate-pulse rounded bg-teal/15" />
@@ -1658,12 +1607,64 @@ export default function Home() {
                     trucs={trucs}
                   />
                 )}
+                {planLoading && !plan?.moments?.length ? null : plan?.moments &&
+                  plan.moments.length > 0 ? (
+                  <ul className="mt-2.5 space-y-1.5">
+                    {plan.moments.map((m, i) => {
+                      const minsLabel =
+                        typeof m.mins === "number" && m.mins > 0
+                          ? `${m.mins} min`
+                          : m.mode === "sortie"
+                            ? "Sortie"
+                            : m.mode === "courses"
+                              ? "Courses"
+                              : m.mode === "regulier"
+                                ? "Régulier"
+                                : null;
+                      return (
+                        <li
+                          key={`${m.label}-${i}`}
+                          className={`flex items-start gap-2 text-[13px] leading-snug ${
+                            m.done ? "text-faint line-through" : "text-ink"
+                          }`}
+                        >
+                          <span
+                            className={`mt-0.5 shrink-0 font-medium tabular-nums ${
+                              m.done ? "text-faint" : "text-muted"
+                            }`}
+                            aria-hidden
+                          >
+                            —
+                          </span>
+                          <span>
+                            {minsLabel ? (
+                              <span
+                                className={
+                                  m.done ? "text-faint" : "font-medium text-ink"
+                                }
+                              >
+                                {minsLabel}
+                              </span>
+                            ) : null}
+                            {minsLabel ? " · " : null}
+                            {m.label}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+                {planStale && !planLoading ? (
+                  <p className="mt-2 text-[12px] leading-relaxed text-muted">
+                    Le conseil n&apos;est plus à jour — ta pile a bougé.
+                  </p>
+                ) : null}
                 {planStale && aiOn && context !== "deposer" ? (
                   <button
                     type="button"
                     onClick={() => requestPlanRefresh()}
                     disabled={planLoading}
-                    className="mt-3 w-full rounded-xl bg-amber py-2.5 text-center font-display text-[15px] font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
+                    className="mt-2.5 w-full rounded-xl border border-teal/30 bg-surface py-2.5 text-center font-display text-[15px] font-semibold text-teal transition hover:bg-teal-soft/60 disabled:opacity-60"
                   >
                     {planLoading
                       ? "Mise à jour…"
@@ -1694,7 +1695,8 @@ export default function Home() {
                 context={context}
                 onPickDuration={pickDuration}
                 onPickContext={pickContext}
-                regulierDue={reguliersDueFromThreads(openThreads).length > 0}
+                durationHints={durationHintCounts(plan?.moments)}
+                modeHints={modeHintSet(plan?.moments)}
               />
             </div>
             <button

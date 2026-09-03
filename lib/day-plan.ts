@@ -4,12 +4,12 @@ import type { SessionContext, Thread } from "./types";
 export type DayPlanContext = Exclude<SessionContext, "deposer">;
 
 export interface DayPlanMoment {
-  /** Court : « Relancer Laura », « Loyer (Régulier) ». */
+  /** Court : « Message à papa », « Draps ». */
   label: string;
   /** Mode suggéré pour ce moment. */
   mode?: DayPlanContext;
-  /** Sous-chaîne pour marquer « fait » quand un truc matching est done. */
-  match?: string;
+  /** Durée proposée en minutes (peut être 25 — on l'accroche au bouton le plus proche). */
+  mins?: number;
   done?: boolean;
 }
 
@@ -78,8 +78,8 @@ function parseMoments(raw: unknown): DayPlanMoment[] | undefined {
     out.push({
       label: o.label.trim().slice(0, 80),
       ...(mode ? { mode } : {}),
-      ...(typeof o.match === "string" && o.match.trim()
-        ? { match: o.match.trim().slice(0, 80) }
+      ...(typeof o.mins === "number" && o.mins > 0
+        ? { mins: Math.round(o.mins) }
         : {}),
       ...(o.done === true ? { done: true } : {}),
     });
@@ -87,35 +87,70 @@ function parseMoments(raw: unknown): DayPlanMoment[] | undefined {
   return out.length > 0 ? out : undefined;
 }
 
-function normMatch(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .replace(/\s+/g, " ")
-    .trim();
+/** Accroche une durée libre (ex. 25) sur le bouton 5 / 15 / 30 / 50 le plus proche. */
+export function snapDeskMins(mins: number): 5 | 15 | 30 | 50 {
+  const opts = [5, 15, 30, 50] as const;
+  let best: 5 | 15 | 30 | 50 = 15;
+  let bestDist = Infinity;
+  for (const n of opts) {
+    const d = Math.abs(n - mins);
+    if (d < bestDist) {
+      best = n;
+      bestDist = d;
+    }
+  }
+  return best;
 }
 
-/** Marque les moments faits quand un libellé done matche label/match. */
-export function markMomentsProgress(
+function momentDeskMins(m: DayPlanMoment): 5 | 15 | 30 | 50 | null {
+  if (m.mode === "sortie" || m.mode === "courses") {
+    return null;
+  }
+  if (typeof m.mins === "number" && m.mins > 0) return snapDeskMins(m.mins);
+  return 15;
+}
+
+/** Combien de pastilles sur chaque bouton durée, pour les moments encore ouverts. */
+export function durationHintCounts(
   moments: DayPlanMoment[] | undefined,
-  doneLabels: string[],
+): Partial<Record<5 | 15 | 30 | 50, number>> {
+  const out: Partial<Record<5 | 15 | 30 | 50, number>> = {};
+  for (const m of moments ?? []) {
+    if (m.done) continue;
+    const n = momentDeskMins(m);
+    if (n == null) continue;
+    out[n] = (out[n] ?? 0) + 1;
+  }
+  return out;
+}
+
+export function modeHintSet(
+  moments: DayPlanMoment[] | undefined,
+): Set<DayPlanContext> {
+  const s = new Set<DayPlanContext>();
+  for (const m of moments ?? []) {
+    if (m.done || !m.mode || m.mode === "desk") continue;
+    s.add(m.mode);
+  }
+  return s;
+}
+
+/** Une séance terminée valide le prochain moment encore ouvert (pas la tâche). */
+export function completeNextMoment(
+  moments: DayPlanMoment[] | undefined,
+  preferMode?: SessionContext,
 ): DayPlanMoment[] | undefined {
   if (!moments?.length) return moments;
-  const done = doneLabels.map(normMatch).filter(Boolean);
-  if (done.length === 0) return moments;
-  let changed = false;
-  const next = moments.map((m) => {
-    if (m.done) return m;
-    const needles = [m.match, m.label].filter(Boolean).map((x) => normMatch(x!));
-    const hit = needles.some((n) =>
-      done.some((d) => d.includes(n) || n.includes(d)),
+  const openIdx = moments.findIndex((m) => !m.done);
+  if (openIdx < 0) return moments;
+  let idx = openIdx;
+  if (preferMode && isDayPlanContext(preferMode)) {
+    const match = moments.findIndex(
+      (m) => !m.done && (m.mode ?? "desk") === preferMode,
     );
-    if (!hit) return m;
-    changed = true;
-    return { ...m, done: true };
-  });
-  return changed ? next : moments;
+    if (match >= 0) idx = match;
+  }
+  return moments.map((m, i) => (i === idx ? { ...m, done: true } : m));
 }
 
 export function parseDayPlan(raw: unknown): DayPlanCache | null {
