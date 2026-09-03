@@ -4,7 +4,7 @@ import {
   completeNextMoment,
   dayPlanMatches,
   dayPlanPileMatches,
-  durationHintCounts,
+  durationHintSet,
   isDayPlanStale,
   planDateKey,
   shouldAutoFetchPlan,
@@ -131,7 +131,7 @@ describe("todaySlot + shouldAutoFetchPlan + isDayPlanStale", () => {
   });
 });
 
-describe("snapDeskMins + durationHintCounts + completeNextMoment", () => {
+describe("snapDeskMins + durationHintSet + completeNextMoment", () => {
   it("accroche 25 min sur 30 (plus proche)", () => {
     expect(snapDeskMins(25)).toBe(30);
     expect(snapDeskMins(5)).toBe(5);
@@ -139,15 +139,15 @@ describe("snapDeskMins + durationHintCounts + completeNextMoment", () => {
     expect(snapDeskMins(30)).toBe(30);
   });
 
-  it("compte les pastilles sur les durées encore ouvertes", () => {
+  it("signale les durées desk sans doubler un régulier", () => {
     expect(
-      durationHintCounts([
+      [...durationHintSet([
         { label: "A", mins: 25 },
         { label: "B", mins: 25, done: true },
-        { label: "C", mins: 25 },
+        { label: "C", mins: 20, mode: "regulier" },
         { label: "Sortie", mode: "sortie" },
-      ]),
-    ).toEqual({ 30: 2 });
+      ])],
+    ).toEqual([30]);
   });
 
   it("valide le prochain moment (préfère le mode de la séance)", () => {

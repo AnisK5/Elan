@@ -103,24 +103,33 @@ export function snapDeskMins(mins: number): 5 | 15 | 30 | 50 {
 }
 
 function momentDeskMins(m: DayPlanMoment): 5 | 15 | 30 | 50 | null {
-  if (m.mode === "sortie" || m.mode === "courses") {
+  // Sortie / courses / régulier → signal sur le bouton mode, pas sur la durée.
+  if (m.mode === "sortie" || m.mode === "courses" || m.mode === "regulier") {
     return null;
   }
   if (typeof m.mins === "number" && m.mins > 0) return snapDeskMins(m.mins);
   return 15;
 }
 
-/** Combien de pastilles sur chaque bouton durée, pour les moments encore ouverts. */
+/** Durées recommandées (moments desk encore ouverts) — un signal par créneau. */
+export function durationHintSet(
+  moments: DayPlanMoment[] | undefined,
+): Set<5 | 15 | 30 | 50> {
+  const out = new Set<5 | 15 | 30 | 50>();
+  for (const m of moments ?? []) {
+    if (m.done) continue;
+    const n = momentDeskMins(m);
+    if (n != null) out.add(n);
+  }
+  return out;
+}
+
+/** @deprecated alias — préférer durationHintSet */
 export function durationHintCounts(
   moments: DayPlanMoment[] | undefined,
 ): Partial<Record<5 | 15 | 30 | 50, number>> {
   const out: Partial<Record<5 | 15 | 30 | 50, number>> = {};
-  for (const m of moments ?? []) {
-    if (m.done) continue;
-    const n = momentDeskMins(m);
-    if (n == null) continue;
-    out[n] = (out[n] ?? 0) + 1;
-  }
+  for (const n of durationHintSet(moments)) out[n] = 1;
   return out;
 }
 

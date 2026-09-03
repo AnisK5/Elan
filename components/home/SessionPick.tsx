@@ -22,8 +22,8 @@ export default function SessionPick({
   context: SessionContext;
   onPickDuration: (d: number) => void;
   onPickContext: (c: "sortie" | "courses" | "regulier" | "deposer") => void;
-  /** Pastilles recommandées par durée (moments encore ouverts). */
-  durationHints?: Partial<Record<5 | 15 | 30 | 50, number>>;
+  /** Durées encore recommandées (sans pastilles flottantes). */
+  durationHints?: ReadonlySet<5 | 15 | 30 | 50>;
   /** Modes hors bureau encore recommandés. */
   modeHints?: ReadonlySet<SessionContext>;
 }) {
@@ -32,57 +32,44 @@ export default function SessionPick({
       <p className="text-[11px] text-faint">Lancer une séance</p>
       <div className="flex min-w-0 w-full rounded-xl bg-sink p-1">
         {DURATIONS.map((d) => {
-          const hints = durationHints?.[d as 5 | 15 | 30 | 50] ?? 0;
+          const selected = context === "desk" && duration === d;
+          const hinted = durationHints?.has(d as 5 | 15 | 30 | 50) ?? false;
           return (
             <button
               key={d}
               type="button"
               onClick={() => onPickDuration(d)}
-              className={`relative min-w-0 flex-1 rounded-lg px-1 py-1.5 text-center text-[13px] font-medium tabular-nums transition sm:px-3 sm:text-sm ${
-                context === "desk" && duration === d
+              className={`min-w-0 flex-1 rounded-lg px-1 py-1.5 text-center text-[13px] font-medium tabular-nums transition sm:px-3 sm:text-sm ${
+                selected
                   ? "bg-surface text-ink shadow-sm"
-                  : "text-muted hover:text-ink"
+                  : hinted
+                    ? "text-teal hover:text-teal-ink"
+                    : "text-muted hover:text-ink"
               }`}
             >
               {d}&nbsp;min
-              {hints > 0 ? (
-                <span
-                  className="pointer-events-none absolute top-1 right-1 flex gap-0.5"
-                  aria-hidden
-                >
-                  {Array.from({ length: Math.min(hints, 2) }, (_, i) => (
-                    <span
-                      key={i}
-                      className="h-1.5 w-1.5 rounded-full bg-teal"
-                    />
-                  ))}
-                </span>
-              ) : null}
             </button>
           );
         })}
       </div>
       <div className="flex min-w-0 w-full rounded-xl bg-sink p-1">
         {CONTEXTS.map(({ id, label }) => {
-          const hinted = modeHints?.has(id) ?? false;
+          const selected = context === id;
+          const hinted = (modeHints?.has(id) ?? false) && !selected;
           return (
             <button
               key={id}
               type="button"
               onClick={() => onPickContext(id)}
-              className={`relative min-w-0 flex-1 rounded-lg px-1 py-1.5 text-center text-[13px] font-medium transition sm:px-2 sm:text-sm ${
-                context === id
+              className={`min-w-0 flex-1 rounded-lg px-1 py-1.5 text-center text-[13px] font-medium transition sm:px-2 sm:text-sm ${
+                selected
                   ? "bg-surface text-ink shadow-sm"
-                  : "text-muted hover:text-ink"
+                  : hinted
+                    ? "text-teal hover:text-teal-ink"
+                    : "text-muted hover:text-ink"
               }`}
             >
               {label}
-              {hinted && context !== id ? (
-                <span
-                  className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-teal"
-                  aria-hidden
-                />
-              ) : null}
             </button>
           );
         })}

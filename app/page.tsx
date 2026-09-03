@@ -100,7 +100,7 @@ import {
   completeNextMoment,
   dayPlanMatches,
   dayPlanPileMatches,
-  durationHintCounts,
+  durationHintSet,
   isDayPlanContext,
   modeHintSet,
   planDateKey,
@@ -657,10 +657,19 @@ export default function Home() {
       return;
     }
     if (context === "deposer") {
+      // Carte du jour découplée : Déposer ne remplace pas le conseil.
       planCtxRef.current = "deposer";
       planReq.current += 1;
-      setPlan({ message: DEPOSER_PLAN_MESSAGE, pick: "15" });
       setPlanLoading(false);
+      const desk = todaySlot(readDayPlan(), "desk");
+      if (desk) {
+        setPlan({
+          message: desk.message,
+          pick: desk.pick,
+          moments: desk.moments,
+        });
+        planChatLenRef.current = desk.chatLen ?? 0;
+      }
       setPlanStale(false);
       return;
     }
@@ -962,6 +971,21 @@ export default function Home() {
     durationSettled.current = true;
     appliedSig.current = planSig;
     manualPickSig.current = planSig;
+    // Revenir de Déposer / autre mode : restaurer la carte du jour.
+    const slot = todayPlanSlot("desk");
+    if (slot) {
+      setPlan({
+        message: slot.message,
+        pick: slot.pick,
+        moments: slot.moments,
+      });
+      planChatLenRef.current = slot.chatLen ?? 0;
+      const fresh = cachedPlanSlot("desk");
+      const chatStale = chatUserCount() > planChatLenRef.current;
+      setPlanStale(!(fresh && !chatStale));
+      setPlanLoading(false);
+      setPlanUnreachable(false);
+    }
   }
 
   function startDeposer() {
@@ -979,8 +1003,17 @@ export default function Home() {
     durationSettled.current = true;
     appliedSig.current = planSig;
     if (ctx === "deposer") {
-      setPlan({ message: DEPOSER_PLAN_MESSAGE, pick: "15" });
+      // Garde la carte du jour ; seul le CTA passe en Déposer.
       setPlanLoading(false);
+      const desk = todayPlanSlot("desk");
+      if (desk) {
+        setPlan({
+          message: desk.message,
+          pick: desk.pick,
+          moments: desk.moments,
+        });
+        planChatLenRef.current = desk.chatLen ?? 0;
+      }
       setPlanStale(false);
       return;
     }
@@ -1011,8 +1044,15 @@ export default function Home() {
     planCtxRef.current = ctx;
     if (ctx === "deposer") {
       planReq.current += 1;
-      setPlan({ message: DEPOSER_PLAN_MESSAGE, pick: "15" });
       setPlanLoading(false);
+      const desk = todayPlanSlot("desk");
+      if (desk) {
+        setPlan({
+          message: desk.message,
+          pick: desk.pick,
+          moments: desk.moments,
+        });
+      }
       return;
     }
     if (openThreads.length === 0 && ctx === "desk") return;
@@ -1575,16 +1615,38 @@ export default function Home() {
 
             {showPlanBlock ? (
               <div
-                className={`mt-4 rounded-xl border px-4 py-3 ${
+                className={`mt-4 rounded-xl border px-4 py-3 shadow-sm ${
                   planStale && !planLoading
-                    ? "border-teal/25 bg-sink"
-                    : "border-teal-soft bg-teal-soft/50"
+                    ? "border-teal/20 bg-teal-soft/35"
+                    : "border-teal/15 bg-teal-soft"
                 }`}
               >
+                <div className="mb-2 flex items-center gap-2">
+                  <span
+                    className={`h-2 w-2 rounded-full bg-teal ${
+                      planLoading ? "animate-breathe" : ""
+                    }`}
+                  />
+                  <span className="text-xs font-medium tracking-wide text-teal">
+                    {planLoading
+                      ? context === "desk"
+                        ? plan?.message
+                          ? "Mise à jour du conseil…"
+                          : "Élan réfléchit à ta journée…"
+                        : context === "regulier"
+                          ? "Élan regarde tes réguliers…"
+                          : context === "deposer"
+                            ? "Élan te conseille pour aujourd'hui"
+                            : "Élan regarde ce qu'il y a dehors…"
+                      : planStale
+                        ? "Conseil à rafraîchir"
+                        : "Élan te conseille pour aujourd'hui"}
+                  </span>
+                </div>
                 {planLoading && !plan?.message ? (
                   <div className="flex flex-col gap-1.5 py-0.5">
-                    <span className="h-3 w-4/5 animate-pulse rounded bg-teal/15" />
-                    <span className="h-3 w-3/5 animate-pulse rounded bg-teal/15" />
+                    <span className="h-3 w-4/5 animate-pulse rounded bg-teal/20" />
+                    <span className="h-3 w-3/5 animate-pulse rounded bg-teal/20" />
                   </div>
                 ) : plan?.message ? (
                   <div className={planLoading ? "opacity-70" : "animate-rise"}>
@@ -1625,12 +1687,12 @@ export default function Home() {
                         <li
                           key={`${m.label}-${i}`}
                           className={`flex items-start gap-2 text-[13px] leading-snug ${
-                            m.done ? "text-faint line-through" : "text-ink"
+                            m.done ? "text-faint line-through" : "text-teal-ink"
                           }`}
                         >
                           <span
-                            className={`mt-0.5 shrink-0 font-medium tabular-nums ${
-                              m.done ? "text-faint" : "text-muted"
+                            className={`mt-0.5 shrink-0 font-medium ${
+                              m.done ? "text-faint" : "text-teal/70"
                             }`}
                             aria-hidden
                           >
@@ -1640,7 +1702,9 @@ export default function Home() {
                             {minsLabel ? (
                               <span
                                 className={
-                                  m.done ? "text-faint" : "font-medium text-ink"
+                                  m.done
+                                    ? "text-faint"
+                                    : "font-medium text-teal-ink"
                                 }
                               >
                                 {minsLabel}
@@ -1656,7 +1720,7 @@ export default function Home() {
                 ) : null}
                 {planStale && !planLoading ? (
                   <p className="mt-2 text-[12px] leading-relaxed text-muted">
-                    Le conseil n&apos;est plus à jour — ta pile a bougé.
+                    Ta pile a bougé depuis ce conseil.
                   </p>
                 ) : null}
                 {planStale && aiOn && context !== "deposer" ? (
@@ -1664,7 +1728,7 @@ export default function Home() {
                     type="button"
                     onClick={() => requestPlanRefresh()}
                     disabled={planLoading}
-                    className="mt-2.5 w-full rounded-xl border border-teal/30 bg-surface py-2.5 text-center font-display text-[15px] font-semibold text-teal transition hover:bg-teal-soft/60 disabled:opacity-60"
+                    className="mt-2.5 w-full rounded-xl bg-teal py-2.5 text-center font-display text-[15px] font-semibold text-white transition hover:bg-teal-ink disabled:opacity-60"
                   >
                     {planLoading
                       ? "Mise à jour…"
@@ -1695,7 +1759,7 @@ export default function Home() {
                 context={context}
                 onPickDuration={pickDuration}
                 onPickContext={pickContext}
-                durationHints={durationHintCounts(plan?.moments)}
+                durationHints={durationHintSet(plan?.moments)}
                 modeHints={modeHintSet(plan?.moments)}
               />
             </div>
