@@ -6,6 +6,7 @@ import { Logo } from "@/components/home/Branding";
 
 const TABS = [
   { href: "/admin", label: "Utilisateurs" },
+  { href: "/admin/product", label: "Produit" },
   { href: "/admin/analytics", label: "Monitoring" },
   { href: "/admin/feedbacks", label: "Retours" },
   { href: "/admin/settings", label: "Réglages IA" },

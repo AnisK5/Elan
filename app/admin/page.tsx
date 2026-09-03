@@ -86,7 +86,12 @@ export default function AdminPage() {
         Utilisateurs
       </h2>
       <p className="mt-1 text-[15px] leading-relaxed text-muted">
-        Rétention, séances, parcours — clique sur une personne pour le détail.
+        Liste et fiches — pour les courbes (rétention, temps, acquisition),
+        ouvre{" "}
+        <Link href="/admin/product" className="text-teal hover:underline">
+          Produit
+        </Link>
+        .
       </p>
 
       {error === "auth" && (
