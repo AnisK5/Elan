@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useCallback, useMemo } from "react";
 import type { AdminAnalyticsSnapshot, UserTokenRow } from "@/lib/admin-analytics";
 import { formatEur } from "@/lib/anthropic-pricing";
-import { formatTokensWithEur } from "@/lib/token-display";
 import {
   CategoryChart,
   HourHeatmap,
@@ -176,6 +175,7 @@ export default function UsageMonitorDashboard({
           total: r.total,
           costEur: r.costEur,
           calls: r.calls,
+          planCalls: r.route === "plan" ? r.calls : 0,
         }));
     }
     return mon.hourly.map((h) => ({
@@ -183,6 +183,7 @@ export default function UsageMonitorDashboard({
       total: h.total,
       costEur: h.costEur,
       calls: h.calls,
+      planCalls: h.byRoute.plan ?? 0,
     }));
   }, [mon.hourly, mon.hourlyByRoute, filters.route]);
 
@@ -279,13 +280,20 @@ export default function UsageMonitorDashboard({
                 hint: `~${t.costUsd.toFixed(2)} $ · ${data.filters.days} j`,
               },
               {
-                label: "Tokens",
-                value: formatTokensWithEur(t.totalTokens, t.costEur),
-                hint: `${t.inputTokens.toLocaleString("fr-FR")} in · ${t.outputTokens.toLocaleString("fr-FR")} out`,
+                label: "Plafond / jour",
+                value:
+                  data.dailyLimitEur > 0
+                    ? formatEur(data.dailyLimitEur)
+                    : "Illimité",
+                hint:
+                  data.dailyTokenLimit > 0
+                    ? `≈ ${Math.round(data.dailyTokenLimit / 1000)}k tok`
+                    : "pas de soft limit",
               },
               {
                 label: "Appels API",
                 value: String(t.apiCalls),
+                hint: `${t.totalTokens.toLocaleString("fr-FR")} tok`,
               },
               {
                 label: "Plans (période)",
@@ -308,19 +316,24 @@ export default function UsageMonitorDashboard({
 
           <section>
             <h3 className="font-display text-lg font-semibold text-ink">
-              Coût &amp; tokens par jour{scopeHint}
+              Coût par jour (€){scopeHint}
             </h3>
             <p className="mt-1 text-[13px] text-muted">
-              Colonnes = tokens · courbe ambre = euros estimés.
+              Axe horizontal = jours · ligne pointillée = plafond journalier
+              estimé.
             </p>
             <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
               <TimeSeriesChart
                 points={data.tokensByDay.map((d) => ({
                   label: fmtDay(d.day),
-                  value: d.total,
-                  costEur: d.costEur,
+                  value: d.costEur,
+                  secondary: d.total,
+                  secondaryLabel: "Tokens",
                 }))}
-                valueLabel="Tokens"
+                valueLabel="Coût (€)"
+                format="eur"
+                limit={data.dailyLimitEur > 0 ? data.dailyLimitEur : undefined}
+                limitLabel="Plafond / j"
                 maxPoints={90}
               />
             </div>
@@ -328,19 +341,21 @@ export default function UsageMonitorDashboard({
 
           <section>
             <h3 className="font-display text-lg font-semibold text-ink">
-              Coût &amp; appels par heure (Paris)
+              Coût par heure (€, Paris)
             </h3>
             <p className="mt-1 text-[13px] text-muted">
-              Repère les rafales — survol pour le détail €.
+              Repère les rafales — survol pour tokens / appels.
             </p>
             <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
               <TimeSeriesChart
                 points={hourlyChartRows.map((r) => ({
                   label: r.label,
-                  value: r.calls,
-                  costEur: r.costEur,
+                  value: r.costEur,
+                  secondary: r.calls,
+                  secondaryLabel: "Appels",
                 }))}
-                valueLabel="Appels"
+                valueLabel="Coût (€)"
+                format="eur"
                 maxPoints={72}
               />
             </div>
@@ -352,19 +367,21 @@ export default function UsageMonitorDashboard({
         <div className="flex flex-col gap-8">
           <section>
             <h3 className="font-display text-lg font-semibold text-ink">
-              Tokens &amp; euros / heure
+              Euros / heure
             </h3>
             <p className="mt-1 text-[13px] text-muted">
-              Colonnes teal = tokens · courbe ambre = coût €.
+              Courbe = coût estimé · colonnes teintées si pic.
             </p>
             <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
               <TimeSeriesChart
                 points={hourlyChartRows.map((r) => ({
                   label: r.label,
-                  value: r.total,
-                  costEur: r.costEur,
+                  value: r.costEur,
+                  secondary: r.total,
+                  secondaryLabel: "Tokens",
                 }))}
-                valueLabel="Tokens"
+                valueLabel="Coût (€)"
+                format="eur"
                 height={260}
                 maxPoints={72}
               />
@@ -372,16 +389,23 @@ export default function UsageMonitorDashboard({
           </section>
           <section>
             <h3 className="font-display text-lg font-semibold text-ink">
-              Appels &amp; euros / heure
+              Plans / heure
             </h3>
+            <p className="mt-1 text-[13px] text-muted">
+              Ligne = plafond plan/heure (bloque Sonnet).
+            </p>
             <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
               <TimeSeriesChart
                 points={hourlyChartRows.map((r) => ({
                   label: r.label,
-                  value: r.calls,
-                  costEur: r.costEur,
+                  value: r.planCalls,
+                  secondary: Math.round(r.costEur * 100) / 100,
+                  secondaryLabel: "€ (approx)",
                 }))}
-                valueLabel="Appels"
+                valueLabel="Plans"
+                format="number"
+                limit={planLimit > 0 ? planLimit : undefined}
+                limitLabel="Plafond / h"
                 height={220}
                 maxPoints={72}
               />

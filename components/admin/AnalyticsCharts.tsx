@@ -5,9 +5,12 @@ import { formatEur } from "@/lib/anthropic-pricing";
 
 export type ChartPoint = {
   label: string;
-  /** Axe principal (tokens, appels…) */
+  /** Série principale (souvent €). */
   value: number;
-  /** Coût en € — affiché en courbe / labels */
+  /** Tokens / appels — tooltip uniquement. */
+  secondary?: number;
+  secondaryLabel?: string;
+  /** @deprecated préférer value = costEur */
   costEur?: number;
 };
 
@@ -25,207 +28,260 @@ function shortNum(n: number): string {
   return String(Math.round(n));
 }
 
-/** Histogramme vertical + courbe € (double axe). */
+/**
+ * Courbe / barres sur axe temps horizontal.
+ * Valeur principale = € (ou autre) ; `limit` = ligne horizontale du plafond.
+ */
 export function TimeSeriesChart({
   points,
-  valueLabel = "Tokens",
+  valueLabel = "Coût (€)",
   height = 220,
   maxPoints = 48,
+  limit,
+  limitLabel = "Plafond",
+  format = "eur",
+  compact = false,
 }: {
   points: ChartPoint[];
   valueLabel?: string;
   height?: number;
   maxPoints?: number;
+  /** Ligne horizontale (même unité que value). 0 / undefined = masquée. */
+  limit?: number;
+  limitLabel?: string;
+  format?: "eur" | "number";
+  /** Sparkline compressée (pas d’axes / légende courte). */
+  compact?: boolean;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const gid = useId();
   const slice = points.slice(-maxPoints);
-  const w = 640;
-  const pad = { t: 16, r: 44, b: 36, l: 40 };
+  const w = compact ? 320 : 640;
+  const pad = compact
+    ? { t: 8, r: 8, b: 18, l: 8 }
+    : { t: 16, r: 16, b: 36, l: 48 };
   const innerW = w - pad.l - pad.r;
   const innerH = height - pad.t - pad.b;
 
-  const maxV = niceMax(Math.max(...slice.map((p) => p.value), 1));
-  const maxC = niceMax(
-    Math.max(...slice.map((p) => p.costEur ?? 0), 0.01),
-  );
-  const hasCost = slice.some((p) => (p.costEur ?? 0) > 0);
+  const primary = (p: ChartPoint) =>
+    format === "eur" && (p.costEur ?? 0) > 0 && p.value === 0
+      ? (p.costEur as number)
+      : p.value;
+
+  const dataMax = Math.max(0, ...slice.map(primary));
+  const limitVal = limit != null && limit > 0 ? limit : 0;
+  const maxV = niceMax(Math.max(dataMax, limitVal, format === "eur" ? 0.01 : 1));
+
+  const fmt = (n: number) =>
+    format === "eur" ? formatEur(n) : shortNum(n);
 
   const n = Math.max(slice.length, 1);
-  const gap = n > 24 ? 2 : n > 12 ? 4 : 6;
-  const barW = Math.max(3, (innerW - gap * (n - 1)) / n);
+  const gap = compact ? 1 : n > 24 ? 2 : n > 12 ? 4 : 6;
+  const barW = Math.max(compact ? 2 : 3, (innerW - gap * (n - 1)) / n);
 
   const bars = slice.map((p, i) => {
     const x = pad.l + i * (barW + gap);
-    const h = Math.max(1, (p.value / maxV) * innerH);
+    const v = primary(p);
+    const h = Math.max(v > 0 ? 1 : 0, (v / maxV) * innerH);
     const y = pad.t + innerH - h;
-    return { ...p, x, y, h, i };
+    const over = limitVal > 0 && v > limitVal;
+    return { ...p, v, x, y, h, i, over };
   });
 
-  const linePts = hasCost
-    ? bars
-        .map((b) => {
-          const cx = b.x + barW / 2;
-          const cy =
-            pad.t + innerH - ((b.costEur ?? 0) / maxC) * innerH;
-          return `${cx},${cy}`;
-        })
-        .join(" ")
-    : "";
+  const linePts = bars
+    .map((b) => {
+      const cx = b.x + barW / 2;
+      const cy = pad.t + innerH - (b.v / maxV) * innerH;
+      return `${cx},${cy}`;
+    })
+    .join(" ");
 
-  const areaD = hasCost
-    ? (() => {
-        const pts = bars.map((b) => {
-          const cx = b.x + barW / 2;
-          const cy =
-            pad.t + innerH - ((b.costEur ?? 0) / maxC) * innerH;
-          return [cx, cy] as const;
-        });
-        if (pts.length === 0) return "";
-        const first = pts[0];
-        const last = pts[pts.length - 1];
-        const top = pts.map(([x, y]) => `${x},${y}`).join(" L ");
-        return `M ${first[0]},${pad.t + innerH} L ${top} L ${last[0]},${pad.t + innerH} Z`;
-      })()
-    : "";
+  const areaD = (() => {
+    const pts = bars.map((b) => {
+      const cx = b.x + barW / 2;
+      const cy = pad.t + innerH - (b.v / maxV) * innerH;
+      return [cx, cy] as const;
+    });
+    if (pts.length === 0) return "";
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    const top = pts.map(([x, y]) => `${x},${y}`).join(" L ");
+    return `M ${first[0]},${pad.t + innerH} L ${top} L ${last[0]},${pad.t + innerH} Z`;
+  })();
+
+  const limitY =
+    limitVal > 0 ? pad.t + innerH - (limitVal / maxV) * innerH : null;
 
   const tip = hover != null ? bars[hover] : null;
-  const labelStep = n > 20 ? Math.ceil(n / 8) : n > 10 ? 2 : 1;
+  const labelStep = compact
+    ? Math.ceil(n / 4)
+    : n > 20
+      ? Math.ceil(n / 8)
+      : n > 10
+        ? 2
+        : 1;
 
   return (
     <div className="relative w-full">
-      <div className="mb-2 flex flex-wrap items-center gap-3 text-[11px] text-muted">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-teal" />
-          {valueLabel}
-        </span>
-        {hasCost ? (
+      {!compact ? (
+        <div className="mb-2 flex flex-wrap items-center gap-3 text-[11px] text-muted">
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-0.5 w-4 bg-amber" />
-            Coût (€)
+            <span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber" />
+            {valueLabel}
           </span>
-        ) : null}
-      </div>
+          {limitVal > 0 ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className="inline-block h-0 w-4 border-t border-dashed border-teal"
+                style={{ borderTopWidth: 2 }}
+              />
+              {limitLabel} ({fmt(limitVal)})
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       <svg
         viewBox={`0 0 ${w} ${height}`}
         className="h-auto w-full"
         role="img"
-        aria-label={`${valueLabel} et coût dans le temps`}
+        aria-label={`${valueLabel} dans le temps`}
       >
         <defs>
           <linearGradient id={`${gid}-area`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--color-amber)" stopOpacity="0.28" />
+            <stop offset="0%" stopColor="var(--color-amber)" stopOpacity="0.32" />
             <stop offset="100%" stopColor="var(--color-amber)" stopOpacity="0.02" />
           </linearGradient>
         </defs>
-        {[0, 0.25, 0.5, 0.75, 1].map((t) => {
-          const y = pad.t + innerH * (1 - t);
-          return (
-            <g key={t}>
-              <line
-                x1={pad.l}
-                x2={w - pad.r}
-                y1={y}
-                y2={y}
-                stroke="var(--color-line)"
-                strokeWidth="1"
-              />
-              <text
-                x={pad.l - 6}
-                y={y + 3}
-                textAnchor="end"
-                fill="var(--color-faint)"
-                fontSize="9"
-              >
-                {shortNum(maxV * t)}
-              </text>
-              {hasCost ? (
-                <text
-                  x={w - pad.r + 6}
-                  y={y + 3}
-                  textAnchor="start"
-                  fill="var(--color-amber)"
-                  fontSize="9"
-                >
-                  {formatEur(maxC * t)}
-                </text>
-              ) : null}
-            </g>
-          );
-        })}
+        {!compact
+          ? [0, 0.25, 0.5, 0.75, 1].map((t) => {
+              const y = pad.t + innerH * (1 - t);
+              return (
+                <g key={t}>
+                  <line
+                    x1={pad.l}
+                    x2={w - pad.r}
+                    y1={y}
+                    y2={y}
+                    stroke="var(--color-line)"
+                    strokeWidth="1"
+                  />
+                  <text
+                    x={pad.l - 6}
+                    y={y + 3}
+                    textAnchor="end"
+                    fill="var(--color-faint)"
+                    fontSize="9"
+                  >
+                    {fmt(maxV * t)}
+                  </text>
+                </g>
+              );
+            })
+          : null}
         {bars.map((b) => (
           <rect
             key={b.i}
             x={b.x}
             y={b.y}
             width={barW}
-            height={b.h}
+            height={Math.max(b.h, 0)}
             rx={Math.min(3, barW / 2)}
-            fill="var(--color-teal)"
-            opacity={hover == null || hover === b.i ? 0.92 : 0.35}
+            fill={b.over ? "var(--color-amber)" : "var(--color-teal)"}
+            opacity={
+              b.v <= 0
+                ? 0.12
+                : hover == null || hover === b.i
+                  ? b.over
+                    ? 0.95
+                    : 0.75
+                  : 0.3
+            }
             className="cursor-pointer transition-opacity"
             onMouseEnter={() => setHover(b.i)}
             onMouseLeave={() => setHover(null)}
           />
         ))}
-        {hasCost && areaD ? (
+        {areaD ? (
           <path d={areaD} fill={`url(#${gid}-area)`} pointerEvents="none" />
         ) : null}
-        {hasCost && linePts ? (
+        {linePts ? (
           <polyline
             points={linePts}
             fill="none"
             stroke="var(--color-amber)"
-            strokeWidth="2.2"
+            strokeWidth={compact ? 1.5 : 2.2}
             strokeLinejoin="round"
             strokeLinecap="round"
             pointerEvents="none"
           />
         ) : null}
-        {hasCost
-          ? bars.map((b) => {
-              const cx = b.x + barW / 2;
-              const cy =
-                pad.t + innerH - ((b.costEur ?? 0) / maxC) * innerH;
-              return (
-                <circle
-                  key={`c-${b.i}`}
-                  cx={cx}
-                  cy={cy}
-                  r={hover === b.i ? 4 : 2.5}
-                  fill="var(--color-amber)"
-                  stroke="var(--color-paper)"
-                  strokeWidth="1"
-                  pointerEvents="none"
-                />
-              );
-            })
-          : null}
-        {bars.map((b) =>
-          b.i % labelStep === 0 || b.i === n - 1 ? (
-            <text
-              key={`l-${b.i}`}
-              x={b.x + barW / 2}
-              y={height - 10}
-              textAnchor="middle"
-              fill="var(--color-faint)"
-              fontSize="9"
-            >
-              {b.label}
-            </text>
-          ) : null,
-        )}
+        {limitY != null ? (
+          <g pointerEvents="none">
+            <line
+              x1={pad.l}
+              x2={w - pad.r}
+              y1={limitY}
+              y2={limitY}
+              stroke="var(--color-teal)"
+              strokeWidth="1.75"
+              strokeDasharray="5 4"
+            />
+            {!compact ? (
+              <text
+                x={w - pad.r}
+                y={limitY - 4}
+                textAnchor="end"
+                fill="var(--color-teal)"
+                fontSize="9"
+                fontWeight="600"
+              >
+                {limitLabel}
+              </text>
+            ) : null}
+          </g>
+        ) : null}
+        {!compact
+          ? bars.map((b) =>
+              b.i % labelStep === 0 || b.i === n - 1 ? (
+                <text
+                  key={`l-${b.i}`}
+                  x={b.x + barW / 2}
+                  y={height - 10}
+                  textAnchor="middle"
+                  fill="var(--color-faint)"
+                  fontSize="9"
+                >
+                  {b.label}
+                </text>
+              ) : null,
+            )
+          : bars.map((b) =>
+              b.i % labelStep === 0 || b.i === n - 1 ? (
+                <text
+                  key={`l-${b.i}`}
+                  x={b.x + barW / 2}
+                  y={height - 4}
+                  textAnchor="middle"
+                  fill="var(--color-faint)"
+                  fontSize="8"
+                >
+                  {b.label}
+                </text>
+              ) : null,
+            )}
       </svg>
-      {tip ? (
+      {tip && !compact ? (
         <div className="pointer-events-none absolute top-8 right-2 rounded-lg border border-line bg-paper px-2.5 py-1.5 text-[11px] shadow-sm">
           <p className="font-medium text-ink">{tip.label}</p>
-          <p className="tabular-nums text-muted">
-            {valueLabel} : {tip.value.toLocaleString("fr-FR")}
-          </p>
-          {(tip.costEur ?? 0) > 0 ? (
-            <p className="font-medium tabular-nums text-amber">
-              {formatEur(tip.costEur ?? 0)}
+          <p className="font-medium tabular-nums text-amber">{fmt(tip.v)}</p>
+          {tip.secondary != null ? (
+            <p className="tabular-nums text-muted">
+              {tip.secondaryLabel ?? "détail"} :{" "}
+              {tip.secondary.toLocaleString("fr-FR")}
             </p>
+          ) : null}
+          {limitVal > 0 && tip.over ? (
+            <p className="text-amber">Au-dessus du plafond</p>
           ) : null}
         </div>
       ) : null}
@@ -240,7 +296,6 @@ export function CategoryChart({
   height = 200,
 }: {
   points: ChartPoint[];
-  /** Affiche € en hauteur principale, tokens en tooltip. */
   mode?: "cost" | "value";
   height?: number;
 }) {
@@ -248,8 +303,10 @@ export function CategoryChart({
   const sorted = useMemo(
     () =>
       [...points].sort((a, b) => {
-        const av = mode === "cost" ? (a.costEur ?? 0) : a.value;
-        const bv = mode === "cost" ? (b.costEur ?? 0) : b.value;
+        const av =
+          mode === "cost" ? (a.costEur ?? a.value) : a.value;
+        const bv =
+          mode === "cost" ? (b.costEur ?? b.value) : b.value;
         return bv - av;
       }),
     [points, mode],
@@ -263,7 +320,12 @@ export function CategoryChart({
   const barW = Math.max(18, (innerW - gap * (n - 1)) / n);
   const max =
     mode === "cost"
-      ? niceMax(Math.max(...sorted.map((p) => p.costEur ?? 0), 0.01))
+      ? niceMax(
+          Math.max(
+            ...sorted.map((p) => p.costEur ?? p.value),
+            0.01,
+          ),
+        )
       : niceMax(Math.max(...sorted.map((p) => p.value), 1));
 
   return (
@@ -274,7 +336,7 @@ export function CategoryChart({
         role="img"
       >
         {sorted.map((p, i) => {
-          const raw = mode === "cost" ? (p.costEur ?? 0) : p.value;
+          const raw = mode === "cost" ? (p.costEur ?? p.value) : p.value;
           const h = Math.max(2, (raw / max) * innerH);
           const x = pad.l + i * (barW + gap);
           const y = pad.t + innerH - h;
@@ -292,7 +354,9 @@ export function CategoryChart({
                 width={barW}
                 height={h}
                 rx={4}
-                fill={mode === "cost" ? "var(--color-amber)" : "var(--color-teal)"}
+                fill={
+                  mode === "cost" ? "var(--color-amber)" : "var(--color-teal)"
+                }
                 opacity={active ? 0.95 : 0.35}
               />
               <text
@@ -313,7 +377,7 @@ export function CategoryChart({
                 fontSize="9"
               >
                 {mode === "cost"
-                  ? `${shortNum(p.value)} tok`
+                  ? `${shortNum(p.secondary ?? p.value)} tok`
                   : shortNum(p.value)}
               </text>
               {mode === "cost" && raw > 0 ? (
@@ -336,11 +400,14 @@ export function CategoryChart({
         <div className="pointer-events-none absolute top-2 right-2 rounded-lg border border-line bg-paper px-2.5 py-1.5 text-[11px] shadow-sm">
           <p className="font-medium text-ink">{sorted[hover].label}</p>
           <p className="tabular-nums text-muted">
-            {sorted[hover].value.toLocaleString("fr-FR")} tokens
+            {(sorted[hover].secondary ?? sorted[hover].value).toLocaleString(
+              "fr-FR",
+            )}{" "}
+            tokens
           </p>
-          {(sorted[hover].costEur ?? 0) > 0 ? (
+          {(sorted[hover].costEur ?? sorted[hover].value) > 0 ? (
             <p className="font-medium tabular-nums text-amber">
-              {formatEur(sorted[hover].costEur ?? 0)}
+              {formatEur(sorted[hover].costEur ?? sorted[hover].value)}
             </p>
           ) : null}
         </div>
@@ -366,13 +433,15 @@ export function BarChart({
 }) {
   const points: ChartPoint[] = rows.map((r) => ({
     label: String(r[labelKey]),
-    value: Number(r[valueKey]) || 0,
+    value: costEurKey != null ? Number(r[costEurKey]) || 0 : Number(r[valueKey]) || 0,
+    secondary: Number(r[valueKey]) || 0,
     costEur: costEurKey != null ? Number(r[costEurKey]) || 0 : undefined,
   }));
   return (
     <TimeSeriesChart
       points={points}
-      valueLabel={valueKey}
+      valueLabel={costEurKey ? "Coût (€)" : valueKey}
+      format={costEurKey ? "eur" : "number"}
       maxPoints={maxBars}
     />
   );
@@ -388,7 +457,13 @@ export function HourHeatmap({
     value: r.count,
   }));
   return (
-    <TimeSeriesChart points={points} valueLabel="Séances" height={160} maxPoints={24} />
+    <TimeSeriesChart
+      points={points}
+      valueLabel="Séances"
+      format="number"
+      height={160}
+      maxPoints={24}
+    />
   );
 }
 

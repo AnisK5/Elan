@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { formatEur, estimateEurFromTotalTokens } from "@/lib/anthropic-pricing";
-import { formatTokensWithEur } from "@/lib/token-display";
 import { getSupabase } from "@/lib/supabase";
+import { TimeSeriesChart } from "@/components/admin/AnalyticsCharts";
 
 interface PersonLimitRow {
   userId: string;
@@ -18,10 +18,12 @@ interface PersonLimitRow {
   planCallsLastHour?: number;
   override: { dailyTokens: number | null; planPerHour: number | null };
   effectiveDailyTokens: number;
+  effectiveDailyLimitEur: number;
   effectivePlanPerHour: number;
   dailyPct: number;
   customDaily: boolean;
   customPlan: boolean;
+  costByDay: { day: string; costEur: number }[];
 }
 
 interface LimitsPayload {
@@ -144,13 +146,14 @@ function Chip({
   );
 }
 
-function fmtLimit(n: number, kind: "tokens" | "plan"): string {
-  if (kind === "tokens") {
-    if (n === 0) return "Illimité";
-    return formatTokensWithEur(n, estimateEurFromTotalTokens(n));
-  }
-  if (n === 0) return "Off";
-  return `${n}/h`;
+function fmtDayShort(iso: string): string {
+  const d = new Date(`${iso}T12:00:00Z`);
+  return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+}
+
+function eurChip(tokens: number): string {
+  if (tokens === 0) return "∞";
+  return formatEur(estimateEurFromTotalTokens(tokens));
 }
 
 export default function LimitsCockpit() {
@@ -223,8 +226,18 @@ export default function LimitsCockpit() {
     return data.people.filter((p) => {
       if (filter === "all") return true;
       if (filter === "custom") return p.customDaily || p.customPlan;
-      if (filter === "risk") return p.dailyPct >= 70 || (p.planCallsLastHour ?? 0) >= Math.max(1, p.effectivePlanPerHour * 0.7);
-      return p.weekTokens > 0 || p.todayTokens > 0 || p.customDaily || p.customPlan;
+      if (filter === "risk")
+        return (
+          p.dailyPct >= 70 ||
+          (p.planCallsLastHour ?? 0) >=
+            Math.max(1, p.effectivePlanPerHour * 0.7)
+        );
+      return (
+        p.weekTokens > 0 ||
+        p.todayTokens > 0 ||
+        p.customDaily ||
+        p.customPlan
+      );
     });
   }, [data, filter]);
 
@@ -237,6 +250,8 @@ export default function LimitsCockpit() {
   if (!data) return null;
 
   const d = data.defaults;
+  const defaultEur =
+    d.dailyTokens > 0 ? estimateEurFromTotalTokens(d.dailyTokens) : 0;
 
   return (
     <div className="flex flex-col gap-8">
@@ -247,19 +262,21 @@ export default function LimitsCockpit() {
           Défauts pour tout le monde
         </h3>
         <p className="mt-1 text-[13px] text-muted">
-          Sauf override perso ci-dessous. Soft sur les tokens (alerte) · hard sur
-          le plan/heure (bloque Sonnet).
+          Soft sur le budget € / jour (alerte tokens) · hard sur le plan/heure
+          (bloque Sonnet). Les montants € sont une estimation Sonnet.
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div className="rounded-2xl border border-line bg-surface p-4">
             <p className="text-[11px] font-medium uppercase tracking-wide text-faint">
-              Tokens / jour
+              Budget / jour
             </p>
             <p className="mt-1 font-display text-2xl font-semibold text-ink">
-              {fmtLimit(d.dailyTokens, "tokens")}
+              {d.dailyTokens === 0 ? "Illimité" : formatEur(defaultEur)}
             </p>
             <p className="mt-0.5 text-[11px] text-faint">
-              source {d.dailyTokensSource}
+              {d.dailyTokens === 0
+                ? "source " + d.dailyTokensSource
+                : `≈ ${Math.round(d.dailyTokens / 1000)}k tok · ${d.dailyTokensSource}`}
             </p>
             <div className="mt-3 flex flex-wrap gap-1.5">
               {data.presets.dailyTokens.map((n) => (
@@ -269,7 +286,7 @@ export default function LimitsCockpit() {
                   danger={n === 0}
                   onClick={() => void patchGlobal({ dailyTokens: n })}
                 >
-                  {n === 0 ? "∞" : `${Math.round(n / 1000)}k`}
+                  {eurChip(n)}
                 </Chip>
               ))}
             </div>
@@ -279,7 +296,7 @@ export default function LimitsCockpit() {
               Plans / heure
             </p>
             <p className="mt-1 font-display text-2xl font-semibold text-ink">
-              {fmtLimit(d.planPerHour, "plan")}
+              {d.planPerHour === 0 ? "Off" : `${d.planPerHour}/h`}
             </p>
             <p className="mt-0.5 text-[11px] text-faint">
               source {d.planPerHourSource} · anti-boucle
@@ -310,8 +327,7 @@ export default function LimitsCockpit() {
               Par personne
             </h3>
             <p className="mt-1 text-[13px] text-muted">
-              Usage aujourd&apos;hui ({data.day}) vs plafond — ajuste si quelqu&apos;un
-              est à l&apos;étroit ou trop large.
+              Usage (€) vs plafond — courbe 7 j avec la limite en ligne.
             </p>
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -342,6 +358,11 @@ export default function LimitsCockpit() {
           ) : (
             people.map((p) => {
               const unlimited = p.effectiveDailyTokens === 0;
+              const limitEur =
+                p.effectiveDailyLimitEur ??
+                (unlimited
+                  ? 0
+                  : estimateEurFromTotalTokens(p.effectiveDailyTokens));
               const tone: "ok" | "warn" | "hot" | "off" = unlimited
                 ? "off"
                 : p.dailyPct >= 90
@@ -350,20 +371,24 @@ export default function LimitsCockpit() {
                     ? "warn"
                     : "ok";
               const label = p.name || p.email || p.userId.slice(0, 8);
+              const series = (p.costByDay ?? []).map((d) => ({
+                label: fmtDayShort(d.day),
+                value: d.costEur,
+              }));
               return (
                 <article
                   key={p.userId}
                   className={`rounded-2xl border bg-surface p-4 ${
-                    tone === "hot"
-                      ? "border-amber/50"
-                      : "border-line"
+                    tone === "hot" ? "border-amber/50" : "border-line"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="truncate font-medium text-ink">{label}</p>
                       {p.name ? (
-                        <p className="truncate text-[11px] text-faint">{p.email}</p>
+                        <p className="truncate text-[11px] text-faint">
+                          {p.email}
+                        </p>
                       ) : null}
                       <Link
                         href={`/admin/users/${p.userId}`}
@@ -383,14 +408,29 @@ export default function LimitsCockpit() {
                     <Gauge
                       pct={unlimited ? 0 : p.dailyPct}
                       tone={tone}
-                      label="Quota jour"
+                      label="Budget jour"
                       sub={
                         unlimited
                           ? "Illimité"
-                          : `${p.todayTokens.toLocaleString("fr-FR")} / ${p.effectiveDailyTokens.toLocaleString("fr-FR")} tok`
+                          : `${formatEur(p.todayCostEur)} / ${formatEur(limitEur)}`
                       }
                     />
                   </div>
+
+                  {series.length > 0 ? (
+                    <div className="mt-2 rounded-xl bg-sink/50 px-1 py-1">
+                      <TimeSeriesChart
+                        points={series}
+                        format="eur"
+                        valueLabel="€"
+                        limit={limitEur > 0 ? limitEur : undefined}
+                        limitLabel="max"
+                        height={88}
+                        maxPoints={7}
+                        compact
+                      />
+                    </div>
+                  ) : null}
 
                   <div className="mt-2 grid grid-cols-2 gap-2 text-center text-[11px]">
                     <div className="rounded-xl bg-sink/80 px-2 py-2">
@@ -424,7 +464,7 @@ export default function LimitsCockpit() {
 
                   <div className="mt-3 space-y-2">
                     <p className="text-[10px] font-medium uppercase tracking-wide text-faint">
-                      Tokens / jour
+                      Budget / jour (€)
                     </p>
                     <div className="flex flex-wrap gap-1">
                       <Chip
@@ -444,7 +484,7 @@ export default function LimitsCockpit() {
                             void patchUser(p.userId, { dailyTokens: n })
                           }
                         >
-                          {n === 0 ? "∞" : `${Math.round(n / 1000)}k`}
+                          {eurChip(n)}
                         </Chip>
                       ))}
                     </div>

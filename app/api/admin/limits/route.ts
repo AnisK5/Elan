@@ -1,12 +1,13 @@
 import { isAdminEmail } from "@/lib/admin";
 import { countPlanCallsLastHour } from "@/lib/plan-rate-limit";
 import { totalTokens } from "@/lib/api-usage";
-import { estimateUsageCostEur } from "@/lib/anthropic-pricing";
+import { estimateUsageCostEur, estimateEurFromTotalTokens } from "@/lib/anthropic-pricing";
 import {
   readPlanCallsPerHourConfig,
   readSharedDailyTokenLimitConfig,
 } from "@/lib/app-config";
 import { getUserFromBearer } from "@/lib/auth-request";
+import { listUtcDays } from "@/lib/chart-series";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import {
   readUserLimitOverrides,
@@ -71,7 +72,7 @@ export async function GET(req: Request) {
           .eq("day", day),
         admin
           .from("elan_api_usage")
-          .select("user_id, input_tokens, output_tokens, model")
+          .select("user_id, input_tokens, output_tokens, model, day")
           .gte("at", since7),
       ]);
 
@@ -91,6 +92,7 @@ export async function GET(req: Request) {
       weekOut: number;
       weekCost: number;
       planToday: number;
+      costByDay: Map<string, number>;
     };
     const byUser = new Map<string, Agg>();
 
@@ -105,6 +107,7 @@ export async function GET(req: Request) {
           weekOut: 0,
           weekCost: 0,
           planToday: 0,
+          costByDay: new Map(),
         };
         byUser.set(uid, a);
       }
@@ -137,20 +140,26 @@ export async function GET(req: Request) {
         input_tokens: number;
         output_tokens: number;
         model: string;
+        day: string;
       };
       if (!row.user_id) continue;
       const a = ensure(row.user_id);
       a.weekIn += row.input_tokens ?? 0;
       a.weekOut += row.output_tokens ?? 0;
-      a.weekCost += estimateUsageCostEur(
+      const cost = estimateUsageCostEur(
         row.model,
         row.input_tokens ?? 0,
         row.output_tokens ?? 0,
       );
+      a.weekCost += cost;
+      if (row.day) {
+        a.costByDay.set(row.day, (a.costByDay.get(row.day) ?? 0) + cost);
+      }
     }
 
     const defaultDaily = tokenCfg.limit;
     const defaultPlan = planCfg.limit;
+    const weekDays = listUtcDays(7);
 
     const people = authUsers.map((u) => {
       const agg = byUser.get(u.id) ?? {
@@ -161,6 +170,7 @@ export async function GET(req: Request) {
         weekOut: 0,
         weekCost: 0,
         planToday: 0,
+        costByDay: new Map<string, number>(),
       };
       const ov = overrides[u.id];
       const dailyLimit =
@@ -169,8 +179,14 @@ export async function GET(req: Request) {
         ov?.planPerHour != null ? ov.planPerHour : defaultPlan;
       const todayTokens = totalTokens(agg.todayIn, agg.todayOut);
       const weekTokens = totalTokens(agg.weekIn, agg.weekOut);
+      const dailyLimitEur =
+        dailyLimit > 0 ? estimateEurFromTotalTokens(dailyLimit) : 0;
       const dailyPct =
-        dailyLimit > 0 ? Math.min(999, Math.round((todayTokens / dailyLimit) * 100)) : 0;
+        dailyLimitEur > 0
+          ? Math.min(999, Math.round((agg.todayCost / dailyLimitEur) * 100))
+          : dailyLimit > 0
+            ? Math.min(999, Math.round((todayTokens / dailyLimit) * 100))
+            : 0;
 
       return {
         userId: u.id,
@@ -183,10 +199,15 @@ export async function GET(req: Request) {
         planCallsToday: agg.planToday,
         override: ov ?? { dailyTokens: null, planPerHour: null },
         effectiveDailyTokens: dailyLimit,
+        effectiveDailyLimitEur: dailyLimitEur,
         effectivePlanPerHour: planLimit,
         dailyPct,
         customDaily: ov?.dailyTokens != null,
         customPlan: ov?.planPerHour != null,
+        costByDay: weekDays.map((d) => ({
+          day: d,
+          costEur: agg.costByDay.get(d) ?? 0,
+        })),
       };
     });
 

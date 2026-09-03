@@ -1,6 +1,7 @@
 import type { RawApiUsageRow } from "./admin-analytics";
 import { estimateUsageCostEur } from "./anthropic-pricing";
 import { DEFAULT_PLAN_CALLS_PER_HOUR } from "./app-config";
+import { fillHourKeys } from "./chart-series";
 
 export interface AdminUsageFilters {
   days: number;
@@ -210,7 +211,7 @@ export function buildUsageMonitor(
     }
   }
 
-  const hourly = [...hourMap.values()]
+  const hourlyRaw = [...hourMap.values()]
     .map((h) => {
       const byRoute: Record<string, number> = {};
       for (const [route, n] of h.routeCounts) byRoute[route] = n;
@@ -218,6 +219,31 @@ export function buildUsageMonitor(
       return { ...row, byRoute };
     })
     .sort((a, b) => a.hourKey.localeCompare(b.hourKey));
+
+  const hourValueMap = new Map(
+    hourlyRaw.map((h) => [
+      h.hourKey,
+      { calls: h.calls, total: h.total, costEur: h.costEur },
+    ]),
+  );
+  const filledHours = fillHourKeys(
+    hourlyRaw.map((h) => h.hourKey),
+    hourValueMap,
+  );
+  const byRouteKeep = new Map(hourlyRaw.map((h) => [h.hourKey, h.byRoute]));
+  const hourly: HourlyUsageRow[] = filledHours.map((f) => {
+    const raw = hourMap.get(f.hourKey);
+    return {
+      hourKey: f.hourKey,
+      hourLabel: f.hourLabel,
+      calls: f.calls,
+      input: raw?.input ?? 0,
+      output: raw?.output ?? 0,
+      total: f.total,
+      costEur: f.costEur,
+      byRoute: byRouteKeep.get(f.hourKey) ?? {},
+    };
+  });
 
   const hourlyByRoute = [...hourRouteMap.values()].sort((a, b) =>
     a.hourKey === b.hourKey

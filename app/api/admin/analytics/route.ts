@@ -4,10 +4,14 @@ import {
   type RawAnalyticsSession,
   type RawApiUsageRow,
 } from "@/lib/admin-analytics";
-import { resolvePlanCallsPerHour } from "@/lib/app-config";
+import { resolveSharedDailyTokenLimit } from "@/lib/app-config";
 import { getUserFromBearer } from "@/lib/auth-request";
 import type { ChatMessage } from "@/lib/types";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import {
+  resolveUserDailyTokenLimit,
+  resolveUserPlanCallsPerHour,
+} from "@/lib/user-limits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -147,7 +151,12 @@ export async function GET(req: Request) {
       transcript: r.transcript ?? [],
     }));
 
-    const planCallsPerHour = await resolvePlanCallsPerHour();
+    const [planCallsPerHour, dailyTokenLimit] = await Promise.all([
+      resolveUserPlanCallsPerHour(userId ?? null),
+      userId
+        ? resolveUserDailyTokenLimit(userId)
+        : resolveSharedDailyTokenLimit(),
+    ]);
 
     return Response.json(
       buildAdminAnalytics(
@@ -163,6 +172,7 @@ export async function GET(req: Request) {
           day: dayFilter,
         },
         planCallsPerHour,
+        dailyTokenLimit,
       ),
     );
   } catch {

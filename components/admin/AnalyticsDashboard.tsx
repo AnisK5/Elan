@@ -2,11 +2,7 @@
 
 import Link from "next/link";
 import type { AdminAnalyticsSnapshot, UserTokenRow } from "@/lib/admin-analytics";
-import {
-  estimateEurFromTotalTokens,
-  formatEur,
-} from "@/lib/anthropic-pricing";
-import { formatTokensWithEur } from "@/lib/token-display";
+import { formatEur } from "@/lib/anthropic-pricing";
 import {
   CategoryChart,
   HourHeatmap,
@@ -118,13 +114,20 @@ export default function AnalyticsDashboard({
             hint: `~${t.costUsd.toFixed(2)} $ · tarifs publics Anthropic`,
           },
           {
-            label: "Tokens total",
-            value: formatTokensWithEur(t.totalTokens, t.costEur),
-            hint: `${t.inputTokens.toLocaleString("fr-FR")} in · ${t.outputTokens.toLocaleString("fr-FR")} out`,
+            label: "Plafond / jour",
+            value:
+              data.dailyLimitEur > 0
+                ? formatEur(data.dailyLimitEur)
+                : "Illimité",
+            hint:
+              data.dailyTokenLimit > 0
+                ? `≈ ${Math.round(data.dailyTokenLimit / 1000)}k tok`
+                : undefined,
           },
           {
             label: "Appels API",
             value: String(t.apiCalls),
+            hint: `${t.totalTokens.toLocaleString("fr-FR")} tok`,
           },
           {
             label: "Séances",
@@ -132,10 +135,9 @@ export default function AnalyticsDashboard({
             hint: `~${t.avgSessionMin} min · ${t.avgTurnsPerSession} échanges`,
           },
           {
-            label: "Tokens / séance",
-            value: formatTokensWithEur(
-              t.avgTokensPerSession,
-              estimateEurFromTotalTokens(t.avgTokensPerSession),
+            label: "€ / séance",
+            value: formatEur(
+              t.sessions > 0 ? t.costEur / t.sessions : 0,
             ),
           },
         ]}
@@ -143,19 +145,23 @@ export default function AnalyticsDashboard({
 
       <section>
         <h3 className="font-display text-lg font-semibold text-ink">
-          Coût &amp; tokens par jour{scopeHint}
+          Coût par jour (€){scopeHint}
         </h3>
         <p className="mt-1 text-[13px] text-muted">
-          Colonnes = tokens · courbe ambre = euros estimés.
+          Axe = jours · ligne = plafond journalier estimé.
         </p>
         <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
           <TimeSeriesChart
             points={data.tokensByDay.map((d) => ({
               label: fmtDay(d.day),
-              value: d.total,
-              costEur: d.costEur,
+              value: d.costEur,
+              secondary: d.total,
+              secondaryLabel: "Tokens",
             }))}
-            valueLabel="Tokens"
+            valueLabel="Coût (€)"
+            format="eur"
+            limit={data.dailyLimitEur > 0 ? data.dailyLimitEur : undefined}
+            limitLabel="Plafond / j"
             maxPoints={90}
           />
         </div>

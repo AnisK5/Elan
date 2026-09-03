@@ -76,6 +76,8 @@ describe("buildAdminAnalytics", () => {
     expect(snap.recentSessions[0].costEur).toBeGreaterThan(0);
     expect(snap.exchangeKinds[0].costEur).toBeGreaterThan(0);
     expect(snap.contextBreakdown[0].costEur).toBeGreaterThan(0);
+    expect(snap.tokensByDay.length).toBe(30);
+    expect(snap.dailyTokenLimit).toBe(0);
   });
 
   it("filtre par utilisateur et expose viewUser", () => {

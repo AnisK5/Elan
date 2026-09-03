@@ -1,7 +1,12 @@
 import type { ChatMessage } from "./types";
 import { buildUsageMonitor, type UsageMonitorSnapshot } from "./admin-usage-monitor";
 import { DEFAULT_PLAN_CALLS_PER_HOUR } from "./app-config";
-import { estimateUsageCostEur, estimateUsageCostUsd } from "./anthropic-pricing";
+import {
+  estimateEurFromTotalTokens,
+  estimateUsageCostEur,
+  estimateUsageCostUsd,
+} from "./anthropic-pricing";
+import { fillTokenDays } from "./chart-series";
 
 export interface RawApiUsageRow {
   userId: string | null;
@@ -139,6 +144,10 @@ export interface AdminAnalyticsSnapshot {
   contextBreakdown: ContextRow[];
   recentSessions: SessionInsightRow[];
   monitor: UsageMonitorSnapshot;
+  /** Plafond journalier effectif (tokens) pour la vue courante. 0 = illimité. */
+  dailyTokenLimit: number;
+  /** Équivalent € estimé du plafond journalier. */
+  dailyLimitEur: number;
 }
 
 const CONTEXT_LABELS: Record<string, string> = {
@@ -188,6 +197,7 @@ export function buildAdminAnalytics(
     day?: string;
   },
   planCallsPerHourLimit = DEFAULT_PLAN_CALLS_PER_HOUR,
+  dailyTokenLimit = 0,
 ): AdminAnalyticsSnapshot {
   const usageRows = filterUserId
     ? usage.filter((u) => u.userId === filterUserId)
@@ -216,7 +226,7 @@ export function buildAdminAnalytics(
     cur.costEur += estimateUsageCostEur(u.model, u.inputTokens, u.outputTokens);
     byDay.set(u.day, cur);
   }
-  const tokensByDay = [...byDay.entries()]
+  const tokensByDayRaw = [...byDay.entries()]
     .map(([day, v]) => ({
       day,
       input: v.input,
@@ -225,8 +235,9 @@ export function buildAdminAnalytics(
       costUsd: v.costUsd,
       costEur: v.costEur,
     }))
-    .sort((a, b) => a.day.localeCompare(b.day))
-    .slice(-30);
+    .sort((a, b) => a.day.localeCompare(b.day));
+  const daySpan = Math.min(90, Math.max(1, filters?.days ?? 30));
+  const tokensByDay = fillTokenDays(tokensByDayRaw, daySpan);
 
   const byRoute = new Map<string, RouteTokenRow>();
   for (const u of usageRows) {
@@ -446,9 +457,14 @@ export function buildAdminAnalytics(
       }
     : undefined;
 
+  const limitEur =
+    dailyTokenLimit > 0 ? estimateEurFromTotalTokens(dailyTokenLimit) : 0;
+
   return {
     viewUser,
     filters: filters ?? { days: 30, route: "all", model: "all" },
+    dailyTokenLimit,
+    dailyLimitEur: limitEur,
     totals: {
       inputTokens,
       outputTokens,
