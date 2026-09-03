@@ -6,19 +6,22 @@ import type { AdminAnalyticsSnapshot, UserTokenRow } from "@/lib/admin-analytics
 import { formatEur } from "@/lib/anthropic-pricing";
 import { formatTokensWithEur } from "@/lib/token-display";
 import {
-  BarChart,
+  CategoryChart,
   HourHeatmap,
   MetricGrid,
+  TimeSeriesChart,
 } from "@/components/admin/AnalyticsCharts";
 import TokensCost from "@/components/admin/TokensCost";
 import UserTokenTable from "@/components/admin/UserTokenTable";
+import LimitsCockpit from "@/components/admin/LimitsCockpit";
 
 export type MonitorTab =
   | "overview"
   | "hourly"
   | "routes"
   | "journal"
-  | "limits";
+  | "limits"
+  | "pilotage";
 
 export interface MonitorFilters {
   days: number;
@@ -47,11 +50,12 @@ function fmtWhen(iso: string): string {
 }
 
 const TABS: { id: MonitorTab; label: string }[] = [
+  { id: "pilotage", label: "Pilotage" },
   { id: "overview", label: "Vue d'ensemble" },
   { id: "hourly", label: "Par heure" },
   { id: "routes", label: "Routes" },
   { id: "journal", label: "Journal" },
-  { id: "limits", label: "Plafonds" },
+  { id: "limits", label: "Plafonds live" },
 ];
 
 const DAY_PRESETS = [
@@ -198,12 +202,14 @@ export default function UsageMonitorDashboard({
 
   return (
     <div className="flex flex-col gap-8">
-      <FilterBar
-        filters={filters}
-        onChange={onFiltersChange}
-        routes={mon.availableRoutes}
-        models={mon.availableModels}
-      />
+      {filters.tab !== "pilotage" ? (
+        <FilterBar
+          filters={filters}
+          onChange={onFiltersChange}
+          routes={mon.availableRoutes}
+          models={mon.availableModels}
+        />
+      ) : null}
 
       {mon.anomalies.length > 0 ? (
         <div className="rounded-2xl border border-amber/40 bg-amber-soft px-4 py-3">
@@ -235,6 +241,8 @@ export default function UsageMonitorDashboard({
           </button>
         ))}
       </nav>
+
+      {filters.tab === "pilotage" ? <LimitsCockpit /> : null}
 
       {filters.tab === "overview" ? (
         <>
@@ -300,35 +308,40 @@ export default function UsageMonitorDashboard({
 
           <section>
             <h3 className="font-display text-lg font-semibold text-ink">
-              Tokens par jour{scopeHint}
+              Coût &amp; tokens par jour{scopeHint}
             </h3>
-            <div className="mt-3 rounded-2xl border border-line bg-surface px-4 py-4">
-              <BarChart
-                rows={data.tokensByDay.map((d) => ({
+            <p className="mt-1 text-[13px] text-muted">
+              Colonnes = tokens · courbe ambre = euros estimés.
+            </p>
+            <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
+              <TimeSeriesChart
+                points={data.tokensByDay.map((d) => ({
                   label: fmtDay(d.day),
-                  total: d.total,
+                  value: d.total,
                   costEur: d.costEur,
                 }))}
-                labelKey="label"
-                valueKey="total"
-                costEurKey="costEur"
+                valueLabel="Tokens"
+                maxPoints={90}
               />
             </div>
           </section>
 
           <section>
             <h3 className="font-display text-lg font-semibold text-ink">
-              Appels API par heure (Paris)
+              Coût &amp; appels par heure (Paris)
             </h3>
             <p className="mt-1 text-[13px] text-muted">
-              Volume horaire — repère les rafales (ex. boucle plan).
+              Repère les rafales — survol pour le détail €.
             </p>
-            <div className="mt-3 rounded-2xl border border-line bg-surface px-4 py-4">
-              <BarChart
-                rows={hourlyChartRows}
-                labelKey="label"
-                valueKey="calls"
-                maxBars={48}
+            <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
+              <TimeSeriesChart
+                points={hourlyChartRows.map((r) => ({
+                  label: r.label,
+                  value: r.calls,
+                  costEur: r.costEur,
+                }))}
+                valueLabel="Appels"
+                maxPoints={72}
               />
             </div>
           </section>
@@ -336,35 +349,45 @@ export default function UsageMonitorDashboard({
       ) : null}
 
       {filters.tab === "hourly" ? (
-        <div className="grid gap-8 lg:grid-cols-2">
+        <div className="flex flex-col gap-8">
           <section>
             <h3 className="font-display text-lg font-semibold text-ink">
-              Tokens / heure
+              Tokens &amp; euros / heure
             </h3>
-            <div className="mt-3 rounded-2xl border border-line bg-surface px-4 py-4">
-              <BarChart
-                rows={hourlyChartRows}
-                labelKey="label"
-                valueKey="total"
-                costEurKey="costEur"
-                maxBars={72}
+            <p className="mt-1 text-[13px] text-muted">
+              Colonnes teal = tokens · courbe ambre = coût €.
+            </p>
+            <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
+              <TimeSeriesChart
+                points={hourlyChartRows.map((r) => ({
+                  label: r.label,
+                  value: r.total,
+                  costEur: r.costEur,
+                }))}
+                valueLabel="Tokens"
+                height={260}
+                maxPoints={72}
               />
             </div>
           </section>
           <section>
             <h3 className="font-display text-lg font-semibold text-ink">
-              Appels / heure
+              Appels &amp; euros / heure
             </h3>
-            <div className="mt-3 rounded-2xl border border-line bg-surface px-4 py-4">
-              <BarChart
-                rows={hourlyChartRows}
-                labelKey="label"
-                valueKey="calls"
-                maxBars={72}
+            <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
+              <TimeSeriesChart
+                points={hourlyChartRows.map((r) => ({
+                  label: r.label,
+                  value: r.calls,
+                  costEur: r.costEur,
+                }))}
+                valueLabel="Appels"
+                height={220}
+                maxPoints={72}
               />
             </div>
           </section>
-          <section className="lg:col-span-2">
+          <section>
             <h3 className="font-display text-lg font-semibold text-ink">
               Détail par route et heure
             </h3>
@@ -391,7 +414,9 @@ export default function UsageMonitorDashboard({
                         <td className="px-3 py-2 tabular-nums">
                           {r.total.toLocaleString("fr-FR")}
                         </td>
-                        <td className="px-3 py-2">{formatEur(r.costEur)}</td>
+                        <td className="px-3 py-2 font-medium text-amber">
+                          {formatEur(r.costEur)}
+                        </td>
                       </tr>
                     ))}
                 </tbody>
@@ -405,43 +430,42 @@ export default function UsageMonitorDashboard({
         <div className="grid gap-8 lg:grid-cols-2">
           <section>
             <h3 className="font-display text-lg font-semibold text-ink">
-              Par route
+              Coût par route
             </h3>
-            <div className="mt-3 rounded-2xl border border-line bg-surface px-4 py-4">
-              <BarChart
-                rows={data.tokensByRoute.map((r) => ({
+            <p className="mt-1 text-[13px] text-muted">
+              Hauteur = euros estimés.
+            </p>
+            <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
+              <CategoryChart
+                mode="cost"
+                points={data.tokensByRoute.map((r) => ({
                   label: r.route,
-                  total: r.input + r.output,
+                  value: r.input + r.output,
                   costEur: r.costEur,
                 }))}
-                labelKey="label"
-                valueKey="total"
-                costEurKey="costEur"
               />
             </div>
           </section>
           <section>
             <h3 className="font-display text-lg font-semibold text-ink">
-              Type d&apos;échange
+              Coût par type d&apos;échange
             </h3>
-            <div className="mt-3 rounded-2xl border border-line bg-surface px-4 py-4">
-              <BarChart
-                rows={data.exchangeKinds.map((k) => ({
+            <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
+              <CategoryChart
+                mode="cost"
+                points={data.exchangeKinds.map((k) => ({
                   label: k.kind,
-                  total: k.tokens,
+                  value: k.tokens,
                   costEur: k.costEur,
                 }))}
-                labelKey="label"
-                valueKey="total"
-                costEurKey="costEur"
               />
             </div>
           </section>
           <section className="lg:col-span-2">
             <h3 className="font-display text-lg font-semibold text-ink">
-              Séances par heure
+              Séances par heure de la journée
             </h3>
-            <div className="mt-3 rounded-2xl border border-line bg-surface px-4 py-4">
+            <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
               <HourHeatmap rows={data.sessionsByHour} />
             </div>
           </section>
@@ -504,8 +528,8 @@ export default function UsageMonitorDashboard({
         <>
           <p className="text-[13px] text-muted">
             Plafond configurable dans{" "}
-            <a href="/admin/settings" className="font-medium text-teal hover:underline">
-              Réglages IA → Plafond plan / heure
+            <a href="/admin/analytics?tab=pilotage" className="font-medium text-teal hover:underline">
+              Monitoring → Pilotage
             </a>
             .
           </p>

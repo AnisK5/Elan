@@ -1,5 +1,5 @@
 import { isAdminEmail } from "./admin";
-import { isUnlimitedSharedTokenLimit, resolveSharedDailyTokenLimit } from "./app-config";
+import { isUnlimitedSharedTokenLimit } from "./app-config";
 import {
   ANTHROPIC_KEY_HEADER,
   looksLikeAnthropicKey,
@@ -7,6 +7,7 @@ import {
 } from "./anthropic";
 import { totalTokens } from "./api-usage";
 import { getSupabaseAdmin } from "./supabase-admin";
+import { resolveUserDailyTokenLimit } from "./user-limits";
 
 export { envSharedDailyTokenLimit } from "./app-config";
 
@@ -89,7 +90,7 @@ export async function checkSharedDailyBudget(
   userId: string | null,
   userEmail?: string | null,
 ): Promise<SharedBudgetStatus> {
-  const limit = await resolveSharedDailyTokenLimit();
+  const limit = await resolveUserDailyTokenLimit(userId);
   if (isUnlimitedSharedTokenLimit(limit)) {
     return { applies: false, allowed: true, used: 0, limit };
   }

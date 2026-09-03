@@ -25,11 +25,13 @@ function parseTab(raw: string | null): MonitorTab {
     raw === "hourly" ||
     raw === "routes" ||
     raw === "journal" ||
-    raw === "limits"
+    raw === "limits" ||
+    raw === "pilotage" ||
+    raw === "overview"
   ) {
     return raw;
   }
-  return "overview";
+  return "pilotage";
 }
 
 function parseDays(raw: string | null): number {
@@ -45,7 +47,7 @@ function buildQuery(filters: MonitorFilters): string {
   else p.set("days", String(filters.days));
   if (filters.route !== "all") p.set("route", filters.route);
   if (filters.model !== "all") p.set("model", filters.model);
-  if (filters.tab !== "overview") p.set("tab", filters.tab);
+  if (filters.tab) p.set("tab", filters.tab);
   const q = p.toString();
   return q ? `?${q}` : "";
 }
@@ -154,8 +156,8 @@ export default function AdminAnalyticsPage() {
     <>
       <h2 className="font-display text-lg font-semibold text-ink">Monitoring IA</h2>
       <p className="mt-1 text-[15px] leading-relaxed text-muted">
-        Coûts, appels par heure, journal, plafonds — filtres dans l&apos;URL,
-        plus besoin de SQL.
+        Pilotage des plafonds (global + par personne), coûts, appels par heure —
+        le tout filtrable, sans SQL.
       </p>
 
       {error === "auth" && (

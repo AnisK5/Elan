@@ -8,9 +8,10 @@ import {
 } from "@/lib/anthropic-pricing";
 import { formatTokensWithEur } from "@/lib/token-display";
 import {
-  BarChart,
+  CategoryChart,
   HourHeatmap,
   MetricGrid,
+  TimeSeriesChart,
 } from "@/components/admin/AnalyticsCharts";
 import TokensCost from "@/components/admin/TokensCost";
 import UserTokenTable from "@/components/admin/UserTokenTable";
@@ -142,21 +143,20 @@ export default function AnalyticsDashboard({
 
       <section>
         <h3 className="font-display text-lg font-semibold text-ink">
-          Tokens par jour{scopeHint}
+          Coût &amp; tokens par jour{scopeHint}
         </h3>
         <p className="mt-1 text-[13px] text-muted">
-          Consommation sur 30 jours — pour voir si ça accélère ou se stabilise.
+          Colonnes = tokens · courbe ambre = euros estimés.
         </p>
-        <div className="mt-3 rounded-2xl border border-line bg-surface px-4 py-4">
-          <BarChart
-            rows={data.tokensByDay.map((d) => ({
+        <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
+          <TimeSeriesChart
+            points={data.tokensByDay.map((d) => ({
               label: fmtDay(d.day),
-              total: d.total,
+              value: d.total,
               costEur: d.costEur,
             }))}
-            labelKey="label"
-            valueKey="total"
-            costEurKey="costEur"
+            valueLabel="Tokens"
+            maxPoints={90}
           />
         </div>
       </section>
@@ -164,42 +164,35 @@ export default function AnalyticsDashboard({
       <div className="grid gap-8 lg:grid-cols-2">
         <section>
           <h3 className="font-display text-lg font-semibold text-ink">
-            Où partent les tokens
+            Coût par route
           </h3>
           <p className="mt-1 text-[13px] text-muted">
-            Séance, chat, plan du matin, greffier…
+            Hauteur = euros — séance, chat, plan, greffier…
           </p>
-          <div className="mt-3 rounded-2xl border border-line bg-surface px-4 py-4">
-            <BarChart
-              rows={data.tokensByRoute.map((r) => ({
+          <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
+            <CategoryChart
+              mode="cost"
+              points={data.tokensByRoute.map((r) => ({
                 label: r.route,
-                total: r.input + r.output,
+                value: r.input + r.output,
                 costEur: r.costEur,
               }))}
-              labelKey="label"
-              valueKey="total"
-              costEurKey="costEur"
             />
           </div>
         </section>
 
         <section>
           <h3 className="font-display text-lg font-semibold text-ink">
-            Type d&apos;échange
+            Coût par type d&apos;échange
           </h3>
-          <p className="mt-1 text-[13px] text-muted">
-            Ouverture, tour utilisateur, clôture, chat…
-          </p>
-          <div className="mt-3 rounded-2xl border border-line bg-surface px-4 py-4">
-            <BarChart
-              rows={data.exchangeKinds.map((k) => ({
+          <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
+            <CategoryChart
+              mode="cost"
+              points={data.exchangeKinds.map((k) => ({
                 label: k.kind,
-                total: k.tokens,
+                value: k.tokens,
                 costEur: k.costEur,
               }))}
-              labelKey="label"
-              valueKey="total"
-              costEurKey="costEur"
             />
           </div>
         </section>
@@ -212,7 +205,7 @@ export default function AnalyticsDashboard({
         <p className="mt-1 text-[13px] text-muted">
           Heure de Paris — repère le rythme naturel (matin ? soir ?).
         </p>
-        <div className="mt-3 rounded-2xl border border-line bg-surface px-4 py-4">
+        <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
           <HourHeatmap rows={data.sessionsByHour} />
         </div>
       </section>
@@ -226,14 +219,13 @@ export default function AnalyticsDashboard({
             Est-ce qu&apos;{viewUser ? "elle reste" : "ils restent"} 5 min ou
             s&apos;installe vraiment ?
           </p>
-          <div className="mt-3 rounded-2xl border border-line bg-surface px-4 py-4">
-            <BarChart
-              rows={data.durationBuckets.map((b) => ({
+          <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
+            <CategoryChart
+              mode="value"
+              points={data.durationBuckets.map((b) => ({
                 label: b.label,
-                count: b.count,
+                value: b.count,
               }))}
-              labelKey="label"
-              valueKey="count"
             />
           </div>
         </section>
@@ -245,14 +237,13 @@ export default function AnalyticsDashboard({
           <p className="mt-1 text-[13px] text-muted">
             Nombre de messages utilisateur avant la fin — friction ou flow ?
           </p>
-          <div className="mt-3 rounded-2xl border border-line bg-surface px-4 py-4">
-            <BarChart
-              rows={data.dropoffTurns.map((d) => ({
+          <div className="mt-3 rounded-2xl border border-line bg-surface px-3 py-4 sm:px-4">
+            <CategoryChart
+              mode="value"
+              points={data.dropoffTurns.map((d) => ({
                 label: d.label,
-                count: d.count,
+                value: d.count,
               }))}
-              labelKey="label"
-              valueKey="count"
             />
           </div>
         </section>

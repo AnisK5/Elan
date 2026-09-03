@@ -1,7 +1,7 @@
-import { resolvePlanCallsPerHour } from "./app-config";
+import { resolveUserPlanCallsPerHour } from "./user-limits";
 import { getSupabaseAdmin } from "./supabase-admin";
 
-/** Défaut documenté — préférer resolvePlanCallsPerHour() à l'exécution. */
+/** Défaut documenté — préférer resolveUserPlanCallsPerHour() à l'exécution. */
 export { DEFAULT_PLAN_CALLS_PER_HOUR as PLAN_CALLS_PER_HOUR } from "./app-config";
 
 const MS_HOUR = 3_600_000;
@@ -38,7 +38,7 @@ export async function countPlanCallsLastHour(
 export async function checkPlanRateLimit(
   userId: string | null,
 ): Promise<PlanRateLimitStatus> {
-  const limit = await resolvePlanCallsPerHour();
+  const limit = await resolveUserPlanCallsPerHour(userId);
   const used = await countPlanCallsLastHour(userId);
   const enabled = limit > 0;
   return {
