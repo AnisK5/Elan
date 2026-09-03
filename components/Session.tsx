@@ -74,6 +74,7 @@ export default function Session({
   const scrollRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
   const closed = useRef(false);
+  const finishingRef = useRef(false);
   const ritualBriefRef = useRef(ritualBrief);
   ritualBriefRef.current = ritualBrief;
   const retryRef = useRef<{
@@ -159,6 +160,8 @@ export default function Session({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remaining, streaming, messages]);
 
+  const [leaving, setLeaving] = useState(false);
+
   /** Dernier reconcile greffier — à attendre avant de quitter la séance. */
   const reconcileInflightRef = useRef<Promise<void> | null>(null);
 
@@ -178,6 +181,27 @@ export default function Session({
     if (msgs.some((m) => m.role === "user" && m.content.trim())) {
       await reconcile(msgs);
     }
+  }
+
+  async function finishSession() {
+    if (finishingRef.current) return;
+    finishingRef.current = true;
+    closed.current = true;
+    setLeaving(true);
+    setRunning(false);
+    const transcript = messages.filter((m) => m.content.trim());
+    try {
+      await Promise.race([
+        flushReconcile(transcript),
+        new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 2500);
+        }),
+      ]);
+    } catch {
+      // On sort quand même — le greffier ne doit pas coller Terminer.
+    }
+    clearActiveSession();
+    onEnd(transcript, sessionIdRef.current);
   }
 
   async function runTurn(convo: ChatMessage[], ending = false) {
@@ -437,18 +461,12 @@ export default function Session({
             </>
           )}
           <button
-            onClick={() => {
-              void (async () => {
-                if (streaming) return;
-                const transcript = messages.filter((m) => m.content.trim());
-                await flushReconcile(transcript);
-                clearActiveSession();
-                onEnd(transcript, sessionIdRef.current);
-              })();
-            }}
-            className="rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-paper transition hover:opacity-90"
+            type="button"
+            onClick={() => void finishSession()}
+            disabled={leaving}
+            className="rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-paper transition hover:opacity-90 disabled:opacity-60"
           >
-            Terminer
+            {leaving ? "Clôture…" : "Terminer"}
           </button>
         </div>
       </header>
