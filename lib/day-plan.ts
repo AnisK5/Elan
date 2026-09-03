@@ -175,14 +175,60 @@ export function completeNextMoment(
   return moments.map((m, i) => (i === idx ? { ...m, done: true } : m));
 }
 
-/** Décline une piste du jour — la séance n'est pas coincée dessus. */
+/** Coche / décoche un créneau à la main. */
+export function toggleMomentDoneAt(
+  moments: DayPlanMoment[] | undefined,
+  index: number,
+): DayPlanMoment[] | undefined {
+  if (!moments?.length || index < 0 || index >= moments.length) return moments;
+  return moments.map((m, i) => {
+    if (i !== index) return m;
+    if (m.done) {
+      const { done: _d, ...rest } = m;
+      return rest;
+    }
+    const { skipped: _s, ...rest } = m;
+    return { ...rest, done: true };
+  });
+}
+
+/** Décline une piste du jour — ou annule le refus. */
 export function skipMomentAt(
   moments: DayPlanMoment[] | undefined,
   index: number,
 ): DayPlanMoment[] | undefined {
   if (!moments?.length || index < 0 || index >= moments.length) return moments;
-  if (!momentIsOpen(moments[index])) return moments;
-  return moments.map((m, i) => (i === index ? { ...m, skipped: true } : m));
+  return moments.map((m, i) => {
+    if (i !== index) return m;
+    if (m.skipped) {
+      const { skipped: _s, ...rest } = m;
+      return rest;
+    }
+    const { done: _d, ...rest } = m;
+    return { ...rest, skipped: true };
+  });
+}
+
+export function avoidLabels(moments: DayPlanMoment[] | undefined): string[] {
+  return (moments ?? [])
+    .filter((m) => !momentIsOpen(m))
+    .map((m) => m.label)
+    .filter(Boolean);
+}
+
+/** Garde les créneaux faits/refusés, ajoute des pistes neuves (sans redire les refusées). */
+export function mergeDayMoments(
+  prev: DayPlanMoment[] | undefined,
+  incoming: DayPlanMoment[] | undefined,
+): DayPlanMoment[] | undefined {
+  const closed = (prev ?? []).filter((m) => !momentIsOpen(m));
+  if (!incoming?.length && closed.length === 0) return incoming;
+  const closedNorm = new Set(closed.map((m) => m.label.toLowerCase().trim()));
+  const fresh = (incoming ?? []).filter(
+    (m) => momentIsOpen(m) && !closedNorm.has(m.label.toLowerCase().trim()),
+  );
+  const out = [...closed, ...fresh].slice(0, 3);
+  return out.length > 0 ? out : incoming;
 }
 
 export function parseDayPlan(raw: unknown): DayPlanCache | null {

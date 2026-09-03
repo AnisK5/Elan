@@ -101,8 +101,12 @@ import {
   dayPlanMatches,
   dayPlanPileMatches,
   isDayPlanContext,
+  mergeDayMoments,
+  momentIsOpen,
   planDateKey,
   skipMomentAt,
+  toggleMomentDoneAt,
+  avoidLabels,
   shouldAutoFetchPlan,
   slotOf,
   todaySlot,
@@ -390,28 +394,36 @@ export default function Home() {
     return todaySlot(readDayPlan(), ctx);
   }
 
-  function persistDeskMoments(next: DayPlanMoment[]) {
+  function persistDeskMoments(next: DayPlanMoment[], opts?: { proposeOther?: boolean }) {
     const cached = readDayPlan();
     const slot = todaySlot(cached, "desk");
     if (!slot) {
       setPlan((prev) => (prev ? { ...prev, moments: next } : prev));
-      return;
+    } else {
+      writeDayPlan(
+        upsertDayPlanSlot(
+          cached,
+          cached?.sig ?? planSig,
+          "desk",
+          { ...slot, moments: next },
+          planDateKey(),
+        ),
+      );
+      setPlan((prev) => (prev ? { ...prev, moments: next } : prev));
     }
-    writeDayPlan(
-      upsertDayPlanSlot(
-        cached,
-        cached?.sig ?? planSig,
-        "desk",
-        { ...slot, moments: next },
-        planDateKey(),
-      ),
-    );
-    setPlan((prev) => (prev ? { ...prev, moments: next } : prev));
+    if (opts?.proposeOther && !next.some(momentIsOpen)) {
+      requestPlanRefresh();
+    }
   }
 
   function skipDayMoment(index: number) {
     const next = skipMomentAt(plan?.moments, index);
-    if (next) persistDeskMoments(next);
+    if (next) persistDeskMoments(next, { proposeOther: true });
+  }
+
+  function toggleDayMomentDone(index: number) {
+    const next = toggleMomentDoneAt(plan?.moments, index);
+    if (next) persistDeskMoments(next, { proposeOther: true });
   }
 
   function chatUserCount() {
@@ -776,6 +788,12 @@ export default function Home() {
           content: m.content,
         })),
         ...(wantDebug ? { debug: true } : {}),
+        ...(() => {
+          const avoid = avoidLabels(
+            todaySlot(readDayPlan(), "desk")?.moments ?? plan?.moments,
+          );
+          return avoid.length ? { avoid } : {};
+        })(),
       }),
     })
       .then((r) => (r.ok ? r.json() : null))
@@ -803,8 +821,10 @@ export default function Home() {
           unreachable && errorKind ? anthropicFailMessage(errorKind) : "",
         );
         const pick = j?.pick ?? "15";
-        const moments =
-          momentsFromApi(j?.moments) ?? softSlot?.moments;
+        const incoming = momentsFromApi(j?.moments);
+        const moments = incoming
+          ? mergeDayMoments(softSlot?.moments, incoming)
+          : softSlot?.moments;
         const effective = msg
           ? { message: msg, pick, moments }
           : softSlot
@@ -1090,6 +1110,12 @@ function restoreDeskDayCard(): boolean {
           })),
           ...(phraseWhy ? { why: phraseWhy } : {}),
           ...(wantDebug ? { debug: true } : {}),
+          ...(() => {
+            const avoid = avoidLabels(
+              todaySlot(readDayPlan(), "desk")?.moments ?? plan?.moments,
+            );
+            return avoid.length ? { avoid } : {};
+          })(),
         }),
       });
       if (res.ok) {
@@ -1134,7 +1160,10 @@ function restoreDeskDayCard(): boolean {
           const pick = opts?.chosen
             ? String(opts.chosen)
             : (j.pick ?? "15");
-          const moments = momentsFromApi(j.moments) ?? soft?.moments;
+          const incoming = momentsFromApi(j.moments);
+          const moments = incoming
+            ? mergeDayMoments(soft?.moments, incoming)
+            : soft?.moments;
           const effective = msg
             ? { message: msg, pick, moments }
             : soft
@@ -1677,9 +1706,8 @@ function restoreDeskDayCard(): boolean {
                 )}
                 {planLoading && !plan?.moments?.length ? null : plan?.moments &&
                   plan.moments.length > 0 ? (
-                  <ul className="mt-2.5 space-y-1.5">
+                  <ul className="mt-2.5 space-y-2">
                     {plan.moments.map((m, i) => {
-                      const closed = Boolean(m.done || m.skipped);
                       const minsLabel =
                         typeof m.mins === "number" && m.mins > 0
                           ? `${m.mins} min`
@@ -1687,28 +1715,30 @@ function restoreDeskDayCard(): boolean {
                       return (
                         <li
                           key={`${m.label}-${i}`}
-                          className={`flex items-start gap-2 text-[13px] leading-snug ${
-                            m.done
-                              ? "text-faint line-through"
-                              : m.skipped
-                                ? "text-faint"
-                                : "text-teal-ink"
-                          }`}
+                          className="text-[13px] leading-snug text-teal-ink"
                         >
                           <span
-                            className={`mt-0.5 shrink-0 font-medium ${
-                              closed ? "text-faint" : "text-teal/70"
-                            }`}
+                            className={
+                              m.done || m.skipped ? "text-faint" : "text-teal/70"
+                            }
                             aria-hidden
                           >
-                            —
+                            —{" "}
                           </span>
-                          <span className="min-w-0 flex-1">
+                          <span
+                            className={
+                              m.done
+                                ? "text-faint line-through"
+                                : m.skipped
+                                  ? "text-faint"
+                                  : ""
+                            }
+                          >
                             {minsLabel ? (
                               <span
                                 className={
-                                  closed
-                                    ? "text-faint"
+                                  m.done || m.skipped
+                                    ? ""
                                     : "font-medium text-teal-ink"
                                 }
                               >
@@ -1717,17 +1747,32 @@ function restoreDeskDayCard(): boolean {
                             ) : null}
                             {minsLabel ? " · " : null}
                             {m.label}
-                            {m.skipped ? " · pas ce soir" : null}
                           </span>
-                          {!closed ? (
+                          <span className="ml-2 whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => toggleDayMomentDone(i)}
+                              className={`text-[11px] underline-offset-2 hover:underline ${
+                                m.done
+                                  ? "text-teal"
+                                  : "text-faint hover:text-muted"
+                              }`}
+                            >
+                              {m.done ? "fait" : "fait ?"}
+                            </button>
+                            <span className="text-faint"> · </span>
                             <button
                               type="button"
                               onClick={() => skipDayMoment(i)}
-                              className="shrink-0 pt-0.5 text-[11px] text-faint underline-offset-2 hover:text-muted hover:underline"
+                              className={`text-[11px] underline-offset-2 hover:underline ${
+                                m.skipped
+                                  ? "text-teal"
+                                  : "text-faint hover:text-muted"
+                              }`}
                             >
                               pas ce soir
                             </button>
-                          ) : null}
+                          </span>
                         </li>
                       );
                     })}
@@ -1735,19 +1780,23 @@ function restoreDeskDayCard(): boolean {
                 ) : null}
                 {planStale && !planLoading ? (
                   <p className="mt-2 text-[12px] leading-relaxed text-muted">
-                    Ta pile a bougé depuis ce conseil.
+                    Ta pile a bougé — on peut proposer autre chose.
                   </p>
                 ) : null}
-                {planStale && aiOn && context !== "deposer" ? (
+                {aiOn &&
+                context !== "deposer" &&
+                !planLoading &&
+                (planStale ||
+                  (plan?.moments?.length
+                    ? !plan.moments.some(momentIsOpen)
+                    : false)) ? (
                   <button
                     type="button"
                     onClick={() => requestPlanRefresh()}
                     disabled={planLoading}
                     className="mt-2.5 w-full rounded-xl bg-teal py-2.5 text-center font-display text-[15px] font-semibold text-white transition hover:bg-teal-ink disabled:opacity-60"
                   >
-                    {planLoading
-                      ? "Mise à jour…"
-                      : "Actualiser le conseil"}
+                    Proposer autre chose
                   </button>
                 ) : null}
                 {diagnosticOn && planDiag && !planLoading ? (

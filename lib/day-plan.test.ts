@@ -10,6 +10,8 @@ import {
   shouldAutoFetchPlan,
   snapDeskMins,
   skipMomentAt,
+  toggleMomentDoneAt,
+  mergeDayMoments,
   todaySlot,
   upsertDayPlanSlot,
   whySignature,
@@ -184,5 +186,27 @@ describe("snapDeskMins + durationHintSet + completeNextMoment", () => {
     expect(next?.[0].done).toBeFalsy();
     const after = completeNextMoment(next);
     expect(after?.[1].done).toBe(true);
+  });
+
+  it("coche et décoche un créneau à la main", () => {
+    const done = toggleMomentDoneAt([{ label: "Draps", mins: 15 }], 0);
+    expect(done?.[0].done).toBe(true);
+    const undone = toggleMomentDoneAt(done, 0);
+    expect(undone?.[0].done).toBeFalsy();
+  });
+
+  it("fusionne les pistes neuves sans redire les déclinées", () => {
+    expect(
+      mergeDayMoments(
+        [{ label: "Draps", mins: 15, skipped: true }],
+        [
+          { label: "Draps", mins: 15 },
+          { label: "Ranger le lit", mins: 15 },
+        ],
+      ),
+    ).toEqual([
+      { label: "Draps", mins: 15, skipped: true },
+      { label: "Ranger le lit", mins: 15 },
+    ]);
   });
 });

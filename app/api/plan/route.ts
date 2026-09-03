@@ -65,6 +65,8 @@ interface Body {
   messages?: ChatMessage[];
   /** Arbitrage déjà tranché — on ne régénère que le message pour une durée. */
   why?: string;
+  /** Pistes déjà faites ou déclinées aujourd'hui — en proposer d'autres. */
+  avoid?: string[];
 }
 
 function renderLines(threads: Thread[]): string {
@@ -193,10 +195,15 @@ function deskPlanPrompt(
   chosen?: number,
   name?: string,
   situation?: string,
+  avoid?: string[],
 ): string {
   const chosenRule = chosen
     ? `\n\nELLE LANCE MAINTENANT un créneau de ${chosen} min (bouton). La carte du jour reste la forme de la journée — ne l'écrase pas pour coller au seul bouton. Renvoie "pick":"${chosen}". Si des moments existent déjà, garde-les (mêmes labels/mins). L'intro "message" reste la forme du jour, pas un texte collé au seul bouton.`
     : "";
+  const avoidRule =
+    avoid && avoid.length > 0
+      ? `\n\nNE REPROPOSE PAS aujourd'hui (déjà fait ou décliné) : ${avoid.join(" · ")}. Propose AUTRE CHOSE à la place — un autre moment faisable, natures différentes si tu en mets deux. L'intro "message" décrit la nouvelle forme, pas les pistes refusées.`
+      : "";
   const render = renderLines(threads);
 
   return `${socle(name, situation)}
@@ -287,7 +294,7 @@ ${render}
 RÉGULIERS RETENUS :
 ${renderReguliersForPlan(allThreads)}
 
-${renderStats(stats)}${chosenRule}`;
+${renderStats(stats)}${chosenRule}${avoidRule}`;
 }
 
 function regulierPlanPrompt(threads: Thread[], name?: string): string {
@@ -321,13 +328,14 @@ function systemPrompt(
   name?: string,
   context?: SessionContext,
   situation?: string,
+  avoid?: string[],
 ): string {
   const ctx = context ?? "desk";
   const open = openThreads(allThreads);
   if (ctx === "courses") return coursesPlanPrompt(open, name);
   if (ctx === "sortie") return sortiePlanPrompt(open, name);
   if (ctx === "regulier") return regulierPlanPrompt(allThreads, name);
-  return deskPlanPrompt(open, allThreads, stats, chosen, name, situation);
+  return deskPlanPrompt(open, allThreads, stats, chosen, name, situation, avoid);
 }
 
 function fallbackPlan(
@@ -626,6 +634,7 @@ export async function POST(req: Request) {
             body.meta?.name,
             context,
             situation,
+            body.avoid,
           );
     const tool = shortTool ? PHRASE_TOOL : CONSEIL_TOOL;
     // Desk : why d'abord (qualité) → budget large pour ne pas tronquer.
@@ -778,6 +787,7 @@ export async function POST(req: Request) {
                     body.meta?.name,
                     context,
                     situation,
+                    body.avoid,
                   ),
               user: userCue,
             }),
