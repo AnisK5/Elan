@@ -15,25 +15,21 @@ export default function SessionPick({
   context,
   onPickDuration,
   onPickContext,
-  durationHints,
-  modeHints,
 }: {
   duration: number;
   context: SessionContext;
   onPickDuration: (d: number) => void;
   onPickContext: (c: "sortie" | "courses" | "regulier" | "deposer") => void;
-  /** Durées encore recommandées (sans pastilles flottantes). */
-  durationHints?: ReadonlySet<5 | 15 | 30 | 50>;
-  /** Modes hors bureau encore recommandés. */
-  modeHints?: ReadonlySet<SessionContext>;
 }) {
   return (
     <div className="flex min-w-0 w-full flex-col gap-1.5">
       <p className="text-[11px] text-faint">Lancer une séance</p>
+      <p className="text-[11px] leading-snug text-muted">
+        Tu te présentes comme tu es — pas un oui au conseil du dessus.
+      </p>
       <div className="flex min-w-0 w-full rounded-xl bg-sink p-1">
         {DURATIONS.map((d) => {
           const selected = context === "desk" && duration === d;
-          const hinted = durationHints?.has(d as 5 | 15 | 30 | 50) ?? false;
           return (
             <button
               key={d}
@@ -42,9 +38,7 @@ export default function SessionPick({
               className={`min-w-0 flex-1 rounded-lg px-1 py-1.5 text-center text-[13px] font-medium tabular-nums transition sm:px-3 sm:text-sm ${
                 selected
                   ? "bg-surface text-ink shadow-sm"
-                  : hinted
-                    ? "text-teal hover:text-teal-ink"
-                    : "text-muted hover:text-ink"
+                  : "text-muted hover:text-ink"
               }`}
             >
               {d}&nbsp;min
@@ -55,7 +49,6 @@ export default function SessionPick({
       <div className="flex min-w-0 w-full rounded-xl bg-sink p-1">
         {CONTEXTS.map(({ id, label }) => {
           const selected = context === id;
-          const hinted = (modeHints?.has(id) ?? false) && !selected;
           return (
             <button
               key={id}
@@ -64,9 +57,7 @@ export default function SessionPick({
               className={`min-w-0 flex-1 rounded-lg px-1 py-1.5 text-center text-[13px] font-medium transition sm:px-2 sm:text-sm ${
                 selected
                   ? "bg-surface text-ink shadow-sm"
-                  : hinted
-                    ? "text-teal hover:text-teal-ink"
-                    : "text-muted hover:text-ink"
+                  : "text-muted hover:text-ink"
               }`}
             >
               {label}

@@ -100,10 +100,9 @@ import {
   completeNextMoment,
   dayPlanMatches,
   dayPlanPileMatches,
-  durationHintSet,
   isDayPlanContext,
-  modeHintSet,
   planDateKey,
+  skipMomentAt,
   shouldAutoFetchPlan,
   slotOf,
   todaySlot,
@@ -389,6 +388,30 @@ export default function Home() {
   /** Dernier conseil du jour (même si la pile a bougé) — affichage sans refetch. */
   function todayPlanSlot(ctx: SessionContext) {
     return todaySlot(readDayPlan(), ctx);
+  }
+
+  function persistDeskMoments(next: DayPlanMoment[]) {
+    const cached = readDayPlan();
+    const slot = todaySlot(cached, "desk");
+    if (!slot) {
+      setPlan((prev) => (prev ? { ...prev, moments: next } : prev));
+      return;
+    }
+    writeDayPlan(
+      upsertDayPlanSlot(
+        cached,
+        cached?.sig ?? planSig,
+        "desk",
+        { ...slot, moments: next },
+        planDateKey(),
+      ),
+    );
+    setPlan((prev) => (prev ? { ...prev, moments: next } : prev));
+  }
+
+  function skipDayMoment(index: number) {
+    const next = skipMomentAt(plan?.moments, index);
+    if (next) persistDeskMoments(next);
   }
 
   function chatUserCount() {
@@ -1656,36 +1679,35 @@ function restoreDeskDayCard(): boolean {
                   plan.moments.length > 0 ? (
                   <ul className="mt-2.5 space-y-1.5">
                     {plan.moments.map((m, i) => {
+                      const closed = Boolean(m.done || m.skipped);
                       const minsLabel =
                         typeof m.mins === "number" && m.mins > 0
                           ? `${m.mins} min`
-                          : m.mode === "sortie"
-                            ? "Sortie"
-                            : m.mode === "courses"
-                              ? "Courses"
-                              : m.mode === "regulier"
-                                ? "Régulier"
-                                : null;
+                          : null;
                       return (
                         <li
                           key={`${m.label}-${i}`}
                           className={`flex items-start gap-2 text-[13px] leading-snug ${
-                            m.done ? "text-faint line-through" : "text-teal-ink"
+                            m.done
+                              ? "text-faint line-through"
+                              : m.skipped
+                                ? "text-faint"
+                                : "text-teal-ink"
                           }`}
                         >
                           <span
                             className={`mt-0.5 shrink-0 font-medium ${
-                              m.done ? "text-faint" : "text-teal/70"
+                              closed ? "text-faint" : "text-teal/70"
                             }`}
                             aria-hidden
                           >
                             —
                           </span>
-                          <span>
+                          <span className="min-w-0 flex-1">
                             {minsLabel ? (
                               <span
                                 className={
-                                  m.done
+                                  closed
                                     ? "text-faint"
                                     : "font-medium text-teal-ink"
                                 }
@@ -1695,7 +1717,17 @@ function restoreDeskDayCard(): boolean {
                             ) : null}
                             {minsLabel ? " · " : null}
                             {m.label}
+                            {m.skipped ? " · pas ce soir" : null}
                           </span>
+                          {!closed ? (
+                            <button
+                              type="button"
+                              onClick={() => skipDayMoment(i)}
+                              className="shrink-0 pt-0.5 text-[11px] text-faint underline-offset-2 hover:text-muted hover:underline"
+                            >
+                              pas ce soir
+                            </button>
+                          ) : null}
                         </li>
                       );
                     })}
@@ -1742,8 +1774,6 @@ function restoreDeskDayCard(): boolean {
                 context={context}
                 onPickDuration={pickDuration}
                 onPickContext={pickContext}
-                durationHints={durationHintSet(plan?.moments)}
-                modeHints={modeHintSet(plan?.moments)}
               />
             </div>
             <button

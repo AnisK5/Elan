@@ -9,6 +9,7 @@ import {
   planDateKey,
   shouldAutoFetchPlan,
   snapDeskMins,
+  skipMomentAt,
   todaySlot,
   upsertDayPlanSlot,
   whySignature,
@@ -169,5 +170,19 @@ describe("snapDeskMins + durationHintSet + completeNextMoment", () => {
     ]);
     expect(next?.[0].done).toBe(true);
     expect(next?.[1].done).toBeFalsy();
+  });
+
+  it("décline une piste sans la barrer comme faite", () => {
+    const next = skipMomentAt(
+      [
+        { label: "Draps", mins: 15, mode: "regulier" },
+        { label: "Autre", mins: 15 },
+      ],
+      0,
+    );
+    expect(next?.[0].skipped).toBe(true);
+    expect(next?.[0].done).toBeFalsy();
+    const after = completeNextMoment(next);
+    expect(after?.[1].done).toBe(true);
   });
 });

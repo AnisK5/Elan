@@ -11,6 +11,8 @@ export interface DayPlanMoment {
   /** Durée proposée en minutes (peut être 25 — on l'accroche au bouton le plus proche). */
   mins?: number;
   done?: boolean;
+  /** Piste déclinée (« pas ce soir ») — pas une séance faite. */
+  skipped?: boolean;
 }
 
 export interface DayPlanSlot {
@@ -82,6 +84,7 @@ function parseMoments(raw: unknown): DayPlanMoment[] | undefined {
         ? { mins: Math.round(o.mins) }
         : {}),
       ...(o.done === true ? { done: true } : {}),
+      ...(o.skipped === true ? { skipped: true } : {}),
     });
   }
   return out.length > 0 ? out : undefined;
@@ -102,6 +105,10 @@ export function snapDeskMins(mins: number): 5 | 15 | 30 | 50 {
   return best;
 }
 
+export function momentIsOpen(m: DayPlanMoment): boolean {
+  return !m.done && !m.skipped;
+}
+
 function momentDeskMins(m: DayPlanMoment): 5 | 15 | 30 | 50 | null {
   // Sortie / courses : signal sur le bouton mode. Le reste (y compris
   // régulier avec durée) reste lançable en séance bureau.
@@ -119,7 +126,7 @@ export function durationHintSet(
 ): Set<5 | 15 | 30 | 50> {
   const out = new Set<5 | 15 | 30 | 50>();
   for (const m of moments ?? []) {
-    if (m.done) continue;
+    if (!momentIsOpen(m)) continue;
     const n = momentDeskMins(m);
     if (n != null) out.add(n);
   }
@@ -140,7 +147,7 @@ export function modeHintSet(
 ): Set<DayPlanContext> {
   const s = new Set<DayPlanContext>();
   for (const m of moments ?? []) {
-    if (m.done || !m.mode || m.mode === "desk") continue;
+    if (!momentIsOpen(m) || !m.mode || m.mode === "desk") continue;
     // Régulier avec durée → plutôt le bouton durée (pas d'obligation Régulier).
     if (m.mode === "regulier" && typeof m.mins === "number" && m.mins > 0) {
       continue;
@@ -156,16 +163,26 @@ export function completeNextMoment(
   preferMode?: SessionContext,
 ): DayPlanMoment[] | undefined {
   if (!moments?.length) return moments;
-  const openIdx = moments.findIndex((m) => !m.done);
+  const openIdx = moments.findIndex(momentIsOpen);
   if (openIdx < 0) return moments;
   let idx = openIdx;
   if (preferMode && isDayPlanContext(preferMode)) {
     const match = moments.findIndex(
-      (m) => !m.done && (m.mode ?? "desk") === preferMode,
+      (m) => momentIsOpen(m) && (m.mode ?? "desk") === preferMode,
     );
     if (match >= 0) idx = match;
   }
   return moments.map((m, i) => (i === idx ? { ...m, done: true } : m));
+}
+
+/** Décline une piste du jour — la séance n'est pas coincée dessus. */
+export function skipMomentAt(
+  moments: DayPlanMoment[] | undefined,
+  index: number,
+): DayPlanMoment[] | undefined {
+  if (!moments?.length || index < 0 || index >= moments.length) return moments;
+  if (!momentIsOpen(moments[index])) return moments;
+  return moments.map((m, i) => (i === index ? { ...m, skipped: true } : m));
 }
 
 export function parseDayPlan(raw: unknown): DayPlanCache | null {
