@@ -656,9 +656,14 @@ export default function Home() {
       planSkipFetchRef.current = false;
       return;
     }
-    if (context === "deposer") {
-      // Carte du jour découplée : Déposer ne remplace pas le conseil.
-      planCtxRef.current = "deposer";
+    // Modes hors bureau : la carte du jour reste le slot desk.
+    if (
+      context === "deposer" ||
+      context === "sortie" ||
+      context === "courses" ||
+      context === "regulier"
+    ) {
+      planCtxRef.current = context;
       planReq.current += 1;
       setPlanLoading(false);
       const desk = todaySlot(readDayPlan(), "desk");
@@ -669,8 +674,12 @@ export default function Home() {
           moments: desk.moments,
         });
         planChatLenRef.current = desk.chatLen ?? 0;
+        const chatStale = chatUserCount() > planChatLenRef.current;
+        const fresh = cachedPlanSlot("desk");
+        setPlanStale(!(fresh && !chatStale));
+      } else {
+        setPlanStale(false);
       }
-      setPlanStale(false);
       return;
     }
     if (openThreads.length === 0 && context === "desk") {
@@ -961,6 +970,23 @@ export default function Home() {
   }
 
   // Choisir une durée = lancer CE créneau ; la carte du jour reste.
+function restoreDeskDayCard(): boolean {
+    const desk = todayPlanSlot("desk");
+    if (!desk) return false;
+    setPlan({
+      message: desk.message,
+      pick: desk.pick,
+      moments: desk.moments,
+    });
+    planChatLenRef.current = desk.chatLen ?? 0;
+    const fresh = cachedPlanSlot("desk");
+    const chatStale = chatUserCount() > planChatLenRef.current;
+    setPlanStale(!(fresh && !chatStale));
+    setPlanLoading(false);
+    setPlanUnreachable(false);
+    return true;
+  }
+
   function pickDuration(d: number) {
     ritualLockRef.current = false;
     setRitualBrief(null);
@@ -971,21 +997,7 @@ export default function Home() {
     durationSettled.current = true;
     appliedSig.current = planSig;
     manualPickSig.current = planSig;
-    // Revenir de Déposer / autre mode : restaurer la carte du jour.
-    const slot = todayPlanSlot("desk");
-    if (slot) {
-      setPlan({
-        message: slot.message,
-        pick: slot.pick,
-        moments: slot.moments,
-      });
-      planChatLenRef.current = slot.chatLen ?? 0;
-      const fresh = cachedPlanSlot("desk");
-      const chatStale = chatUserCount() > planChatLenRef.current;
-      setPlanStale(!(fresh && !chatStale));
-      setPlanLoading(false);
-      setPlanUnreachable(false);
-    }
+    restoreDeskDayCard();
   }
 
   function startDeposer() {
@@ -1002,41 +1014,12 @@ export default function Home() {
     setContext(ctx);
     durationSettled.current = true;
     appliedSig.current = planSig;
-    if (ctx === "deposer") {
-      // Garde la carte du jour ; seul le CTA passe en Déposer.
-      setPlanLoading(false);
-      const desk = todayPlanSlot("desk");
-      if (desk) {
-        setPlan({
-          message: desk.message,
-          pick: desk.pick,
-          moments: desk.moments,
-        });
-        planChatLenRef.current = desk.chatLen ?? 0;
-      }
-      setPlanStale(false);
-      return;
-    }
+    // Carte du jour = slot desk, découplée du mode de lancement.
+    planSkipFetchRef.current = true;
     if (ctx === "regulier") {
       setDuration(15);
     }
-    const slot = todayPlanSlot(ctx);
-    const fresh = cachedPlanSlot(ctx);
-    if (slot) {
-      setPlan({
-        message: slot.message,
-        pick: slot.pick,
-        moments: slot.moments,
-      });
-      setPlanLoading(false);
-      setPlanUnreachable(false);
-      planChatLenRef.current = slot.chatLen ?? 0;
-      const chatStale = chatUserCount() > planChatLenRef.current;
-      if (fresh && !chatStale) setPlanStale(false);
-      else setPlanStale(true);
-      return;
-    }
-    void fetchPlan({ ctx });
+    restoreDeskDayCard();
   }
 
   async function fetchPlan(opts?: { chosen?: number; ctx?: SessionContext }) {

@@ -103,15 +103,17 @@ export function snapDeskMins(mins: number): 5 | 15 | 30 | 50 {
 }
 
 function momentDeskMins(m: DayPlanMoment): 5 | 15 | 30 | 50 | null {
-  // Sortie / courses / régulier → signal sur le bouton mode, pas sur la durée.
-  if (m.mode === "sortie" || m.mode === "courses" || m.mode === "regulier") {
+  // Sortie / courses : signal sur le bouton mode. Le reste (y compris
+  // régulier avec durée) reste lançable en séance bureau.
+  if (m.mode === "sortie" || m.mode === "courses") {
     return null;
   }
   if (typeof m.mins === "number" && m.mins > 0) return snapDeskMins(m.mins);
+  if (m.mode === "regulier") return null;
   return 15;
 }
 
-/** Durées recommandées (moments desk encore ouverts) — un signal par créneau. */
+/** Durées recommandées (moments encore ouverts) — un signal par créneau. */
 export function durationHintSet(
   moments: DayPlanMoment[] | undefined,
 ): Set<5 | 15 | 30 | 50> {
@@ -139,6 +141,10 @@ export function modeHintSet(
   const s = new Set<DayPlanContext>();
   for (const m of moments ?? []) {
     if (m.done || !m.mode || m.mode === "desk") continue;
+    // Régulier avec durée → plutôt le bouton durée (pas d'obligation Régulier).
+    if (m.mode === "regulier" && typeof m.mins === "number" && m.mins > 0) {
+      continue;
+    }
     s.add(m.mode);
   }
   return s;

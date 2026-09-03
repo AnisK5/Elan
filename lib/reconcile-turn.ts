@@ -66,6 +66,69 @@ export function lastUserMessage(
   return "";
 }
 
+export function lastAssistantMessage(
+  messages: Pick<ChatMessage, "role" | "content">[],
+): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === "assistant") return messages[i].content.trim();
+  }
+  return "";
+}
+
+/** La réplique d'Élan à laquelle répond le dernier message user — pas celle d'après. */
+export function assistantBeforeLastUser(
+  messages: Pick<ChatMessage, "role" | "content">[],
+): string {
+  let lastUser = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === "user") {
+      lastUser = i;
+      break;
+    }
+  }
+  if (lastUser < 0) return "";
+  for (let i = lastUser - 1; i >= 0; i--) {
+    if (messages[i]?.role === "assistant") return messages[i].content.trim();
+  }
+  return "";
+}
+
+function assistantAskedIfDone(text: string): boolean {
+  if (!text.includes("?")) return false;
+  const f = fold(text);
+  return /\b(fait|faits|coche|regle|regles|termine|envoye|rendu)\b/.test(f);
+}
+
+/** L'utilisateur affirme qu'un truc est fait (pas un simple « ok, on y va »). */
+export function looksLikeDoneClaim(userText: string): boolean {
+  const f = fold(userText);
+  if (!f) return false;
+  if (
+    /^(c est fait|cest fait|c est deja fait|cest deja fait|deja fait|c est bon|cest bon|c est regle|cest regle)([.!?]|$)/.test(
+      f,
+    )
+  ) {
+    return true;
+  }
+  return (
+    /\b(c est deja fait|cest deja fait|deja fait|c est fait|cest fait|je l ai fait|je lai fait|mets que c est fait|marque.{0,20}fait|coche|c est regle|cest regle|c est envoye|c est rendu|plus besoin|plus a faire)\b/.test(
+      f,
+    ) ||
+    (/\bfait$/.test(f) &&
+      /\b(mets|marque|note|coche|dis|considere)\b/.test(f))
+  );
+}
+
+export function isDoneConfirmationTurn(
+  messages: Pick<ChatMessage, "role" | "content">[],
+): boolean {
+  const userText = lastUserMessage(messages);
+  if (looksLikeDoneClaim(userText)) return true;
+  const f = fold(userText);
+  if (!/^(oui|ouais|yes)([.!?]|$)/.test(f)) return false;
+  return assistantAskedIfDone(assistantBeforeLastUser(messages));
+}
+
 /** Le truc est-il nommé dans le dernier message utilisateur ? */
 export function threadMentionedInTurn(
   thread: Thread,
@@ -100,6 +163,59 @@ export function threadMentionedInTurn(
   return false;
 }
 
+function mentionScore(thread: Thread, text: string): number {
+  if (!text.trim()) return 0;
+  const blob = fold(`${thread.text} ${thread.note ?? ""}`);
+  const textToks = tokens(text);
+  const threadToks = tokens(`${thread.text} ${thread.note ?? ""}`);
+  let score = 0;
+  for (const t of textToks) {
+    if (threadToks.some((tt) => tt === t || tt.includes(t) || t.includes(tt))) {
+      score += t.length >= 6 ? 2 : 1;
+    }
+  }
+  const label = fold(thread.text);
+  if (label.length >= 8 && fold(text).includes(label)) score += 4;
+  if (score === 0 && threadMentionedInTurn(thread, text)) return 1;
+  if (score === 0 && containerAllowedInTurn(thread, text)) return 1;
+  return score;
+}
+
+export function uniqueThreadFromAnchor(
+  threads: Thread[],
+  anchor: string,
+): Thread | null {
+  if (!anchor.trim()) return null;
+  const open = threads.filter((t) => t.status === "open");
+  const scored = open
+    .map((t) => ({ t, score: mentionScore(t, anchor) }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score);
+  if (scored.length === 0) return null;
+  if (scored.length === 1 || scored[0].score > scored[1].score) {
+    return scored[0].t;
+  }
+  return null;
+}
+
+/** Si elle dit que c'est fait sans nommer le truc, on coche celui qu'Élan venait de proposer. */
+export function inferConfirmedDoneOps(
+  threads: Thread[],
+  messages: Pick<ChatMessage, "role" | "content">[],
+): ThreadOp[] {
+  if (!isDoneConfirmationTurn(messages)) return [];
+  const userText = lastUserMessage(messages);
+  const named = threads.filter(
+    (t) => t.status === "open" && threadMentionedInTurn(t, userText),
+  );
+  const pick =
+    named.length === 1
+      ? named[0]
+      : uniqueThreadFromAnchor(threads, assistantBeforeLastUser(messages));
+  if (!pick || isReguliersContainerName(pick.text)) return [];
+  return [{ op: "done", id: pick.id }];
+}
+
 function containerAllowedInTurn(
   thread: Thread,
   userText: string,
@@ -131,6 +247,9 @@ function resolveOpThread(
  * Ne garde que les ops qui touchent un truc nommé dans le TOUR ACTUEL
  * (dernier message utilisateur). Évite qu'un vieux contexte fasse cocher
  * France Travail ou le linge alors qu'on parle de Laura.
+ *
+ * Exception : confirmation courte (« oui », « c'est fait ») — on ancre
+ * alors sur le dernier message d'Élan (le truc qu'on vient de proposer).
  */
 export function scopeGreffierUpdates(
   threads: Thread[],
@@ -140,6 +259,10 @@ export function scopeGreffierUpdates(
   const userText = lastUserMessage(messages);
   if (!userText.trim()) return [];
   const reguliersId = findReguliersThread(threads)?.id;
+  const confirm = isDoneConfirmationTurn(messages);
+  const mentionSource = confirm
+    ? assistantBeforeLastUser(messages) || userText
+    : userText;
 
   return updates.filter((raw) => {
     if (typeof raw !== "object" || raw === null) return false;
@@ -151,27 +274,28 @@ export function scopeGreffierUpdates(
       if (isReguliersContainerName(text)) {
         return containerAllowedInTurn(
           { id: "x", text, kind: "action", status: "open", createdAt: "" },
-          userText,
+          mentionSource,
         );
       }
       if (text.toLowerCase() === COURSES_THREAD_TEXT.toLowerCase()) {
         return containerAllowedInTurn(
           { id: "x", text, kind: "action", status: "open", createdAt: "" },
-          userText,
+          mentionSource,
         );
       }
       return fold(text)
         .split(/\s+/)
-        .some((t) => t.length >= 4 && fold(userText).includes(t));
+        .some((t) => t.length >= 4 && fold(mentionSource).includes(t));
     }
     const thread = resolveOpThread(item, threads);
     if (!thread) return false;
     if (thread.id === reguliersId) {
-      return containerAllowedInTurn(thread, userText);
+      return containerAllowedInTurn(thread, mentionSource);
     }
     return (
+      threadMentionedInTurn(thread, mentionSource) ||
       threadMentionedInTurn(thread, userText) ||
-      containerAllowedInTurn(thread, userText)
+      containerAllowedInTurn(thread, mentionSource)
     );
   });
 }
@@ -285,11 +409,24 @@ export function mergeTurnWrites(
 ): unknown[] {
   const userText = lastUserMessage(messages);
   const scoped = scopeGreffierUpdates(threads, messages, greffierUpdates);
+  const inferred = inferConfirmedDoneOps(threads, messages);
   const ours = extractRelanceTurnOps(threads, userText, at);
-  if (ours.length === 0) return scoped;
+  let merged = scoped;
+  for (const op of inferred) {
+    if (op.op !== "done") continue;
+    const already = merged.some(
+      (raw) =>
+        typeof raw === "object" &&
+        raw !== null &&
+        (raw as { op?: string; id?: string }).op === "done" &&
+        (raw as { id?: string }).id === op.id,
+    );
+    if (!already) merged = [...merged, op];
+  }
+  if (ours.length === 0) return merged;
 
   const targetId = ours.find((o) => o.op === "set" && "id" in o)?.id;
-  const filtered = scoped.filter((raw) => {
+  const filtered = merged.filter((raw) => {
     if (typeof raw !== "object" || raw === null || !targetId) return true;
     const item = raw as Record<string, unknown>;
     if (item.op === "done" && item.id === targetId) return false;

@@ -25,6 +25,7 @@ import {
   type ActiveSession,
 } from "@/lib/store";
 import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
+import { isDoneConfirmationTurn } from "@/lib/reconcile-turn";
 import { AssistantSpeech } from "@/components/HighlightEncart";
 import { isUntimedSession } from "@/lib/session-mode";
 import { trucLabels } from "@/lib/emphasize-truc";
@@ -63,6 +64,7 @@ export default function Session({
   const [running, setRunning] = useState(true);
   const [panel, setPanel] = useState<"none" | "capture" | "threads">("none");
   const [note, setNote] = useState("");
+  const [noteTone, setNoteTone] = useState<"ok" | "warn">("ok");
   const [undoSnapshot, setUndoSnapshot] = useState<Thread[] | null>(null);
 
   const elapsedRef = useRef(initial?.elapsedSec ?? 0);
@@ -286,6 +288,7 @@ export default function Session({
   }
 
   async function reconcile(msgs: ChatMessage[]) {
+    const claimedDone = isDoneConfirmationTurn(msgs);
     try {
       const prevSit = readSituation();
       const res = await apiFetch("/api/reconcile", {
@@ -298,7 +301,16 @@ export default function Session({
           situation: prevSit?.text ?? null,
         }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        if (claimedDone) {
+          setNoteTone("warn");
+          setNote(
+            "je n'ai pas réussi à cocher ça — reformule (ex. « draps faits ») ou marque-le dans Mes trucs",
+          );
+          window.setTimeout(() => setNote(""), 12000);
+        }
+        return;
+      }
       const j = (await res.json()) as {
         updates?: unknown;
         note?: string;
@@ -327,17 +339,32 @@ export default function Session({
       if (ops.length > 0) {
         applyThreadOps(ops);
         setUndoSnapshot(before);
+        setNoteTone("ok");
         setNote(j.note || "trucs mis à jour");
         window.setTimeout(() => {
           setNote("");
           setUndoSnapshot(null);
         }, 10000);
       } else if (sitChanged) {
+        setNoteTone("ok");
         setNote(j.note || "c'est noté");
         window.setTimeout(() => setNote(""), 10000);
+      } else if (claimedDone) {
+        setNoteTone("warn");
+        setNote(
+          "je n'ai pas réussi à cocher ça — reformule (ex. « draps faits ») ou marque-le dans Mes trucs",
+        );
+        window.setTimeout(() => setNote(""), 12000);
       }
     } catch {
-      // silencieux : la mise à jour des trucs ne doit jamais casser la séance
+      if (claimedDone) {
+        setNoteTone("warn");
+        setNote(
+          "je n'ai pas réussi à cocher ça — reformule ou marque-le dans Mes trucs",
+        );
+        window.setTimeout(() => setNote(""), 12000);
+      }
+      // sinon silencieux : la mise à jour des trucs ne doit jamais casser la séance
     }
   }
 
@@ -492,10 +519,20 @@ export default function Session({
       <footer className="border-t border-line bg-paper">
         <div className="mx-auto w-full max-w-2xl px-5 py-3">
           {note && (
-            <div className="animate-rise mb-2 flex items-center gap-2 rounded-lg bg-teal-soft px-3 py-1.5 text-xs text-teal-ink">
-              <span>✏️</span>
-              <span className="flex-1">Élan a mis à jour tes trucs — {note}</span>
-              {undoSnapshot && (
+            <div
+              className={`animate-rise mb-2 flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs ${
+                noteTone === "warn"
+                  ? "bg-sink text-muted"
+                  : "bg-teal-soft text-teal-ink"
+              }`}
+            >
+              <span>{noteTone === "warn" ? "⚠️" : "✏️"}</span>
+              <span className="flex-1">
+                {noteTone === "warn"
+                  ? note
+                  : `Élan a mis à jour tes trucs — ${note}`}
+              </span>
+              {undoSnapshot && noteTone === "ok" ? (
                 <button
                   onClick={() => {
                     restoreThreads(undoSnapshot);
@@ -506,7 +543,7 @@ export default function Session({
                 >
                   annuler
                 </button>
-              )}
+              ) : null}
             </div>
           )}
           {context !== "deposer" && (

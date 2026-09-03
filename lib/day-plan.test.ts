@@ -139,15 +139,15 @@ describe("snapDeskMins + durationHintSet + completeNextMoment", () => {
     expect(snapDeskMins(30)).toBe(30);
   });
 
-  it("signale les durées desk sans doubler un régulier", () => {
+  it("signale les durées y compris régulier timed, pas sortie", () => {
     expect(
       [...durationHintSet([
         { label: "A", mins: 25 },
         { label: "B", mins: 25, done: true },
         { label: "C", mins: 20, mode: "regulier" },
         { label: "Sortie", mode: "sortie" },
-      ])],
-    ).toEqual([30]);
+      ])].sort((a, b) => a - b),
+    ).toEqual([15, 30]);
   });
 
   it("valide le prochain moment (préfère le mode de la séance)", () => {
