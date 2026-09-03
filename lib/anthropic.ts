@@ -123,6 +123,23 @@ export async function apiFetch(
   input: string,
   init?: RequestInit,
 ): Promise<Response> {
+  if (typeof window !== "undefined") {
+    const { isAiApiPath, isAiEnabled } = await import("./ai-enabled");
+    if (isAiApiPath(input) && !isAiEnabled()) {
+      return new Response(
+        JSON.stringify({
+          error: "ai-disabled",
+          unreachable: true,
+          message: "",
+          pick: "15",
+        }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+  }
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");

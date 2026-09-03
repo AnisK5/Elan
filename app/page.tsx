@@ -25,6 +25,7 @@ import {
 } from "@/lib/store";
 import Session from "@/components/Session";
 import AiDegradedBanner from "@/components/AiDegradedBanner";
+import AiPausedBanner from "@/components/AiPausedBanner";
 import ByokFallbackNotice from "@/components/ByokFallbackNotice";
 import EngagementPrompt from "@/components/EngagementPrompt";
 import ProductSurveyPrompt from "@/components/ProductSurveyPrompt";
@@ -43,6 +44,7 @@ import {
 } from "@/lib/engagement-prompts";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { isDiagnosticEnabled } from "@/lib/diagnostic";
+import { isAiEnabled } from "@/lib/ai-enabled";
 import { buildPlanViewSnapshot, planViewFromDebug } from "@/lib/plan-candidates";
 import PlanDiagnostic, {
   type PlanDiagnosticData,
@@ -134,6 +136,7 @@ export default function Home() {
   const [liveAiKind, setLiveAiKind] = useState<AnthropicFailKind | null>(null);
   const [showWtpSurvey, setShowWtpSurvey] = useState(false);
   const [diagnosticOn, setDiagnosticOn] = useState(false);
+  const [aiOn, setAiOn] = useState(true);
   const [planDiag, setPlanDiag] = useState<PlanDiagnosticData | null>(null);
   const appliedSig = useRef("");
   // Deux sources écrivent le conseil : la reco automatique et le choix manuel
@@ -416,6 +419,15 @@ export default function Home() {
     return () => window.removeEventListener("elan-diagnostic", onDiag);
   }, []);
 
+  useEffect(() => {
+    setAiOn(isAiEnabled());
+    function onAi(e: Event) {
+      setAiOn(Boolean((e as CustomEvent<{ on: boolean }>).detail?.on));
+    }
+    window.addEventListener("elan:ai-enabled", onAi);
+    return () => window.removeEventListener("elan:ai-enabled", onAi);
+  }, []);
+
   // Premier lancement : jamais rien déposé ET jamais fait de séance.
   const isNewcomer = ready && threads.length === 0 && sessions.length === 0;
   const showChat = ready && (threads.length > 0 || sessions.length > 0);
@@ -584,6 +596,20 @@ export default function Home() {
     const wantDebug = diagnosticOn;
     const skipCache = skipPlanCacheOnceRef.current;
     if (skipCache) skipPlanCacheOnceRef.current = false;
+
+    // Pause IA volontaire — conseil local, zéro appel Claude.
+    if (!aiOn) {
+      const hint = buildOfflinePlanHint(openThreads, duration);
+      setPlan(hint);
+      setPlanUnreachable(false);
+      setPlanAiNote("");
+      setPlanLoading(false);
+      if (manualPickSig.current !== planSig) {
+        applyPick(hint.pick, planSig);
+      }
+      return;
+    }
+
     if (!wantDebug && !skipCache && isDayPlanContext(context)) {
       const slot = cachedPlanSlot(context);
       if (slot) {
@@ -709,7 +735,7 @@ export default function Home() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, view, planSig, context, diagnosticOn, planRecoveryTick]);
+  }, [ready, view, planSig, context, diagnosticOn, aiOn, planRecoveryTick]);
 
   function saveSessionRecord(
     transcript: ChatMessage[],
@@ -1111,6 +1137,18 @@ export default function Home() {
     lastPointRef.current = t;
     logUsage("aside", { userId: user?.id ?? null });
 
+    if (!isAiEnabled()) {
+      const withUser: ChatMessage[] = [
+        ...chat,
+        { role: "user", content: t, at: new Date().toISOString() },
+      ];
+      setChat(withUser);
+      writeChat(withUser);
+      setPointError("IA en pause — réactive-la dans Réglages pour discuter.");
+      setPointBusy(false);
+      return;
+    }
+
     const last = chat[chat.length - 1];
     const withUser: ChatMessage[] =
       retryText && last?.role === "user" && last.content === t
@@ -1244,20 +1282,25 @@ export default function Home() {
 
   if (view === "session") {
     return (
-      <Session
-        durationMin={context === "desk" ? duration : OUTDOOR_DURATION}
-        context={context}
-        name={settings.name}
-        situation={situationText || undefined}
-        initial={resume}
-        priorSessionsToday={sessionsToday(sessions)}
-        ritualBrief={
-          sessionBriefRef.current
-            ? { message: sessionBriefRef.current }
-            : ritualBrief
-        }
-        onEnd={endSession}
-      />
+      <div className="mx-auto flex min-h-dvh w-full max-w-xl flex-col px-5">
+        <div className="pt-4">
+          <AiPausedBanner />
+        </div>
+        <Session
+          durationMin={context === "desk" ? duration : OUTDOOR_DURATION}
+          context={context}
+          name={settings.name}
+          situation={situationText || undefined}
+          initial={resume}
+          priorSessionsToday={sessionsToday(sessions)}
+          ritualBrief={
+            sessionBriefRef.current
+              ? { message: sessionBriefRef.current }
+              : ritualBrief
+          }
+          onEnd={endSession}
+        />
+      </div>
     );
   }
 
@@ -1280,6 +1323,8 @@ export default function Home() {
           />
         </div>
       </header>
+
+      <AiPausedBanner />
 
       <AiDegradedBanner
         liveKind={

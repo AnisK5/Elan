@@ -9,6 +9,7 @@ import {
   parseStreamError,
 } from "@/lib/anthropic";
 import { aiRetryHint, reportAiRecovered } from "@/lib/ai-fail-client";
+import { isAiEnabled } from "@/lib/ai-enabled";
 import { reportAiFailUnlessRecovered } from "@/lib/ai-recovery-client";
 import AiRetryBanner from "@/components/AiRetryBanner";
 import {
@@ -183,6 +184,15 @@ export default function Session({
     retryRef.current = { convo, ending };
     setStreaming(true);
     const at = new Date().toISOString();
+
+    if (!isAiEnabled()) {
+      const offline =
+        "L'IA est en pause sur cet appareil — tu peux noter à la main, ou la réactiver dans Réglages.";
+      setMessages([...convo, { role: "assistant", content: offline, at }]);
+      setStreaming(false);
+      return;
+    }
+
     setMessages([...convo, { role: "assistant", content: "", at }]);
     const exchangeIndex = convo.filter((m) => m.role === "user").length;
 

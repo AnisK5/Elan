@@ -8,6 +8,7 @@ import RitualNotify from "@/components/RitualNotify";
 import RitualNotifySettings from "@/components/RitualNotifySettings";
 import AnthropicKeySettings from "@/components/AnthropicKeySettings";
 import ModelSettings from "@/components/ModelSettings";
+import AiEnabledSettings from "@/components/AiEnabledSettings";
 import DiagnosticSettings from "@/components/DiagnosticSettings";
 import ImportData from "@/components/home/ImportData";
 import FeedbackForm from "@/components/FeedbackForm";
@@ -137,6 +138,7 @@ export default function SettingsSheet({
                 />
               )}
               <AnthropicKeySettings />
+              <AiEnabledSettings />
               <ModelSettings />
               <DiagnosticSettings />
               <FeedbackForm source="settings" instantUp={false} contactHint />
