@@ -3,7 +3,10 @@ import { PLAN_VERSION } from "./constants";
 import {
   dayPlanMatches,
   dayPlanPileMatches,
+  isDayPlanStale,
   planDateKey,
+  shouldAutoFetchPlan,
+  todaySlot,
   upsertDayPlanSlot,
   whySignature,
 } from "./day-plan";
@@ -35,13 +38,25 @@ describe("dayPlanPileMatches", () => {
   it("accepte le plan cron avant hydratation du cadre de vie", () => {
     const date = planDateKey();
     const pile = whySignature([t("1", "papa")], "");
-    const plan = upsertDayPlanSlot(null, pile, "desk", {
-      why: "1) …",
-      message: "quinze",
-      pick: "15",
-    }, date);
+    const plan = upsertDayPlanSlot(
+      null,
+      pile,
+      "desk",
+      {
+        why: "1) …",
+        message: "quinze",
+        pick: "15",
+      },
+      date,
+    );
     expect(dayPlanPileMatches(plan, [t("1", "papa")], date)).toBe(true);
-    expect(dayPlanMatches(plan, whySignature([t("1", "papa")], "À Vienne."), date)).toBe(false);
+    expect(
+      dayPlanMatches(
+        plan,
+        whySignature([t("1", "papa")], "À Vienne."),
+        date,
+      ),
+    ).toBe(false);
   });
 });
 
@@ -61,5 +76,54 @@ describe("upsertDayPlanSlot", () => {
     expect(next.slots.desk?.why).toBe("1) …");
     expect(next.slots.sortie?.pick).toBe("sortie");
     expect(dayPlanMatches(next, "sig", date, PLAN_VERSION)).toBe(true);
+  });
+});
+
+describe("todaySlot + shouldAutoFetchPlan + isDayPlanStale", () => {
+  it("relit le slot du jour même si la sig a bougé", () => {
+    const date = planDateKey();
+    const plan = upsertDayPlanSlot(
+      null,
+      "old-sig",
+      "desk",
+      { why: "w", message: "conseil", pick: "15" },
+      date,
+    );
+    expect(todaySlot(plan, "desk", date)?.message).toBe("conseil");
+    expect(todaySlot(plan, "sortie", date)).toBeNull();
+  });
+
+  it("auto-fetch seulement sans slot ou si forcé", () => {
+    expect(
+      shouldAutoFetchPlan({ hasTodaySlot: false, forceRefresh: false }),
+    ).toBe(true);
+    expect(
+      shouldAutoFetchPlan({ hasTodaySlot: true, forceRefresh: false }),
+    ).toBe(false);
+    expect(
+      shouldAutoFetchPlan({ hasTodaySlot: true, forceRefresh: true }),
+    ).toBe(true);
+    expect(
+      shouldAutoFetchPlan({
+        hasTodaySlot: true,
+        forceRefresh: false,
+        diagnosticOn: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("détecte un plan stale après changement de pile", () => {
+    const date = planDateKey();
+    const plan = upsertDayPlanSlot(
+      null,
+      whySignature([t("1", "papa")], ""),
+      "desk",
+      { why: "w", message: "m", pick: "15" },
+      date,
+    );
+    expect(isDayPlanStale(plan, [t("1", "papa")], "", date)).toBe(false);
+    expect(
+      isDayPlanStale(plan, [t("1", "papa"), t("2", "courses")], "", date),
+    ).toBe(true);
   });
 });

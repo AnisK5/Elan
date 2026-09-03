@@ -7,6 +7,8 @@ export interface DayPlanSlot {
   why: string;
   message: string;
   pick: string;
+  /** Messages user du chat au moment du conseil — pour le bouton stale. */
+  chatLen?: number;
 }
 
 export interface DayPlanCache {
@@ -74,6 +76,7 @@ export function parseDayPlan(raw: unknown): DayPlanCache | null {
       why: slot.why.trim(),
       message: slot.message.trim(),
       pick: slot.pick,
+      ...(typeof slot.chatLen === "number" ? { chatLen: slot.chatLen } : {}),
     };
   }
   return { v: o.v, date: o.date, sig: o.sig, slots };
@@ -109,6 +112,46 @@ export function slotOf(
 ): DayPlanSlot | null {
   if (!plan || !isDayPlanContext(ctx)) return null;
   return plan.slots[ctx] ?? null;
+}
+
+/**
+ * Slot du jour pour l'affichage, même si la pile a bougé (sig différente).
+ * Sert à montrer le dernier conseil + bouton « actualiser » au lieu de refetch.
+ */
+export function todaySlot(
+  plan: DayPlanCache | null,
+  ctx: SessionContext,
+  date: string = planDateKey(),
+  v: number = PLAN_VERSION,
+): DayPlanSlot | null {
+  if (!plan || plan.v !== v || plan.date !== date) return null;
+  return slotOf(plan, ctx);
+}
+
+/** Faut-il appeler Claude automatiquement ? 1er conseil du jour / forcé. */
+export function shouldAutoFetchPlan(opts: {
+  hasTodaySlot: boolean;
+  forceRefresh: boolean;
+  diagnosticOn?: boolean;
+}): boolean {
+  if (opts.forceRefresh) return true;
+  if (opts.diagnosticOn) return true;
+  return !opts.hasTodaySlot;
+}
+
+/** Le conseil affiché ne correspond plus à la pile / cadre de vie. */
+export function isDayPlanStale(
+  plan: DayPlanCache | null,
+  openThreads: Thread[],
+  situationText: string,
+  date: string = planDateKey(),
+): boolean {
+  if (!plan || plan.date !== date || plan.v !== PLAN_VERSION) return true;
+  const sig = whySignature(openThreads, situationText);
+  if (dayPlanMatches(plan, sig, date)) return false;
+  // Même pile (cron / situation pas encore hydratée) → encore valide.
+  if (dayPlanPileMatches(plan, openThreads, date)) return false;
+  return true;
 }
 
 export function mergeDayPlans(

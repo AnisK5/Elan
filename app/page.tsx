@@ -101,7 +101,9 @@ import {
   dayPlanPileMatches,
   isDayPlanContext,
   planDateKey,
+  shouldAutoFetchPlan,
   slotOf,
+  todaySlot,
   upsertDayPlanSlot,
   whySignature,
   type DayPlanContext,
@@ -131,6 +133,8 @@ export default function Home() {
     null,
   );
   const [planLoading, setPlanLoading] = useState(false);
+  /** Conseil du jour encore affiché mais plus aligné (pile / chat) — bouton refresh. */
+  const [planStale, setPlanStale] = useState(false);
   const [planUnreachable, setPlanUnreachable] = useState(false);
   const [planAiNote, setPlanAiNote] = useState("");
   const [liveAiKind, setLiveAiKind] = useState<AnthropicFailKind | null>(null);
@@ -160,6 +164,8 @@ export default function Home() {
   const planSkipFetchRef = useRef(false);
   const skipPlanCacheOnceRef = useRef(false);
   const [planRecoveryTick, setPlanRecoveryTick] = useState(0);
+  /** Nombre de messages user dans le chat au moment du dernier conseil frais. */
+  const planChatLenRef = useRef(0);
 
   // Discussion libre hors séance : déposer, donner des nouvelles, réfléchir
   // à un truc, demander comment s'organiser demain.
@@ -372,13 +378,40 @@ export default function Home() {
     return null;
   }
 
+  /** Dernier conseil du jour (même si la pile a bougé) — affichage sans refetch. */
+  function todayPlanSlot(ctx: SessionContext) {
+    return todaySlot(readDayPlan(), ctx);
+  }
+
+  function chatUserCount() {
+    return chat.filter((m) => m.role === "user" && m.content.trim()).length;
+  }
+
+  function markPlanFresh(fromSlot?: number) {
+    planChatLenRef.current = fromSlot ?? chatUserCount();
+    setPlanStale(false);
+  }
+
   function persistPlanSlot(
     ctx: DayPlanContext,
     slot: { why: string; message: string; pick: string },
   ) {
+    const chatLen = chatUserCount();
     writeDayPlan(
-      upsertDayPlanSlot(readDayPlan(), planSig, ctx, slot, planDateKey()),
+      upsertDayPlanSlot(
+        readDayPlan(),
+        planSig,
+        ctx,
+        { ...slot, chatLen },
+        planDateKey(),
+      ),
     );
+    markPlanFresh(chatLen);
+  }
+
+  function requestPlanRefresh() {
+    skipPlanCacheOnceRef.current = true;
+    setPlanRecoveryTick((t) => t + 1);
   }
 
   useEffect(() => {
@@ -575,7 +608,13 @@ export default function Home() {
     return "Présente-toi et je prends le pouls de tout ça avec toi, un pas à la fois.";
   }
 
-  // Cache jour + signature pile/cadre — pas de nouvel arbitrage si why encore valide.
+  useEffect(() => {
+    if (chatUserCount() > planChatLenRef.current) setPlanStale(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat]);
+
+  // Conseil d'accueil : 1× auto le premier home du jour (ou mode forcé),
+  // + après séance / recovery. Sinon cache du jour + bouton refresh.
   useEffect(() => {
     if (!ready || view !== "home" || ritualLockRef.current) return;
     if (planSkipFetchRef.current) {
@@ -587,15 +626,17 @@ export default function Home() {
       planReq.current += 1;
       setPlan({ message: DEPOSER_PLAN_MESSAGE, pick: "15" });
       setPlanLoading(false);
+      setPlanStale(false);
       return;
     }
     if (openThreads.length === 0 && context === "desk") {
       setPlan(null);
+      setPlanStale(false);
       return;
     }
     const wantDebug = diagnosticOn;
-    const skipCache = skipPlanCacheOnceRef.current;
-    if (skipCache) skipPlanCacheOnceRef.current = false;
+    const forceRefresh = skipPlanCacheOnceRef.current;
+    if (forceRefresh) skipPlanCacheOnceRef.current = false;
 
     // Pause IA volontaire — conseil local, zéro appel Claude.
     if (!aiOn) {
@@ -604,20 +645,39 @@ export default function Home() {
       setPlanUnreachable(false);
       setPlanAiNote("");
       setPlanLoading(false);
+      setPlanStale(false);
       if (manualPickSig.current !== planSig) {
         applyPick(hint.pick, planSig);
       }
       return;
     }
 
-    if (!wantDebug && !skipCache && isDayPlanContext(context)) {
-      const slot = cachedPlanSlot(context);
-      if (slot) {
-        if (manualPickSig.current === planSig) return;
-        setPlan({ message: slot.message, pick: slot.pick });
-        applyPick(slot.pick, planSig);
-        return;
+    const dayCached = readDayPlan();
+    const softSlot = isDayPlanContext(context)
+      ? todaySlot(dayCached, context)
+      : null;
+    const freshSlot = cachedPlanSlot(context);
+    const auto = shouldAutoFetchPlan({
+      hasTodaySlot: Boolean(softSlot),
+      forceRefresh,
+      diagnosticOn: wantDebug,
+    });
+
+    if (!auto && softSlot) {
+      setPlan({ message: softSlot.message, pick: softSlot.pick });
+      setPlanLoading(false);
+      setPlanUnreachable(false);
+      planChatLenRef.current = softSlot.chatLen ?? 0;
+      const chatStale = chatUserCount() > planChatLenRef.current;
+      if (freshSlot && !chatStale) {
+        if (manualPickSig.current !== planSig) {
+          applyPick(softSlot.pick, planSig);
+        }
+        setPlanStale(false);
+      } else {
+        setPlanStale(true);
       }
+      return;
     }
 
     let cancelled = false;
@@ -662,29 +722,28 @@ export default function Home() {
         setPlanAiNote(
           unreachable && errorKind ? anthropicFailMessage(errorKind) : "",
         );
-        // Même en cas d'échec Claude, on garde un conseil concret (serveur ou
-        // secours local) pour pouvoir lancer la séance sans attendre.
         const pick = j?.pick ?? "15";
         const effective = msg
           ? { message: msg, pick }
-          : buildOfflinePlanHint(openThreads, duration);
+          : softSlot
+            ? { message: softSlot.message, pick: softSlot.pick }
+            : buildOfflinePlanHint(openThreads, duration);
         setPlan(effective);
         if (manualPickSig.current !== planSig) {
           applyPick(effective.pick, planSig);
         }
         if (msg && !unreachable) {
+          markPlanFresh();
           const why = (j?.why ?? "").trim();
-          if (
-            why &&
-            !wantDebug &&
-            isDayPlanContext(context)
-          ) {
+          if (why && !wantDebug && isDayPlanContext(context)) {
             persistPlanSlot(context, {
               why,
               message: msg,
               pick: effective.pick,
             });
           }
+        } else if (softSlot) {
+          setPlanStale(true);
         }
         if (wantDebug) {
           const view =
@@ -714,17 +773,22 @@ export default function Home() {
         if (planReq.current !== reqId || planCtxRef.current !== context) return;
         setPlanUnreachable(true);
         setPlanAiNote("");
-        const hint = buildOfflinePlanHint(openThreads, duration);
-        setPlan(hint);
-        if (manualPickSig.current !== planSig) {
-          applyPick(hint.pick, planSig);
+        if (softSlot) {
+          setPlan({ message: softSlot.message, pick: softSlot.pick });
+          setPlanStale(true);
+        } else {
+          const hint = buildOfflinePlanHint(openThreads, duration);
+          setPlan(hint);
+          if (manualPickSig.current !== planSig) {
+            applyPick(hint.pick, planSig);
+          }
         }
         if (wantDebug) {
           setPlanDiag({
             view: buildPlanViewSnapshot(openThreads),
             source: "offline",
-            message: hint.message,
-            pick: hint.pick,
+            message: softSlot?.message ?? "",
+            pick: softSlot?.pick ?? "15",
           });
         }
       })
@@ -835,11 +899,23 @@ export default function Home() {
     if (ctx === "deposer") {
       setPlan({ message: DEPOSER_PLAN_MESSAGE, pick: "15" });
       setPlanLoading(false);
+      setPlanStale(false);
       return;
     }
-    setPlan(null);
     if (ctx === "regulier") {
       setDuration(15);
+    }
+    const slot = todayPlanSlot(ctx);
+    const fresh = cachedPlanSlot(ctx);
+    if (slot) {
+      setPlan({ message: slot.message, pick: slot.pick });
+      setPlanLoading(false);
+      setPlanUnreachable(false);
+      planChatLenRef.current = slot.chatLen ?? 0;
+      const chatStale = chatUserCount() > planChatLenRef.current;
+      if (fresh && !chatStale) setPlanStale(false);
+      else setPlanStale(true);
+      return;
     }
     void fetchPlan({ ctx });
   }
@@ -856,9 +932,9 @@ export default function Home() {
     if (openThreads.length === 0 && ctx === "desk") return;
     const reqId = ++planReq.current;
     setPlanLoading(true);
-    if (ctx !== "desk") setPlan(null);
     const wantDebug = isDiagnosticEnabled();
     const cached = cachedPlanSlot(ctx);
+    const soft = todayPlanSlot(ctx);
     const phraseWhy =
       !wantDebug &&
       opts?.chosen &&
@@ -933,6 +1009,7 @@ export default function Home() {
               );
           setPlan(effective);
           if (msg && !unreachable) {
+            markPlanFresh();
             const why = (j.why ?? cached?.why ?? "").trim();
             if (why && !wantDebug && isDayPlanContext(ctx)) {
               persistPlanSlot(ctx, {
@@ -962,17 +1039,22 @@ export default function Home() {
       } else if (planReq.current === reqId && planCtxRef.current === ctx) {
         setPlanUnreachable(true);
         setPlanAiNote("");
-        const hint = buildOfflinePlanHint(
-          openThreads,
-          opts?.chosen ?? duration,
-        );
-        setPlan(hint);
+        if (soft) {
+          setPlan({ message: soft.message, pick: soft.pick });
+          setPlanStale(true);
+        } else {
+          const hint = buildOfflinePlanHint(
+            openThreads,
+            opts?.chosen ?? duration,
+          );
+          setPlan(hint);
+        }
         if (wantDebug) {
           setPlanDiag({
             view: buildPlanViewSnapshot(openThreads),
             source: "offline",
-            message: hint.message,
-            pick: hint.pick,
+            message: soft?.message ?? "",
+            pick: soft?.pick ?? "15",
           });
         }
       }
@@ -1404,41 +1486,54 @@ export default function Home() {
             </div>
 
             {showPlanBlock ? (
-              <div className="mt-3 rounded-xl border border-teal-soft bg-teal-soft/50 px-4 py-3">
+              <div
+                className={`mt-3 rounded-xl border px-4 py-3 ${
+                  planStale && !planLoading
+                    ? "border-amber/40 bg-amber/10"
+                    : "border-teal-soft bg-teal-soft/50"
+                }`}
+              >
                 <div className="mb-1.5 flex items-center gap-2">
                   <span
-                    className={`h-2 w-2 rounded-full bg-teal ${planLoading ? "animate-breathe" : ""}`}
+                    className={`h-2 w-2 rounded-full ${
+                      planStale && !planLoading ? "bg-amber" : "bg-teal"
+                    } ${planLoading ? "animate-breathe" : ""}`}
                   />
-                  <span className="text-xs font-medium tracking-wide text-teal">
+                  <span
+                    className={`text-xs font-medium tracking-wide ${
+                      planStale && !planLoading ? "text-amber" : "text-teal"
+                    }`}
+                  >
                     {planLoading
                       ? context === "desk"
-                        ? "Élan réfléchit à ce format…"
+                        ? plan?.message
+                          ? "Mise à jour du conseil…"
+                          : "Élan réfléchit à ce format…"
                         : context === "regulier"
                           ? "Élan regarde tes réguliers…"
                           : context === "deposer"
                             ? "Élan t'attend…"
                             : "Élan regarde ce qu'il y a dehors…"
-                      : context === "desk"
-                        ? "Élan te conseille pour aujourd'hui"
-                        : context === "sortie"
-                          ? "Élan pour ta sortie"
-                          : context === "regulier"
-                            ? "Élan pour ton régulier"
-                            : context === "deposer"
-                              ? "Élan pour déposer"
-                              : "Élan pour tes courses"}
+                      : planStale
+                        ? "Le conseil n'est plus à jour"
+                        : context === "desk"
+                          ? "Élan te conseille pour aujourd'hui"
+                          : context === "sortie"
+                            ? "Élan pour ta sortie"
+                            : context === "regulier"
+                              ? "Élan pour ton régulier"
+                              : context === "deposer"
+                                ? "Élan pour déposer"
+                                : "Élan pour tes courses"}
                   </span>
                 </div>
-                {/* Pendant le recalcul on masque l'ancien conseil : le laisser
-                    affiché ferait lire un texte qui ne correspond plus à la
-                    durée sélectionnée. */}
-                {planLoading ? (
+                {planLoading && !plan?.message ? (
                   <div className="flex flex-col gap-1.5 py-0.5">
                     <span className="h-3 w-4/5 animate-pulse rounded bg-teal/15" />
                     <span className="h-3 w-3/5 animate-pulse rounded bg-teal/15" />
                   </div>
                 ) : plan?.message ? (
-                  <div className="animate-rise">
+                  <div className={planLoading ? "opacity-70" : "animate-rise"}>
                     <AssistantSpeech
                       content={plan.message}
                       className="whitespace-pre-wrap text-[15px] leading-relaxed text-teal-ink"
@@ -1458,6 +1553,18 @@ export default function Home() {
                     trucs={trucs}
                   />
                 )}
+                {planStale && aiOn && context !== "deposer" ? (
+                  <button
+                    type="button"
+                    onClick={() => requestPlanRefresh()}
+                    disabled={planLoading}
+                    className="mt-3 w-full rounded-xl bg-amber py-2.5 text-center font-display text-[15px] font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
+                  >
+                    {planLoading
+                      ? "Mise à jour…"
+                      : "Actualiser le conseil"}
+                  </button>
+                ) : null}
                 {diagnosticOn && planDiag && !planLoading ? (
                   <PlanDiagnostic data={planDiag} />
                 ) : null}
