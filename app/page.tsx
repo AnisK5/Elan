@@ -78,11 +78,8 @@ import { apiFetch, anthropicFailMessage, parseStreamError, type AnthropicFailKin
 import { aiRetryHint, reportAiRecovered } from "@/lib/ai-fail-client";
 import { probeAiRecovery, reportAiFailUnlessRecovered } from "@/lib/ai-recovery-client";
 import { needsWtpSurvey } from "@/lib/product-surveys";
-import {
-  normalizeDuration,
-  OUTDOOR_DURATION,
-  RESUME_MAX_AGE_MS,
-} from "@/lib/constants";
+import { normalizeDuration, OUTDOOR_DURATION } from "@/lib/constants";
+import { isFreshActiveSession } from "@/lib/session-resume";
 import { AssistantSpeech } from "@/components/HighlightEncart";
 import { DEPOSER_PLAN_MESSAGE } from "@/lib/session-mode";
 import { sessionBriefForLaunch, sessionBriefForMoment } from "@/lib/session-opening";
@@ -265,32 +262,34 @@ export default function Home() {
     if (ready) wakeSnoozed();
   }, [ready]);
 
-  // Reprise d'une séance laissée en cours — bannière sur l'accueil, pas d'entrée auto.
-  useEffect(() => {
+  // Reprise : on rentre dans la séance, chrono figé. Au-delà de 2 h d'absence,
+  // on archive (une fois les logs hydratés) et on reste sur l'accueil.
+  useLayoutEffect(() => {
     const a = readActiveSession();
-    if (!a || a.messages.length === 0) return;
-    const startedMs = Date.parse(a.startedAt);
-    const fresh =
-      Number.isFinite(startedMs) &&
-      Date.now() - startedMs < RESUME_MAX_AGE_MS;
-    if (!fresh) {
-      if (a.messages.length > 1) {
-        saveSessionRecord(a.messages.filter((m) => m.content.trim()), {
-          sessionId: a.sessionId,
-          startedAt: a.startedAt,
-          durationMin: a.durationMin,
-          sessionContext: a.context,
-        });
-      }
-      clearActiveSession();
-      return;
-    }
+    if (!a || !isFreshActiveSession(a)) return;
     setResume(a);
     setDuration(a.durationMin);
     setContext(a.context ?? "desk");
     sessionStartRef.current = a.startedAt;
     sessionBriefRef.current = null;
+    setView("session");
   }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    const a = readActiveSession();
+    if (!a || isFreshActiveSession(a)) return;
+    const transcript = a.messages.filter((m) => m.content.trim());
+    if (transcript.length > 1) {
+      saveSessionRecord(transcript, {
+        sessionId: a.sessionId,
+        startedAt: a.startedAt,
+        durationMin: a.durationMin,
+        sessionContext: a.context,
+      });
+    }
+    clearActiveSession();
+  }, [ready]);
   // « Aujourd'hui » et la carte de la semaine doivent basculer de jour même si
   // l'onglet reste ouvert toute la nuit : on resynchronise à intervalle et au
   // retour sur l'onglet (le setTimeout peut être gelé en arrière-plan / veille).
@@ -1365,6 +1364,7 @@ function restoreDeskDayCard(): boolean {
     if (!ready || typeof window === "undefined") return;
     const launch = readRitualLaunch(window.location.search);
     if (!launch) return;
+    if (isFreshActiveSession(readActiveSession())) return;
     applyRitualLaunch(launch);
     window.history.replaceState({}, "", window.location.pathname);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1380,6 +1380,7 @@ function restoreDeskDayCard(): boolean {
         planMessage?: string;
       };
       if (data?.type !== RITUAL_SW_MESSAGE) return;
+      if (isFreshActiveSession(readActiveSession())) return;
       const pick = Number(data.pick ?? 15);
       if (!Number.isFinite(pick)) return;
       applyRitualLaunch({
@@ -1967,44 +1968,6 @@ function restoreDeskDayCard(): boolean {
           </>
         )}
       </section>
-
-      {resume && view === "home" ? (
-        <section className="animate-rise mt-4 rounded-2xl border border-amber/30 bg-amber/10 px-4 py-3">
-          <p className="text-[14px] text-ink">
-            Séance en cours — tu peux reprendre là où tu t&apos;étais arrêté.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setView("session")}
-              className="rounded-xl bg-teal px-4 py-2 text-[14px] font-semibold text-white transition hover:bg-teal-ink"
-            >
-              Reprendre ({resume.durationMin} min)
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (resume) {
-                  saveSessionRecord(
-                    resume.messages.filter((m) => m.content.trim()),
-                    {
-                      sessionId: resume.sessionId,
-                      startedAt: resume.startedAt,
-                      durationMin: resume.durationMin,
-                      sessionContext: resume.context,
-                    },
-                  );
-                }
-                clearActiveSession();
-                setResume(null);
-              }}
-              className="rounded-xl border border-line px-4 py-2 text-[14px] text-muted transition hover:text-ink"
-            >
-              Abandonner
-            </button>
-          </div>
-        </section>
-      ) : null}
 
       {showChat ? (
         <ChatBubble

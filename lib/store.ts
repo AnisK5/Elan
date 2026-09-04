@@ -817,6 +817,8 @@ export interface ActiveSession {
   elapsedSec: number;
   messages: ChatMessage[];
   startedAt: string;
+  /** Dernière sauvegarde — pour mesurer le trou hors séance. */
+  updatedAt?: string;
   context?: SessionContext;
   sessionId?: string;
 }

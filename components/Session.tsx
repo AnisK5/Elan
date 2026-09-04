@@ -29,6 +29,11 @@ import { isDeleteConfirmationTurn, isDoneConfirmationTurn } from "@/lib/reconcil
 import { AssistantSpeech } from "@/components/HighlightEncart";
 import { isUntimedSession } from "@/lib/session-mode";
 import { trucLabels } from "@/lib/emphasize-truc";
+import {
+  shouldNudgeResume,
+  RESUME_NUDGE_AFTER_MS,
+  withResumeNudge,
+} from "@/lib/session-resume";
 import QuickCapture from "./QuickCapture";
 import ThreadRow from "./ThreadRow";
 
@@ -74,6 +79,8 @@ export default function Session({
   const started = useRef(false);
   const closed = useRef(false);
   const finishingRef = useRef(false);
+  const userPausedRef = useRef(false);
+  const hiddenAtRef = useRef<number | null>(null);
   const ritualBriefRef = useRef(ritualBrief);
   ritualBriefRef.current = ritualBrief;
   const retryRef = useRef<{
@@ -98,6 +105,28 @@ export default function Session({
     return () => clearInterval(id);
   }, [running]);
 
+  // Hors écran : le chrono ne mange pas les minutes.
+  useEffect(() => {
+    function onVis() {
+      if (document.hidden) {
+        hiddenAtRef.current = Date.now();
+        setRunning(false);
+        return;
+      }
+      const hiddenAt = hiddenAtRef.current;
+      hiddenAtRef.current = null;
+      if (hiddenAt && Date.now() - hiddenAt >= RESUME_NUDGE_AFTER_MS) {
+        setMessages((prev) => withResumeNudge(prev));
+      }
+      if (userPausedRef.current || closed.current || finishingRef.current) {
+        return;
+      }
+      setRunning(true);
+    }
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+
   // Ouverture — ou reprise d'une séance interrompue par un refresh.
   // On attend que les fils soient chargés (ready) : sinon le guide démarre
   // avec une liste vide et croit à tort qu'il n'y a rien à faire.
@@ -109,6 +138,8 @@ export default function Session({
       void runTurn([]);
     } else if (prior[prior.length - 1].role === "user") {
       void runTurn(prior); // le refresh a coupé la réponse du guide : on la relance
+    } else if (initial && shouldNudgeResume(initial)) {
+      setMessages(withResumeNudge(prior));
     }
     // sinon : on a déjà la dernière réponse du guide, on attend simplement l'utilisateur
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -122,6 +153,7 @@ export default function Session({
       elapsedSec: elapsedRef.current,
       messages,
       startedAt: startedAtRef.current,
+      updatedAt: new Date().toISOString(),
       sessionId: sessionIdRef.current,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -439,7 +471,13 @@ export default function Session({
                 </div>
               </div>
               <button
-                onClick={() => setRunning((r) => !r)}
+                onClick={() => {
+                  setRunning((r) => {
+                    const next = !r;
+                    userPausedRef.current = !next;
+                    return next;
+                  });
+                }}
                 className="rounded-lg px-2 py-1 text-sm text-muted transition hover:text-ink"
               >
                 {running ? "Pause" : "Reprendre"}
