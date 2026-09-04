@@ -262,7 +262,7 @@ export function writeSourceForTurn(
 
 /** Garde le dump d'avant quand le dernier mot est « maj » / suite courte. */
 export function messagesForReconcile<
-  T extends { role: string; content: string },
+  T extends Pick<ChatMessage, "role" | "content">,
 >(messages: T[]): T[] {
   if (messages.length === 0) return messages;
   const last = lastUserMessage(messages);

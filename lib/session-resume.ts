@@ -26,7 +26,7 @@ export function lastActivityMs(session: ResumeSnapshot): number {
 export function isFreshActiveSession(
   session: ResumeSnapshot | null | undefined,
   now = Date.now(),
-): session is ResumeSnapshot {
+): boolean {
   if (!session) return false;
   const last = lastActivityMs(session);
   if (!last) return false;
