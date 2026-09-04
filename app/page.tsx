@@ -64,6 +64,11 @@ import { greeting, Logo, welcomeLine } from "@/components/home/Branding";
 import { useAuth } from "@/components/AuthProvider";
 import { filterEffectiveOps, noteFromTurnOps, parseThreadOps } from "@/lib/ops";
 import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
+import {
+  expectsListWrite,
+  messagesForReconcile,
+  WRITE_FAIL_NOTE,
+} from "@/lib/reconcile-turn";
 import { completionAt } from "@/lib/week-stats";
 import { computeUsageWeek } from "@/lib/usage";
 import {
@@ -189,6 +194,7 @@ export default function Home() {
   const [pointText, setPointText] = useState("");
   const [pointBusy, setPointBusy] = useState(false);
   const [pointNote, setPointNote] = useState("");
+  const [pointNoteTone, setPointNoteTone] = useState<"ok" | "warn">("ok");
   const [pointError, setPointError] = useState("");
   const lastPointRef = useRef("");
   const pointNoteTimer = useRef(0);
@@ -1403,14 +1409,25 @@ function restoreDeskDayCard(): boolean {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function showPointNote(text: string, undo: Thread[] | null) {
+  function showPointNote(
+    text: string,
+    undo: Thread[] | null,
+    tone: "ok" | "warn" = "ok",
+  ) {
     window.clearTimeout(pointNoteTimer.current);
     setPointNote(text);
+    setPointNoteTone(tone);
     setPointUndo(undo);
     pointNoteTimer.current = window.setTimeout(() => {
       setPointNote("");
       setPointUndo(null);
-    }, 10000);
+      setPointNoteTone("ok");
+    }, tone === "warn" ? 12000 : 10000);
+  }
+
+  function warnIfWriteMissed(messages: ChatMessage[]) {
+    if (!expectsListWrite(snapshotThreads(), messages)) return;
+    showPointNote(WRITE_FAIL_NOTE, null, "warn");
   }
 
   async function applyReconcile(messages: ChatMessage[]): Promise<boolean> {
@@ -1421,8 +1438,7 @@ function restoreDeskDayCard(): boolean {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           threads: snapshotThreads(),
-          // Assez de contexte pour le greffier, sans ruminer tout le fil.
-          messages: messages.slice(-8).map((m) => ({
+          messages: messagesForReconcile(messages).map((m) => ({
             role: m.role,
             content: m.content,
           })),
@@ -1482,6 +1498,7 @@ function restoreDeskDayCard(): boolean {
     setPointText("");
     window.clearTimeout(pointNoteTimer.current);
     setPointNote("");
+    setPointNoteTone("ok");
     setPointUndo(null);
     lastPointRef.current = t;
     logUsage("aside", { userId: user?.id ?? null });
@@ -1589,9 +1606,11 @@ function restoreDeskDayCard(): boolean {
       setLiveAiKind(null);
       setPointBusy(false);
       const wrote = await clerkP;
-      // Seconde passe : le greffier a vu le message, pas encore la réplique.
+      // Seconde passe : le message est vu, pas encore la réplique.
       // Si rien n'a bougé, on relit l'échange entier (comme en séance).
-      if (!wrote) await applyReconcile(full);
+      let ok = wrote;
+      if (!ok) ok = await applyReconcile(full);
+      if (!ok) warnIfWriteMissed(full);
       return;
     } catch {
       const wrote = await clerkP;
@@ -1614,6 +1633,7 @@ function restoreDeskDayCard(): boolean {
     clearChat();
     setChat([]);
     setPointNote("");
+    setPointNoteTone("ok");
     setPointUndo(null);
   }
 
@@ -1983,12 +2003,14 @@ function restoreDeskDayCard(): boolean {
           error={pointError}
           onRetry={() => void sendPoint(lastPointRef.current)}
           note={pointNote}
+          noteTone={pointNoteTone}
           undo={pointUndo}
           onUndo={() => {
             if (!pointUndo) return;
             restoreThreads(pointUndo);
             setPointUndo(null);
             setPointNote("");
+            setPointNoteTone("ok");
           }}
           onReset={resetChat}
           trucs={trucs}
