@@ -1704,7 +1704,7 @@ function restoreDeskDayCard(): boolean {
                   <div className={planLoading ? "opacity-70" : "animate-rise"}>
                     <AssistantSpeech
                       content={plan.message}
-                      className="whitespace-pre-wrap text-[15px] leading-relaxed text-teal-ink"
+                      className="whitespace-pre-wrap text-[14px] italic leading-relaxed text-muted"
                       trucs={trucs}
                     />
                     {planUnreachable ? (
@@ -1717,97 +1717,107 @@ function restoreDeskDayCard(): boolean {
                 ) : (
                   <AssistantSpeech
                     content={planFallbackMessage(context)}
-                    className="whitespace-pre-wrap text-[15px] leading-relaxed text-teal-ink"
+                    className="whitespace-pre-wrap text-[14px] italic leading-relaxed text-muted"
                     trucs={trucs}
                   />
                 )}
                 {planLoading && !plan?.moments?.length ? null : plan?.moments &&
                   plan.moments.length > 0 ? (
-                  <ul className="mt-2.5 space-y-2">
+                  <ul className="mt-2.5 space-y-3">
                     {plan.moments.map((m, i) => {
                       const minsLabel =
                         typeof m.mins === "number" && m.mins > 0
                           ? `${m.mins} min`
                           : null;
+                      const typeLabel =
+                        m.mode === "regulier"
+                          ? "Régulier"
+                          : m.mode === "sortie"
+                            ? "Sortie"
+                            : m.mode === "courses"
+                              ? "Courses"
+                              : minsLabel
+                                ? "Bureau"
+                                : null;
+                      const slotParts = [minsLabel, typeLabel].filter(Boolean);
+                      const slotLine =
+                        slotParts.length > 0
+                          ? slotParts.join(" · ")
+                          : "Créneau";
                       return (
                         <li
                           key={`${m.label}-${i}`}
-                          className="flex items-start gap-2 text-[13px] leading-snug text-teal-ink"
+                          className="text-[13px] leading-snug"
                         >
-                          <span className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
                             <span
-                              className={
-                                m.done || m.skipped
-                                  ? "text-faint"
-                                  : "text-teal/70"
-                              }
-                              aria-hidden
-                            >
-                              —{" "}
-                            </span>
-                            <span
-                              className={
+                              className={`min-w-0 flex-1 font-medium ${
                                 m.done
                                   ? "text-faint line-through"
                                   : m.skipped
                                     ? "text-faint"
-                                    : ""
-                              }
+                                    : "text-teal-ink"
+                              }`}
                             >
-                              {minsLabel ? (
-                                <span
-                                  className={
-                                    m.done || m.skipped
-                                      ? ""
-                                      : "font-medium text-teal-ink"
-                                  }
-                                >
-                                  {minsLabel}
-                                </span>
-                              ) : null}
-                              {minsLabel ? " · " : null}
-                              {m.label}
+                              {slotLine}
                             </span>
-                          </span>
-                          <span className="flex shrink-0 items-center gap-0.5 pt-0.5">
-                            <button
-                              type="button"
-                              onClick={() => markDayMomentDone(i)}
-                              title={m.done ? "Déjà fait — annuler" : "C'est fait"}
-                              aria-label={
-                                m.done ? "Déjà fait — annuler" : "C'est fait"
-                              }
-                              className={`rounded-md p-1 transition ${
-                                m.done
-                                  ? "text-teal"
-                                  : "text-faint hover:bg-teal-soft/60 hover:text-teal"
+                            <span className="flex shrink-0 items-center gap-0.5">
+                              <button
+                                type="button"
+                                onClick={() => markDayMomentDone(i)}
+                                title={
+                                  m.done
+                                    ? "Créneau fait — annuler"
+                                    : "Créneau fait"
+                                }
+                                aria-label={
+                                  m.done
+                                    ? "Créneau fait — annuler"
+                                    : "Créneau fait"
+                                }
+                                className={`rounded-md p-1 transition ${
+                                  m.done
+                                    ? "text-teal"
+                                    : "text-faint hover:bg-teal-soft/60 hover:text-teal"
+                                }`}
+                              >
+                                <CheckIcon />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => swapDayMoment(i)}
+                                title={
+                                  m.skipped
+                                    ? "Annuler — garder ce créneau"
+                                    : "Pas ce créneau — proposer autre chose"
+                                }
+                                aria-label={
+                                  m.skipped
+                                    ? "Annuler — garder ce créneau"
+                                    : "Pas ce créneau — proposer autre chose"
+                                }
+                                disabled={planLoading}
+                                className={`rounded-md p-1 transition disabled:opacity-50 ${
+                                  m.skipped
+                                    ? "text-teal"
+                                    : "text-faint hover:bg-teal-soft/60 hover:text-teal"
+                                }`}
+                              >
+                                <SwapIcon />
+                              </button>
+                            </span>
+                          </div>
+                          {m.label ? (
+                            <p
+                              className={`mt-0.5 pl-0.5 text-[12px] italic leading-snug ${
+                                m.done || m.skipped
+                                  ? "text-faint"
+                                  : "text-muted"
                               }`}
                             >
-                              <CheckIcon />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => swapDayMoment(i)}
-                              title={
-                                m.skipped
-                                  ? "Annuler — garder cette piste"
-                                  : "Pas ça — proposer autre chose"
-                              }
-                              aria-label={
-                                m.skipped
-                                  ? "Annuler — garder cette piste"
-                                  : "Pas ça — proposer autre chose"
-                              }
-                              disabled={planLoading}
-                              className={`rounded-md p-1 transition disabled:opacity-50 ${
-                                m.skipped
-                                  ? "text-teal"
-                                  : "text-faint hover:bg-teal-soft/60 hover:text-teal"
-                              }`}
-                            >
-                              <SwapIcon />
-                            </button>
-                          </span>
+                              suggestion : {m.label}
+                            </p>
+                          ) : null}
                         </li>
                       );
                     })}

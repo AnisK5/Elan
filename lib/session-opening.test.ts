@@ -52,22 +52,15 @@ describe("sessionBriefForLaunch", () => {
   ];
 
   it("cale un 30 min bureau sur la piste desk de la carte", () => {
-    expect(
-      sessionBriefForLaunch({
-        planMessage: "Aujourd'hui, deux séances.",
-        moments,
-        context: "desk",
-        durationMin: 30,
-      }),
-    ).toContain("30 min");
-    expect(
-      sessionBriefForLaunch({
-        planMessage: "Aujourd'hui, deux séances.",
-        moments,
-        context: "desk",
-        durationMin: 30,
-      }),
-    ).toContain("Message à papa");
+    const brief = sessionBriefForLaunch({
+      planMessage: "Aujourd'hui, deux séances.",
+      moments,
+      context: "desk",
+      durationMin: 30,
+    });
+    expect(brief).toContain("Créneau de 30 min");
+    expect(brief).toContain("Suggestion");
+    expect(brief).toContain("Message à papa");
   });
 
   it("cale Régulier sur le moment régulier, pas le desk", () => {
@@ -77,7 +70,7 @@ describe("sessionBriefForLaunch", () => {
       context: "regulier",
       durationMin: 15,
     });
-    expect(brief).toContain("Régulier");
+    expect(brief).toContain("Créneau Régulier");
     expect(brief).toContain("Draps");
     expect(brief).not.toContain("Message à papa");
   });

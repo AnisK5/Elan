@@ -247,9 +247,8 @@ ${timingBlock}${contextRule(meta.context)}${renderSessionContinuity(meta.priorSe
 
 BRIEF DE CETTE SÉANCE (calé sur le bouton qu'elle a cliqué — durée / Régulier / Sortie) :
 « ${meta.ritualBrief.message.trim()} »
-C'est le fil conducteur de CE créneau. La carte du jour peut parler d'autres moments : reste sur celui-ci sauf si elle dit clairement qu'elle veut autre chose.
-Durée déjà choisie : ${meta.durationMin} min — ne la remets pas en question.
-Le premier pas est DANS ce sujet (ou parmi les réguliers / dehors si le mode le dit).`
+La première ligne = le créneau (temps / type). Une « Suggestion : » n'est PAS un contrat — elle peut la laisser, la changer, ou en demander une autre. Ne la présente jamais comme déjà validée.
+Durée déjà choisie : ${meta.durationMin} min — ne la remets pas en question.`
       : ""
   }
 

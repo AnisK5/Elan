@@ -106,40 +106,30 @@ export function sessionBriefForLaunch(opts: {
 
   if (context === "regulier") {
     if (moment) {
-      return `Créneau Régulier — on s'occupe de « ${moment.label} ». Si ça ne colle pas maintenant, on en choisit un autre parmi tes réguliers.`;
+      return `Créneau Régulier.\nSuggestion : « ${moment.label} » — à prendre ou à laisser, on peut en choisir un autre.`;
     }
-    return "Créneau Régulier — on regarde ce qui revient (loyer, entretien, rythmes) et on en prend un, sans pression.";
+    return "Créneau Régulier.\nOn regarde ce qui revient, sans pression.";
   }
   if (context === "sortie") {
     if (moment) {
-      return `Sortie — on vise « ${moment.label} ». On regroupe ce qui se fait dehors sur le trajet.`;
+      return `Créneau Sortie.\nSuggestion : « ${moment.label} » — on regroupe le trajet.`;
     }
-    return "Sortie — on regarde ce qui se fait dehors sur ton trajet.";
+    return "Créneau Sortie.\nOn regarde ce qui se fait dehors sur ton trajet.";
   }
   if (context === "courses") {
-    return "Courses — on part sur ta liste, et ce qui tombe sur le trajet si besoin.";
+    return "Créneau Courses.\nOn part sur ta liste, et ce qui tombe sur le trajet si besoin.";
   }
   if (context === "deposer") {
     return "";
   }
 
-  // Bureau : durée choisie + sujet de la carte si pertinent.
+  // Bureau : durée choisie d'abord ; le contenu de la carte reste une suggestion.
   if (moment) {
-    const mins =
-      typeof moment.mins === "number" && moment.mins > 0
-        ? snapDeskMins(moment.mins)
-        : durationMin;
-    const useMins = durationMin;
-    // Si elle a choisi une autre durée que la piste, on suit SON bouton.
-    const label = moment.label;
-    if (useMins !== mins && moment.mode !== "regulier") {
-      return `Créneau de ${useMins} min — on avance sur « ${label} » (proposé sur la carte du jour).`;
-    }
-    return `Créneau de ${useMins} min — on avance sur « ${label} ».`;
+    return `Créneau de ${durationMin} min.\nSuggestion : « ${moment.label} » — à prendre ou à laisser.`;
   }
 
   if (dayHint) {
-    return `Créneau de ${durationMin} min. ${dayHint}`;
+    return `Créneau de ${durationMin} min.\nSuggestion : ${dayHint}`;
   }
-  return `Créneau de ${durationMin} min — présente-toi, on prend le prochain petit pas ensemble.`;
+  return `Créneau de ${durationMin} min.\nPrésente-toi, on prend le prochain petit pas ensemble.`;
 }
