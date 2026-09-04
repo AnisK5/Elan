@@ -7,6 +7,7 @@ import {
   isCarryForwardTurn,
   looksLikeDoneClaim,
   looksLikeStatusReport,
+  looksLikeWriteConfirm,
   mergeTurnWrites,
   messagesForReconcile,
   scopeGreffierUpdates,
@@ -524,6 +525,96 @@ describe("suivi d'appel — Sogessur", () => {
         sep4,
       ),
     ).toEqual([]);
+  });
+});
+
+const JULIETTE =
+  "Je veux dire a juliette vers mercredi prochain de prendre rdv pour check si son coeur va bien";
+
+describe("confirm « action à faire » — dépôt Juliette", () => {
+  it("entend « action à faire » comme confirm d'écriture après un dépôt", () => {
+    expect(looksLikeWriteConfirm("action a faire")).toBe(true);
+    expect(looksLikeWriteConfirm("cale")).toBe(true);
+    expect(looksLikeWriteConfirm("merci")).toBe(false);
+    expect(isCarryForwardTurn("action a faire", JULIETTE)).toBe(true);
+    expect(isCarryForwardTurn("merci", JULIETTE)).toBe(false);
+  });
+
+  it("garde Juliette + mercredi dans le tour quand elle confirme", () => {
+    const blob = tourUserBlob([
+      { role: "user", content: JULIETTE },
+      {
+        role: "assistant",
+        content:
+          "Tu veux qu'on le cale comme une action à faire mercredi, ou tu veux le noter maintenant ?",
+      },
+      { role: "user", content: "action a faire" },
+    ]);
+    expect(blob).toMatch(/juliette/i);
+    expect(blob).toMatch(/mercredi/i);
+    expect(blob).toMatch(/action a faire/i);
+  });
+
+  it("laisse passer un add Juliette malgré le confirm court", () => {
+    const updates = [
+      {
+        op: "add",
+        text: "Message à Juliette pour RDV check-up cœur",
+        kind: "action",
+        plannedFor: "2026-09-09",
+        note: "Lui dire de prendre rdv pour vérifier son cœur.",
+      },
+    ];
+    expect(
+      scopeGreffierUpdates(
+        [],
+        [
+          { role: "user", content: JULIETTE },
+          {
+            role: "assistant",
+            content: "Action à faire mercredi, ou juste noter ?",
+          },
+          { role: "user", content: "action a faire" },
+        ],
+        updates,
+      ),
+    ).toEqual(updates);
+  });
+
+  it("attend une écriture après la confirm — sinon on doit alerter", () => {
+    expect(
+      expectsListWrite(
+        [],
+        [
+          { role: "user", content: JULIETTE },
+          { role: "assistant", content: "On le cale en action mercredi ?" },
+          { role: "user", content: "action a faire" },
+        ],
+        sep4,
+      ),
+    ).toBe(true);
+  });
+
+  it("pose mercredi sur l'add via le dump d'avant", () => {
+    const stamped = stampWhenOnAdds(
+      [
+        { role: "user", content: JULIETTE },
+        { role: "assistant", content: "Action mercredi ?" },
+        { role: "user", content: "action a faire" },
+      ],
+      [
+        {
+          op: "add",
+          text: "Message à Juliette pour RDV cœur",
+          kind: "action",
+        },
+      ],
+      sep4,
+    );
+    expect(stamped[0]).toMatchObject({
+      op: "add",
+      plannedFor: "2026-09-09",
+    });
   });
 });
 

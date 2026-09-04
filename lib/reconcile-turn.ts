@@ -124,10 +124,33 @@ function prevUserBeforeLast(
 }
 
 /**
- * « maj », plainte d'écriture, ou suite courte d'un long compte-rendu :
- * le tour utile est le dump d'avant, pas ces deux mots.
- * Pas un inventaire de synonymes — structure : explicite, ou court après long.
+ * « maj », plainte d'écriture, confirm court (« action à faire »), ou suite
+ * d'un compte-rendu : le tour utile est le dump d'avant, pas ces deux mots.
+ * Structure : explicite, confirm d'écriture, ou court après un long report —
+ * pas un inventaire de synonymes métier.
  */
+export function looksLikeWriteConfirm(userText: string): boolean {
+  const f = fold(userText.trim());
+  if (!f || f.length > 100) return false;
+  if (
+    /^(non|nan|annule|laisse|pas maintenant|pas la peine|oublie)([\s.!]|$)/.test(
+      f,
+    )
+  ) {
+    return false;
+  }
+  if (
+    /^(ok|merci|nickel|parfait|top|daccord|d accord|recu)([\s.!]|$)/.test(f)
+  ) {
+    return false;
+  }
+  return (
+    /\b(action|a faire|cale|calons|ajoute|ajoutes|note le|notes le|mets le|met le|vas y|go)\b/.test(
+      f,
+    ) || /^(oui|ouais)([\s.!]|$)/.test(f)
+  );
+}
+
 export function isCarryForwardTurn(
   userText: string,
   prevUserText?: string,
@@ -142,9 +165,17 @@ export function isCarryForwardTurn(
       f,
     )
   ) {
+    // « oui » seul : seulement si le message d'avant est un vrai dépôt (confirm).
+    if (/^(oui|ouais)[\s.!?]*$/.test(f)) {
+      const prev = (prevUserText ?? "").trim();
+      return prev.length >= 60;
+    }
     return false;
   }
   const prev = (prevUserText ?? "").trim();
+  // « action à faire », « cale »… après un dépôt — sans ça le filtre n'a plus
+  // Juliette / mercredi et jette l'add.
+  if (prev.length >= 60 && looksLikeWriteConfirm(t)) return true;
   // Suite courte d'un compte-rendu : correction de nom, précision, plainte.
   if (prev.length >= 80 && t.length <= 200 && looksLikeStatusReport(prev)) {
     return true;
