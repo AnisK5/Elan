@@ -81,7 +81,7 @@ function parseMoments(raw: unknown): DayPlanMoment[] | undefined {
       label: o.label.trim().slice(0, 80),
       ...(mode ? { mode } : {}),
       ...(typeof o.mins === "number" && o.mins > 0
-        ? { mins: Math.round(o.mins) }
+        ? { mins: snapDeskMins(o.mins) }
         : {}),
       ...(o.done === true ? { done: true } : {}),
       ...(o.skipped === true ? { skipped: true } : {}),

@@ -245,11 +245,11 @@ ${timingBlock}${contextRule(meta.context)}${renderSessionContinuity(meta.priorSe
     meta.ritualBrief?.message?.trim()
       ? `
 
-BRIEF RITUEL (le conseil déjà donné — accueil, mail ou notif du matin) :
+BRIEF DE CETTE SÉANCE (calé sur le bouton qu'elle a cliqué — durée / Régulier / Sortie) :
 « ${meta.ritualBrief.message.trim()} »
-C'est LE programme de cette séance, déjà annoncé sur l'écran. La continuité ci-dessus est une mémoire, pas une invitation à changer de truc — même si un autre dossier « pèse plus » (urgence, père, échéance).
+C'est le fil conducteur de CE créneau. La carte du jour peut parler d'autres moments : reste sur celui-ci sauf si elle dit clairement qu'elle veut autre chose.
 Durée déjà choisie : ${meta.durationMin} min — ne la remets pas en question.
-Ne proposes pas autre chose. Le premier pas est DANS ce sujet.`
+Le premier pas est DANS ce sujet (ou parmi les réguliers / dehors si le mode le dit).`
       : ""
   }
 

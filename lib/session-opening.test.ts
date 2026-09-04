@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  pickMomentForLaunch,
   sessionBodyFromBrief,
+  sessionBriefForLaunch,
   sessionOpeningFromBrief,
 } from "./session-opening";
 
@@ -39,6 +41,51 @@ describe("sessionOpeningFromBrief", () => {
   it("ne double pas un salut déjà là", () => {
     expect(sessionOpeningFromBrief("Salut, on relance Laura.")).toBe(
       "Salut, on relance Laura. On s'y met ?",
+    );
+  });
+});
+
+describe("sessionBriefForLaunch", () => {
+  const moments = [
+    { label: "Message à papa", mins: 15, mode: "desk" as const },
+    { label: "Draps", mins: 15, mode: "regulier" as const },
+  ];
+
+  it("cale un 30 min bureau sur la piste desk de la carte", () => {
+    expect(
+      sessionBriefForLaunch({
+        planMessage: "Aujourd'hui, deux séances.",
+        moments,
+        context: "desk",
+        durationMin: 30,
+      }),
+    ).toContain("30 min");
+    expect(
+      sessionBriefForLaunch({
+        planMessage: "Aujourd'hui, deux séances.",
+        moments,
+        context: "desk",
+        durationMin: 30,
+      }),
+    ).toContain("Message à papa");
+  });
+
+  it("cale Régulier sur le moment régulier, pas le desk", () => {
+    const brief = sessionBriefForLaunch({
+      planMessage: "Aujourd'hui, deux séances.",
+      moments,
+      context: "regulier",
+      durationMin: 15,
+    });
+    expect(brief).toContain("Régulier");
+    expect(brief).toContain("Draps");
+    expect(brief).not.toContain("Message à papa");
+  });
+
+  it("pickMomentForLaunch préfère le mode", () => {
+    expect(pickMomentForLaunch(moments, "regulier", 15)?.label).toBe("Draps");
+    expect(pickMomentForLaunch(moments, "desk", 15)?.label).toBe(
+      "Message à papa",
     );
   });
 });

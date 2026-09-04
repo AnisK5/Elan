@@ -85,6 +85,7 @@ import {
 } from "@/lib/constants";
 import { AssistantSpeech } from "@/components/HighlightEncart";
 import { DEPOSER_PLAN_MESSAGE } from "@/lib/session-mode";
+import { sessionBriefForLaunch } from "@/lib/session-opening";
 import { trucLabels } from "@/lib/emphasize-truc";
 import {
   backlogCounts,
@@ -105,6 +106,7 @@ import {
   momentIsOpen,
   planDateKey,
   skipMomentAt,
+  snapDeskMins,
   toggleMomentDoneAt,
   avoidLabels,
   shouldAutoFetchPlan,
@@ -394,7 +396,10 @@ export default function Home() {
     return todaySlot(readDayPlan(), ctx);
   }
 
-  function persistDeskMoments(next: DayPlanMoment[], opts?: { proposeOther?: boolean }) {
+  function persistDeskMoments(
+    next: DayPlanMoment[],
+    opts?: { proposeOther?: boolean },
+  ) {
     const cached = readDayPlan();
     const slot = todaySlot(cached, "desk");
     if (!slot) {
@@ -411,19 +416,27 @@ export default function Home() {
       );
       setPlan((prev) => (prev ? { ...prev, moments: next } : prev));
     }
-    if (opts?.proposeOther && !next.some(momentIsOpen)) {
+    // Remplacement demandé (↻ sur une piste).
+    if (opts?.proposeOther) {
       requestPlanRefresh();
     }
   }
 
-  function skipDayMoment(index: number) {
-    const next = skipMomentAt(plan?.moments, index);
-    if (next) persistDeskMoments(next, { proposeOther: true });
+  function markDayMomentDone(index: number) {
+    const next = toggleMomentDoneAt(plan?.moments, index);
+    if (!next) return;
+    const justDone = next[index]?.done === true;
+    const noOpenLeft = !next.some(momentIsOpen);
+    persistDeskMoments(next, {
+      proposeOther: justDone && noOpenLeft,
+    });
   }
 
-  function toggleDayMomentDone(index: number) {
-    const next = toggleMomentDoneAt(plan?.moments, index);
-    if (next) persistDeskMoments(next, { proposeOther: true });
+  function swapDayMoment(index: number) {
+    const next = skipMomentAt(plan?.moments, index);
+    if (!next) return;
+    const nowSkipped = next[index]?.skipped === true;
+    persistDeskMoments(next, { proposeOther: nowSkipped });
   }
 
   function chatUserCount() {
@@ -477,7 +490,7 @@ export default function Home() {
         label: o.label.trim().slice(0, 80),
         ...(mode ? { mode } : {}),
         ...(typeof o.mins === "number" && o.mins > 0
-          ? { mins: Math.round(o.mins) }
+          ? { mins: snapDeskMins(Math.round(o.mins)) }
           : {}),
       });
     }
@@ -974,7 +987,7 @@ export default function Home() {
             ),
           );
           setPlan((prev) => (prev ? { ...prev, moments: next } : prev));
-          momentsStillOpen = next.some((m) => !m.done);
+          momentsStillOpen = next.some(momentIsOpen);
         }
       }
     }
@@ -1001,12 +1014,16 @@ export default function Home() {
     clearActiveSession();
     setResume(null);
     sessionStartRef.current = new Date().toISOString();
-    // Le texte AFFICHÉ sur la carte (y compris conseil de secours si Claude
-    // n'a pas répondu) — pas un brief de notif resté en mémoire.
+    // Brief calé sur le bouton (durée / Régulier / Sortie) + piste de la carte.
     const msg =
       opts && "brief" in opts
         ? (opts.brief?.trim() ?? "")
-        : (plan?.message ?? "").trim();
+        : sessionBriefForLaunch({
+            planMessage: plan?.message,
+            moments: plan?.moments,
+            context,
+            durationMin: context === "desk" ? duration : OUTDOOR_DURATION,
+          }).trim();
     sessionBriefRef.current = msg || null;
     setRitualBrief(msg ? { message: msg } : null);
     setView("session");
@@ -1715,62 +1732,80 @@ function restoreDeskDayCard(): boolean {
                       return (
                         <li
                           key={`${m.label}-${i}`}
-                          className="text-[13px] leading-snug text-teal-ink"
+                          className="flex items-start gap-2 text-[13px] leading-snug text-teal-ink"
                         >
-                          <span
-                            className={
-                              m.done || m.skipped ? "text-faint" : "text-teal/70"
-                            }
-                            aria-hidden
-                          >
-                            —{" "}
-                          </span>
-                          <span
-                            className={
-                              m.done
-                                ? "text-faint line-through"
-                                : m.skipped
+                          <span className="min-w-0 flex-1">
+                            <span
+                              className={
+                                m.done || m.skipped
                                   ? "text-faint"
-                                  : ""
-                            }
-                          >
-                            {minsLabel ? (
-                              <span
-                                className={
-                                  m.done || m.skipped
-                                    ? ""
-                                    : "font-medium text-teal-ink"
-                                }
-                              >
-                                {minsLabel}
-                              </span>
-                            ) : null}
-                            {minsLabel ? " · " : null}
-                            {m.label}
+                                  : "text-teal/70"
+                              }
+                              aria-hidden
+                            >
+                              —{" "}
+                            </span>
+                            <span
+                              className={
+                                m.done
+                                  ? "text-faint line-through"
+                                  : m.skipped
+                                    ? "text-faint"
+                                    : ""
+                              }
+                            >
+                              {minsLabel ? (
+                                <span
+                                  className={
+                                    m.done || m.skipped
+                                      ? ""
+                                      : "font-medium text-teal-ink"
+                                  }
+                                >
+                                  {minsLabel}
+                                </span>
+                              ) : null}
+                              {minsLabel ? " · " : null}
+                              {m.label}
+                            </span>
                           </span>
-                          <span className="ml-2 whitespace-nowrap">
+                          <span className="flex shrink-0 items-center gap-0.5 pt-0.5">
                             <button
                               type="button"
-                              onClick={() => toggleDayMomentDone(i)}
-                              className={`text-[11px] underline-offset-2 hover:underline ${
+                              onClick={() => markDayMomentDone(i)}
+                              title={m.done ? "Déjà fait — annuler" : "C'est fait"}
+                              aria-label={
+                                m.done ? "Déjà fait — annuler" : "C'est fait"
+                              }
+                              className={`rounded-md p-1 transition ${
                                 m.done
                                   ? "text-teal"
-                                  : "text-faint hover:text-muted"
+                                  : "text-faint hover:bg-teal-soft/60 hover:text-teal"
                               }`}
                             >
-                              {m.done ? "fait" : "fait ?"}
+                              <CheckIcon />
                             </button>
-                            <span className="text-faint"> · </span>
                             <button
                               type="button"
-                              onClick={() => skipDayMoment(i)}
-                              className={`text-[11px] underline-offset-2 hover:underline ${
+                              onClick={() => swapDayMoment(i)}
+                              title={
+                                m.skipped
+                                  ? "Annuler — garder cette piste"
+                                  : "Pas ça — proposer autre chose"
+                              }
+                              aria-label={
+                                m.skipped
+                                  ? "Annuler — garder cette piste"
+                                  : "Pas ça — proposer autre chose"
+                              }
+                              disabled={planLoading}
+                              className={`rounded-md p-1 transition disabled:opacity-50 ${
                                 m.skipped
                                   ? "text-teal"
-                                  : "text-faint hover:text-muted"
+                                  : "text-faint hover:bg-teal-soft/60 hover:text-teal"
                               }`}
                             >
-                              pas ce soir
+                              <SwapIcon />
                             </button>
                           </span>
                         </li>
@@ -1786,17 +1821,15 @@ function restoreDeskDayCard(): boolean {
                 {aiOn &&
                 context !== "deposer" &&
                 !planLoading &&
-                (planStale ||
-                  (plan?.moments?.length
-                    ? !plan.moments.some(momentIsOpen)
-                    : false)) ? (
+                planStale ? (
                   <button
                     type="button"
                     onClick={() => requestPlanRefresh()}
                     disabled={planLoading}
-                    className="mt-2.5 w-full rounded-xl bg-teal py-2.5 text-center font-display text-[15px] font-semibold text-white transition hover:bg-teal-ink disabled:opacity-60"
+                    className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl bg-teal py-2.5 text-center font-display text-[15px] font-semibold text-white transition hover:bg-teal-ink disabled:opacity-60"
                   >
-                    Proposer autre chose
+                    <SwapIcon className="text-white" />
+                    Autre chose
                   </button>
                 ) : null}
                 {diagnosticOn && planDiag && !planLoading ? (
@@ -1940,5 +1973,66 @@ function restoreDeskDayCard(): boolean {
       <ProductSurveyPrompt onClose={() => setShowWtpSurvey(false)} />
     ) : null}
     </>
+  );
+}
+
+function CheckIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      aria-hidden
+      className={className}
+    >
+      <path
+        d="M2.5 7.2 5.6 10.2 11.5 3.8"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function SwapIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      aria-hidden
+      className={className}
+    >
+      <path
+        d="M9.5 2.5 11.5 4.5 9.5 6.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M2.5 4.5h9"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <path
+        d="M4.5 11.5 2.5 9.5 4.5 7.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M11.5 9.5h-9"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
