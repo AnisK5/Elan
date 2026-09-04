@@ -35,8 +35,14 @@ describe("parseThreadOps — la porte d'entrée des écritures du modèle", () =
     ]);
   });
 
+  it("laisse passer une suppression demandée", () => {
+    expect(parseThreadOps([{ op: "delete", id: "a" }], known)).toEqual([
+      { op: "delete", id: "a" },
+    ]);
+  });
+
   it("ignore une opération qu'elle ne connaît pas", () => {
-    expect(parseThreadOps([{ op: "delete", id: "a" }], known)).toEqual([]);
+    expect(parseThreadOps([{ op: "explode", id: "a" }], known)).toEqual([]);
   });
 
   it("refuse une entrée qui n'est pas un tableau", () => {
@@ -206,5 +212,14 @@ describe("noteFromTurnOps — résumé de CE tour seulement", () => {
     expect(noteFromTurnOps([{ op: "done", id: "a" }], threads)).toBe(
       "50€ et RDV psy ✓",
     );
+  });
+
+  it("dit « retiré » pour une suppression", () => {
+    expect(
+      noteFromTurnOps(
+        [{ op: "delete", id: "b" }],
+        [{ id: "b", text: "Message à papa" }],
+      ),
+    ).toBe("Message à papa retiré");
   });
 });

@@ -124,6 +124,9 @@ export function parseThreadOps(
       case "done":
         out.push({ op: "done", id });
         break;
+      case "delete":
+        out.push({ op: "delete", id });
+        break;
       case "snooze":
         out.push({ op: "snooze", id, until: date(item.until) });
         break;
@@ -222,6 +225,9 @@ export function filterEffectiveOps(
         if (hasPendingPhysicalWork(t.text, t.note)) continue;
         out.push(op);
         break;
+      case "delete":
+        out.push(op);
+        break;
       case "snooze":
         if (t.status === "snoozed") continue;
         out.push(op);
@@ -306,6 +312,9 @@ export function noteFromTurnOps(
     switch (op.op) {
       case "done":
         parts.push(`${label} ✓`);
+        break;
+      case "delete":
+        parts.push(`${label} retiré`);
         break;
       case "snooze":
         parts.push(`${label} plus tard`);

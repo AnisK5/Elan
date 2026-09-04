@@ -1921,10 +1921,9 @@ function restoreDeskDayCard(): boolean {
                     type="button"
                     onClick={() => requestPlanRefresh()}
                     disabled={planLoading}
-                    className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl bg-teal py-2.5 text-center font-display text-[15px] font-semibold text-white transition hover:bg-teal-ink disabled:opacity-60"
+                    className="mt-1.5 text-[12px] font-medium text-muted underline-offset-2 transition hover:text-ink hover:underline disabled:opacity-50"
                   >
-                    <SwapIcon className="text-white" />
-                    Autre chose
+                    Proposer autre chose
                   </button>
                 ) : null}
                 {diagnosticOn && planDiag && !planLoading ? (

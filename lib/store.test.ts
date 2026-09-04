@@ -65,6 +65,12 @@ describe("applyThreadOps — ce que le greffier a le droit de faire à tes trucs
     expect(byId("a")?.status).toBe("done");
   });
 
+  it("retire un truc sur delete", () => {
+    seed([thread({ id: "a" }), thread({ id: "b", text: "Autre" })]);
+    applyThreadOps([{ op: "delete", id: "a" }]);
+    expect(snapshotThreads().map((t) => t.id)).toEqual(["b"]);
+  });
+
   it("ne recrée pas un truc ouvert que la personne a déjà", () => {
     seed([thread({ id: "a", text: "Poster le colis" })]);
     applyThreadOps([{ op: "add", text: "  poster LE colis  ", kind: "action" }]);

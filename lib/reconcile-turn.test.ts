@@ -221,4 +221,24 @@ describe("mergeTurnWrites", () => {
     );
     expect(merged).toEqual([{ op: "done", id: "psy" }]);
   });
+
+  it("retire le truc de la question d'avant sur « tu peux supprimer cette tâche »", () => {
+    const threads = [
+      thread({ id: "papa", text: "Message à papa (Omar)" }),
+      thread({ id: "darty", text: "Darty Max — lave-vaisselle" }),
+    ];
+    const merged = mergeTurnWrites(
+      threads,
+      [
+        {
+          role: "assistant",
+          content:
+            "Message à papa maintenant — lui rappeler de contacter le père d'Omar à Casablanca.",
+        },
+        { role: "user", content: "tu peux supprimer cette tache" },
+      ],
+      [],
+    );
+    expect(merged).toEqual([{ op: "delete", id: "papa" }]);
+  });
 });

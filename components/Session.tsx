@@ -25,11 +25,10 @@ import {
   type ActiveSession,
 } from "@/lib/store";
 import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
-import { isDoneConfirmationTurn } from "@/lib/reconcile-turn";
+import { isDeleteConfirmationTurn, isDoneConfirmationTurn } from "@/lib/reconcile-turn";
 import { AssistantSpeech } from "@/components/HighlightEncart";
 import { isUntimedSession } from "@/lib/session-mode";
 import { trucLabels } from "@/lib/emphasize-truc";
-import { sessionOpeningFromBrief } from "@/lib/session-opening";
 import QuickCapture from "./QuickCapture";
 import ThreadRow from "./ThreadRow";
 
@@ -107,19 +106,7 @@ export default function Session({
     started.current = true;
     const prior = (initial?.messages ?? []).filter((m) => m.content.trim());
     if (prior.length === 0) {
-      const brief = ritualBriefRef.current?.message?.trim() ?? "";
-      if (brief && context !== "deposer") {
-        // Le créneau a déjà choisi : on n'envoie pas le modèle recomposer.
-        setMessages([
-          {
-            role: "assistant",
-            content: sessionOpeningFromBrief(brief),
-            at: new Date().toISOString(),
-          },
-        ]);
-      } else {
-        void runTurn([]);
-      }
+      void runTurn([]);
     } else if (prior[prior.length - 1].role === "user") {
       void runTurn(prior); // le refresh a coupé la réponse du guide : on la relance
     }
@@ -313,6 +300,11 @@ export default function Session({
 
   async function reconcile(msgs: ChatMessage[]) {
     const claimedDone = isDoneConfirmationTurn(msgs);
+    const claimedDelete = isDeleteConfirmationTurn(msgs);
+    const claimedWrite = claimedDone || claimedDelete;
+    const writeFailNote = claimedDelete
+      ? "je n'ai pas réussi à l'enlever — reformule (ex. « enlève le message à papa ») ou supprime-le dans Mes trucs"
+      : "je n'ai pas réussi à cocher ça — reformule (ex. « draps faits ») ou marque-le dans Mes trucs";
     try {
       const prevSit = readSituation();
       const res = await apiFetch("/api/reconcile", {
@@ -326,11 +318,9 @@ export default function Session({
         }),
       });
       if (!res.ok) {
-        if (claimedDone) {
+        if (claimedWrite) {
           setNoteTone("warn");
-          setNote(
-            "je n'ai pas réussi à cocher ça — reformule (ex. « draps faits ») ou marque-le dans Mes trucs",
-          );
+          setNote(writeFailNote);
           window.setTimeout(() => setNote(""), 12000);
         }
         return;
@@ -373,19 +363,15 @@ export default function Session({
         setNoteTone("ok");
         setNote("c'est noté");
         window.setTimeout(() => setNote(""), 10000);
-      } else if (claimedDone) {
+      } else if (claimedWrite) {
         setNoteTone("warn");
-        setNote(
-          "je n'ai pas réussi à cocher ça — reformule (ex. « draps faits ») ou marque-le dans Mes trucs",
-        );
+        setNote(writeFailNote);
         window.setTimeout(() => setNote(""), 12000);
       }
     } catch {
-      if (claimedDone) {
+      if (claimedWrite) {
         setNoteTone("warn");
-        setNote(
-          "je n'ai pas réussi à cocher ça — reformule ou marque-le dans Mes trucs",
-        );
+        setNote(writeFailNote);
         window.setTimeout(() => setNote(""), 12000);
       }
       // sinon silencieux : la mise à jour des trucs ne doit jamais casser la séance

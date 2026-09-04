@@ -20,7 +20,6 @@ import {
 } from "@/lib/session-memory";
 import { socleSession } from "@/lib/voice";
 import { isUntimedSession } from "@/lib/session-mode";
-import { sessionOpeningFromBrief } from "@/lib/session-opening";
 import {
   recordStreamUsage,
   sessionExchangeKind,
@@ -52,7 +51,7 @@ interface Body {
 }
 
 const OPENING_DESK =
-  "[La séance commence. Accueille en une phrase chaleureuse. Puis UN SEUL truc — le même que le BRIEF s'il est fourni, nommé comme elle le dirait, en français simple. Pas de jargon, pas de liste. Trie en silence : si un truc n'est pas pour maintenant, il n'entre pas dans le message, même pour dire qu'on n'y touche pas. Termine par UNE question courte (le pas, 8-12 mots, sans préambule) : « tu as le fichier sous la main ? ». Séance BUREAU = assis, sous la main. Si un BRIEF RITUEL est fourni, accroche-toi à CE sujet : n'invente pas un autre programme.]";
+  "[La séance a DÉJÀ commencé — elle vient de cliquer. Accueille en une phrase. Puis UN SEUL truc — le même que le BRIEF s'il est fourni, nommé comme elle le dirait. Pas de jargon, pas de liste. INTERDIT de demander si on s'y met / si on attaque / si elle est prête : le premier message EST le travail (brouillon, fichier, numéro). Termine par UNE question courte qui EST le pas (8-12 mots) : « tu as le fichier sous la main ? ». Séance BUREAU = assis, sous la main. Si un BRIEF RITUEL est fourni, accroche-toi à CE sujet.]";
 
 const OPENING_SORTIE =
   "[La séance SORTIE commence. La personne est (ou va être) dehors — pas assise. Regarde TOUS ses trucs ouverts et repère ceux qui demandent de se déplacer (poste, pharmacie, banque, rdv sur place…) — ignore le bureau (voyage, kayak, mails, docs). Accueille brièvement, demande une fois si elle peut sortir là. Regroupe par trajet. Si un fil \"Courses\" a une liste, propose d'en profiter pour le super. UN arrêt à la fois.]";
@@ -190,6 +189,7 @@ S'ADAPTER À SON CONTEXTE (ici et maintenant) :
 
 CE QUE TU FAIS PENDANT LA SÉANCE :
 - Une fois le programme posé, avance UNE seule chose à la fois, cadrée toute petite (« juste ouvrir le doc », « juste écrire la première ligne »). Jamais plus d'un ou deux trucs à l'écran.
+- TES TRUCS : un greffier les écrit APRÈS ton message. INTERDIT de dire « je ne peux pas supprimer / cocher / noter, c'est l'app / c'est toi qui valides ✏️ ». Si elle demande d'enlever un truc, tu dis « OK, je l'enlève » — le greffier le fait. INTERDIT de prétendre que c'est déjà parti, puis de te dédire. Pas de mode d'emploi interface.
 - Distingue ACTION (à faire) et À SUIVRE (juste prendre des nouvelles / relancer / vérifier — pas de gros travail).
 - Réfère-toi aux trucs par leur contenu réel. Priorise doucement parmi POUR AUJOURD'HUI : ce qui est mûr, ce qui est rapide et débloquant, ce qui pèse mentalement. PAS POUR AUJOURD'HUI n'est pas un plan B — même après un « non ».
 - Une échéance dans 8 jours n'est PAS un truc du jour. « vers le / à partir du / pas avant » une date future = trop tôt. Ne le sors pas pour remplir le créneau.
@@ -248,6 +248,7 @@ ${timingBlock}${contextRule(meta.context)}${renderSessionContinuity(meta.priorSe
 BRIEF DE CETTE SÉANCE (calé sur le bouton qu'elle a cliqué — durée / Régulier / Sortie) :
 « ${meta.ritualBrief.message.trim()} »
 La première ligne = le créneau (temps / type). Une « Suggestion : » n'est PAS un contrat — elle peut la laisser, la changer, ou en demander une autre. Ne la présente jamais comme déjà validée.
+Elle a DÉJÀ lancé la séance : enchaîne sur le premier micro-pas (rédiger, ouvrir, numéro). Jamais « on s'y met ? ».
 Durée déjà choisie : ${meta.durationMin} min — ne la remets pas en question.`
       : ""
   }
@@ -277,14 +278,6 @@ export async function POST(req: Request) {
 
   const { messages = [], threads = [], meta } = body;
   const trimmedMessages = trimSessionMessages(messages);
-  const brief = meta?.ritualBrief?.message?.trim() ?? "";
-  const isOpening = !meta?.ending && trimmedMessages.length === 0;
-  if (isOpening && brief && meta?.context !== "deposer") {
-    return new Response(sessionOpeningFromBrief(brief), {
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
-  }
-
   const access = await resolveAiAccess(req);
   if (!access.apiKey || access.blocked) {
     const marker = encodeStreamError(

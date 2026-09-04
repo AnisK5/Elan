@@ -2,6 +2,7 @@ import type { ChatMessage, Thread } from "@/lib/types";
 import type { ThreadOp } from "@/lib/store";
 import {
   findReguliersThread,
+  isContainerThread,
   isReguliersContainerName,
 } from "@/lib/entretiens";
 import { COURSES_THREAD_TEXT } from "@/lib/shopping-write";
@@ -129,6 +130,31 @@ export function isDoneConfirmationTurn(
   return assistantAskedIfDone(assistantBeforeLastUser(messages));
 }
 
+/** « tu peux supprimer cette tâche » — pas un « c'est fait », un retrait. */
+export function looksLikeDeleteClaim(userText: string): boolean {
+  const f = fold(userText);
+  if (!f) return false;
+  // « t'es sûr que c'est supprimé ? » = vérif, pas une nouvelle demande.
+  if (
+    /\b(sur que|c est (deja )?supprime|cest (deja )?supprime)\b/.test(f) &&
+    !/\b(tu peux|peux tu|peux-tu)\b/.test(f)
+  ) {
+    return false;
+  }
+  if (/\b(ne (le |la |les )?supprime pas|pas (le |la )?supprim)\b/.test(f)) {
+    return false;
+  }
+  return /\b(supprim\w*|enlev\w*|vire[rs]?\b|retire[rs]?\b|lache[rs]?\b)/.test(
+    f,
+  );
+}
+
+export function isDeleteConfirmationTurn(
+  messages: Pick<ChatMessage, "role" | "content">[],
+): boolean {
+  return looksLikeDeleteClaim(lastUserMessage(messages));
+}
+
 /** Le truc est-il nommé dans le dernier message utilisateur ? */
 export function threadMentionedInTurn(
   thread: Thread,
@@ -216,6 +242,24 @@ export function inferConfirmedDoneOps(
   return [{ op: "done", id: pick.id }];
 }
 
+/** Même ancrage que le done, pour « supprime cette tâche ». */
+export function inferConfirmedDeleteOps(
+  threads: Thread[],
+  messages: Pick<ChatMessage, "role" | "content">[],
+): ThreadOp[] {
+  if (!isDeleteConfirmationTurn(messages)) return [];
+  const userText = lastUserMessage(messages);
+  const named = threads.filter(
+    (t) => t.status === "open" && threadMentionedInTurn(t, userText),
+  );
+  const pick =
+    named.length === 1
+      ? named[0]
+      : uniqueThreadFromAnchor(threads, assistantBeforeLastUser(messages));
+  if (!pick || isContainerThread(pick)) return [];
+  return [{ op: "delete", id: pick.id }];
+}
+
 function containerAllowedInTurn(
   thread: Thread,
   userText: string,
@@ -259,7 +303,8 @@ export function scopeGreffierUpdates(
   const userText = lastUserMessage(messages);
   if (!userText.trim()) return [];
   const reguliersId = findReguliersThread(threads)?.id;
-  const confirm = isDoneConfirmationTurn(messages);
+  const confirm =
+    isDoneConfirmationTurn(messages) || isDeleteConfirmationTurn(messages);
   const mentionSource = confirm
     ? assistantBeforeLastUser(messages) || userText
     : userText;
@@ -409,10 +454,11 @@ export function mergeTurnWrites(
 ): unknown[] {
   const userText = lastUserMessage(messages);
   const scoped = scopeGreffierUpdates(threads, messages, greffierUpdates);
-  const inferred = inferConfirmedDoneOps(threads, messages);
+  const inferredDone = inferConfirmedDoneOps(threads, messages);
+  const inferredDelete = inferConfirmedDeleteOps(threads, messages);
   const ours = extractRelanceTurnOps(threads, userText, at);
   let merged = scoped;
-  for (const op of inferred) {
+  for (const op of inferredDone) {
     if (op.op !== "done") continue;
     const already = merged.some(
       (raw) =>
@@ -422,6 +468,22 @@ export function mergeTurnWrites(
         (raw as { id?: string }).id === op.id,
     );
     if (!already) merged = [...merged, op];
+  }
+  for (const op of inferredDelete) {
+    if (op.op !== "delete") continue;
+    const already = merged.some(
+      (raw) =>
+        typeof raw === "object" &&
+        raw !== null &&
+        (raw as { op?: string; id?: string }).op === "delete" &&
+        (raw as { id?: string }).id === op.id,
+    );
+    if (!already) merged = [...merged, op];
+    merged = merged.filter((raw) => {
+      if (typeof raw !== "object" || raw === null) return true;
+      const item = raw as { op?: string; id?: string };
+      return !(item.op === "done" && item.id === op.id);
+    });
   }
   if (ours.length === 0) return merged;
 

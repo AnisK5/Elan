@@ -464,6 +464,7 @@ function usePersisted<T>(key: string, fallback: T) {
 
 export type ThreadOp =
   | { op: "done"; id: string }
+  | { op: "delete"; id: string }
   | { op: "snooze"; id: string; until?: string }
   | { op: "rename"; id: string; text: string }
   | { op: "note"; id: string; note: string }
@@ -657,6 +658,10 @@ export function applyThreadOps(ops: ThreadOp[]): void {
         ...list,
       ];
       logUsage("capture", { meta: { threadId: id } });
+      continue;
+    }
+    if (op.op === "delete") {
+      list = list.filter((t) => t.id !== op.id);
       continue;
     }
     list = list.map((t) => {

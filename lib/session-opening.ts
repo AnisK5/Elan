@@ -40,13 +40,12 @@ export function sessionBodyFromBrief(brief: string): string {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-/** Message d'ouverture : le conseil du créneau + une question courte. */
+/** Message d'ouverture fallback : le conseil du créneau, sans redemander de commencer. */
 export function sessionOpeningFromBrief(brief: string): string {
   const body = sessionBodyFromBrief(brief);
   if (!body) return "";
   const withHello = alreadyGreets(body) ? body : `${HELLO}${body}`;
-  if (/\?\s*$/.test(withHello)) return withHello;
-  return `${withHello.replace(/[.!?…]*\s*$/, ".")} On s'y met ?`;
+  return withHello.replace(/[.!?…]*\s*$/, ".");
 }
 
 function openMoments(moments: DayPlanMoment[] | undefined): DayPlanMoment[] {
