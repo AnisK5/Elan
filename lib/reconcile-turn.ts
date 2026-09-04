@@ -94,6 +94,36 @@ export function looksLikeStatusReport(text: string): boolean {
   );
 }
 
+/**
+ * Elle dépose clairement un truc à faire (pas une question de conseil).
+ * Doit s'écrire tout de suite — sans attendre « action à faire ».
+ */
+export function looksLikeCaptureIntent(text: string): boolean {
+  const t = text.trim();
+  if (t.length < 25) return false;
+  const f = fold(t);
+  // Question pure de conseil (« tu penses que… ? ») sans dépôt.
+  if (
+    /\?/.test(t) &&
+    !/\b(je (veux|dois|voudrais|compte)|faut que|il faut)\b/.test(f)
+  ) {
+    return false;
+  }
+  const intent =
+    /\b(je (veux|dois|voudrais|compte)|faut que|il faut|penser a|pense a|n oubli|rappelle[- ]?moi)\b/.test(
+      f,
+    );
+  const action =
+    /\b(dire|appel|envoy|ecrire|message|mail|sms|relanc|prendre|rdv|verifi|check|contacter|previen)\b/.test(
+      f,
+    );
+  const when =
+    /\b(demain|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|vers|semaine prochaine|prochain)\b/.test(
+      f,
+    );
+  return (intent && action) || (action && when && t.length >= 40);
+}
+
 export const WRITE_FAIL_NOTE =
   "je n'ai pas réussi à mettre ça à jour — reformule ou corrige dans Mes trucs";
 
@@ -924,6 +954,7 @@ export function expectsListWrite(
   if (!blob.trim()) return false;
   if (extractCallFollowUpOps(threads, blob, at).length > 0) return true;
   if (extractRelanceTurnOps(threads, blob, at).length > 0) return true;
+  if (looksLikeCaptureIntent(blob)) return true;
   if (looksLikeStatusReport(blob) && uniqueThreadFromAnchor(threads, blob)) {
     return true;
   }

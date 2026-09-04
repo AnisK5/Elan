@@ -5,6 +5,7 @@ import {
   extractCallFollowUpOps,
   extractRelanceTurnOps,
   isCarryForwardTurn,
+  looksLikeCaptureIntent,
   looksLikeDoneClaim,
   looksLikeStatusReport,
   looksLikeWriteConfirm,
@@ -532,6 +533,20 @@ const JULIETTE =
   "Je veux dire a juliette vers mercredi prochain de prendre rdv pour check si son coeur va bien";
 
 describe("confirm « action à faire » — dépôt Juliette", () => {
+  it("détecte le dépôt dès le premier message — sans confirm", () => {
+    expect(looksLikeCaptureIntent(JULIETTE)).toBe(true);
+    expect(
+      expectsListWrite(
+        [],
+        [{ role: "user", content: JULIETTE }],
+        sep4,
+      ),
+    ).toBe(true);
+    expect(
+      looksLikeCaptureIntent("tu penses que je devrais sortir marcher ?"),
+    ).toBe(false);
+  });
+
   it("entend « action à faire » comme confirm d'écriture après un dépôt", () => {
     expect(looksLikeWriteConfirm("action a faire")).toBe(true);
     expect(looksLikeWriteConfirm("cale")).toBe(true);
