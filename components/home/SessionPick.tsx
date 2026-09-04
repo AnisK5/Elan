@@ -23,7 +23,7 @@ export default function SessionPick({
 }) {
   return (
     <div className="flex min-w-0 w-full flex-col gap-1.5">
-      <p className="text-[11px] text-faint">Lancer une séance</p>
+      <p className="text-[11px] text-faint">Ou choisir autrement</p>
       <div className="flex min-w-0 w-full rounded-xl bg-sink p-1">
         {DURATIONS.map((d) => {
           const selected = context === "desk" && duration === d;

@@ -27,19 +27,19 @@ export const CONSEIL_TOOL_NAME = "conseil_du_jour";
 export const CONSEIL_TOOL = {
   name: CONSEIL_TOOL_NAME,
   description:
-    "Carte du jour. Ordre : why (6 points), review, message (1 phrase d'intro), pick (prochain lancement), moments (1–2 séances avec mins).",
+    "Carte du jour. Ordre : why (6 points), review, message (1 phrase d'intro), pick (prochain lancement), moments (1–3 séances avec mins).",
   input_schema: {
     type: "object" as const,
     properties: {
       why: {
         type: "string",
         description:
-          "Les 6 points d'ARBITRAGE SILENCIEUX, une phrase courte chacun, numérotés 1) à 6). Factuel, pour le développeur. JAMAIS repris dans message.",
+          "Les 6 points d'ARBITRAGE SILENCIEUX, une phrase courte chacun, numérotés 1) à 6). Le point 5 doit répondre « déborde ? NON — parce que … » avec la forme. Factuel, pour le développeur. JAMAIS repris dans message.",
       },
       review: {
         type: "string",
         description:
-          "Relecture INVISIBLE (jamais dans message). Réponds en 1–3 phrases à : « Un pas ou une question serait-il mal calé — condition déjà tranchée (à acheter, pas dispo, relancé récemment), mauvais lieu, relance reportée, question absurde ? » Si oui, dis ce que tu corriges. Sinon « OK » + une phrase. message, pick et moments DOIVENT suivre.",
+          "Relecture INVISIBLE (jamais dans message). Réponds en 1–3 phrases à : « Un pas ou une question serait-il mal calé — condition déjà tranchée (à acheter, pas dispo, relancé récemment), mauvais lieu, relance reportée, question absurde ? Capacité des moments ≥ CHARGE FENÊTRES ? » Si oui, dis ce que tu corriges. Sinon « OK » + une phrase. message, pick et moments DOIVENT suivre.",
       },
       message: {
         type: "string",
@@ -55,9 +55,9 @@ export const CONSEIL_TOOL = {
       moments: {
         type: "array",
         description:
-          "1 ou 2 séances du jour (= bullets). Chaque objet = une séance : label court + mins (durée). Le détail vit dans la séance, pas ici.",
+          "1 à 3 séances du jour (= bullets). Chaque objet = une séance : label court + mins (durée). Capacité totale doit couvrir les fenêtres du jour. Le détail vit dans la séance, pas ici.",
         minItems: 1,
-        maxItems: 2,
+        maxItems: 3,
         items: {
           type: "object",
           properties: {
@@ -117,7 +117,7 @@ export const PHRASE_TOOL = {
 function parseMomentsJson(raw: unknown): PlanMomentJson[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const out: PlanMomentJson[] = [];
-  for (const item of raw.slice(0, 2)) {
+  for (const item of raw.slice(0, 3)) {
     if (!item || typeof item !== "object") continue;
     const o = item as Record<string, unknown>;
     if (typeof o.label !== "string" || !o.label.trim()) continue;

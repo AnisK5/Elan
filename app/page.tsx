@@ -85,7 +85,7 @@ import {
 } from "@/lib/constants";
 import { AssistantSpeech } from "@/components/HighlightEncart";
 import { DEPOSER_PLAN_MESSAGE } from "@/lib/session-mode";
-import { sessionBriefForLaunch } from "@/lib/session-opening";
+import { sessionBriefForLaunch, sessionBriefForMoment } from "@/lib/session-opening";
 import { trucLabels } from "@/lib/emphasize-truc";
 import {
   backlogCounts,
@@ -1029,7 +1029,42 @@ export default function Home() {
     setView("session");
   }
 
-  // Choisir une durée = lancer CE créneau ; la carte du jour reste.
+  /** Lancer directement le créneau de la carte — suivre le conseil sans re-choisir. */
+  function launchMoment(index: number) {
+    const m = plan?.moments?.[index];
+    if (!m || !momentIsOpen(m)) return;
+    ritualLockRef.current = false;
+    setRitualBrief(null);
+    planSkipFetchRef.current = true;
+    const mode = m.mode ?? "desk";
+    let mins: number;
+    let ctx: SessionContext;
+    if (mode === "sortie" || mode === "courses") {
+      ctx = mode;
+      mins = OUTDOOR_DURATION;
+    } else if (mode === "regulier") {
+      ctx = "regulier";
+      mins =
+        typeof m.mins === "number" && m.mins > 0
+          ? snapDeskMins(m.mins)
+          : 15;
+    } else {
+      ctx = "desk";
+      mins =
+        typeof m.mins === "number" && m.mins > 0
+          ? snapDeskMins(m.mins)
+          : duration;
+    }
+    planCtxRef.current = ctx;
+    setContext(ctx);
+    setDuration(mins);
+    durationSettled.current = true;
+    appliedSig.current = planSig;
+    manualPickSig.current = planSig;
+    startFresh({ brief: sessionBriefForMoment(m, mins) });
+  }
+
+  // Choisir une durée = préparer CE créneau ; la carte du jour reste.
 function restoreDeskDayCard(): boolean {
     const desk = todayPlanSlot("desk");
     if (!desk) return false;
@@ -1726,12 +1761,18 @@ function restoreDeskDayCard(): boolean {
                 )}
                 {planLoading && !plan?.moments?.length ? null : plan?.moments &&
                   plan.moments.length > 0 ? (
-                  <ul className="mt-2.5 space-y-3">
+                  <ul className="mt-2.5 space-y-2">
                     {plan.moments.map((m, i) => {
                       const minsLabel =
                         typeof m.mins === "number" && m.mins > 0
                           ? `${m.mins} min`
-                          : null;
+                          : m.mode === "sortie"
+                            ? "Sortie"
+                            : m.mode === "courses"
+                              ? "Courses"
+                              : m.mode === "regulier"
+                                ? "Régulier"
+                                : "Go";
                       const typeLabel =
                         m.mode === "regulier"
                           ? "Régulier"
@@ -1739,31 +1780,54 @@ function restoreDeskDayCard(): boolean {
                             ? "Sortie"
                             : m.mode === "courses"
                               ? "Courses"
-                              : minsLabel
-                                ? "Bureau"
-                                : null;
-                      const slotParts = [minsLabel, typeLabel].filter(Boolean);
-                      const slotLine =
-                        slotParts.length > 0
-                          ? slotParts.join(" · ")
-                          : "Créneau";
+                              : "Bureau";
+                      const open = momentIsOpen(m);
                       return (
                         <li
                           key={`${m.label}-${i}`}
                           className="text-[13px] leading-snug"
                         >
                           <div className="flex items-center gap-2">
-                            <span
-                              className={`min-w-0 flex-1 font-medium ${
-                                m.done
-                                  ? "text-faint line-through"
-                                  : m.skipped
-                                    ? "text-faint"
-                                    : "text-teal-ink"
+                            <button
+                              type="button"
+                              onClick={() => launchMoment(i)}
+                              disabled={!open}
+                              title={
+                                open
+                                  ? `Lancer · ${minsLabel}`
+                                  : "Créneau déjà traité"
+                              }
+                              className={`shrink-0 rounded-lg px-2.5 py-1.5 text-center text-[13px] font-medium tabular-nums transition sm:px-3 ${
+                                open
+                                  ? "bg-sink text-ink shadow-sm hover:bg-teal-soft hover:text-teal-ink"
+                                  : "bg-sink/50 text-faint line-through"
                               }`}
                             >
-                              {slotLine}
-                            </span>
+                              {minsLabel}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => launchMoment(i)}
+                              disabled={!open}
+                              className={`min-w-0 flex-1 text-left transition disabled:cursor-default ${
+                                open
+                                  ? "text-teal-ink hover:text-teal"
+                                  : m.done
+                                    ? "text-faint line-through"
+                                    : "text-faint"
+                              }`}
+                            >
+                              <span className="font-medium">{typeLabel}</span>
+                              {m.label ? (
+                                <span
+                                  className={`mt-0.5 block text-[12px] italic leading-snug ${
+                                    open ? "text-muted" : "text-faint"
+                                  }`}
+                                >
+                                  suggestion : {m.label}
+                                </span>
+                              ) : null}
+                            </button>
                             <span className="flex shrink-0 items-center gap-0.5">
                               <button
                                 type="button"
@@ -1810,17 +1874,6 @@ function restoreDeskDayCard(): boolean {
                               </button>
                             </span>
                           </div>
-                          {m.label ? (
-                            <p
-                              className={`mt-0.5 pl-0.5 text-[12px] italic leading-snug ${
-                                m.done || m.skipped
-                                  ? "text-faint"
-                                  : "text-muted"
-                              }`}
-                            >
-                              suggestion : {m.label}
-                            </p>
-                          ) : null}
                         </li>
                       );
                     })}

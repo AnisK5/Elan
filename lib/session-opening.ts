@@ -133,3 +133,21 @@ export function sessionBriefForLaunch(opts: {
   }
   return `Créneau de ${durationMin} min.\nPrésente-toi, on prend le prochain petit pas ensemble.`;
 }
+
+/** Brief quand elle lance un moment précis depuis la carte. */
+export function sessionBriefForMoment(
+  moment: DayPlanMoment,
+  durationMin: number,
+): string {
+  const mode = moment.mode ?? "desk";
+  if (mode === "regulier") {
+    return `Créneau Régulier.\nSuggestion : « ${moment.label} » — à prendre ou à laisser, on peut en choisir un autre.`;
+  }
+  if (mode === "sortie") {
+    return `Créneau Sortie.\nSuggestion : « ${moment.label} » — on regroupe le trajet.`;
+  }
+  if (mode === "courses") {
+    return "Créneau Courses.\nOn part sur ta liste, et ce qui tombe sur le trajet si besoin.";
+  }
+  return `Créneau de ${durationMin} min.\nSuggestion : « ${moment.label} » — à prendre ou à laisser.`;
+}
