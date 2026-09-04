@@ -55,7 +55,7 @@ describe("shouldNudgeResume", () => {
       updatedAt: "2026-09-04T09:00:00.000Z",
       messages: [
         {
-          role: "assistant",
+          role: "assistant" as const,
           content: "Tu as le fichier ?",
           at: "2026-09-04T09:00:00.000Z",
         },
