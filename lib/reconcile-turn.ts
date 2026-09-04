@@ -772,6 +772,71 @@ export function extractRelanceTurnOps(
   return ops;
 }
 
+const DAY_IN_TITLE =
+  /\b(vers\s+)?(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)(\s+prochain(e)?)?\b/gi;
+
+/** Titre court pour un dépôt clair — le jour va dans plannedFor, pas dans le libellé. */
+export function captureTitleFromText(text: string): string | null {
+  let t = text.trim().replace(/\s+/g, " ");
+  t = t.replace(
+    /^(je (veux|dois|voudrais|compte)\s+|faut que (je\s+)?|il faut (que je\s+)?)/i,
+    "",
+  );
+  t = t.replace(DAY_IN_TITLE, " ").replace(/\bdemain\b/gi, " ");
+  t = t.replace(/\s+/g, " ").trim();
+  t = t.replace(/^(de|d'|à|a)\s+/i, "").trim();
+  if (t.length < 8) return null;
+  t = t.charAt(0).toUpperCase() + t.slice(1);
+  if (t.length > 72) t = `${t.slice(0, 70).trim()}…`;
+  return t;
+}
+
+/**
+ * Dépôt clair (« Dire à Juliette mercredi… ») → add + jour, sans attendre
+ * le modèle. Filet : avant on comptait sur lui, et un {} vide = silence.
+ */
+export function extractCaptureIntentOps(
+  threads: Thread[],
+  userText: string,
+  at = new Date(),
+): ThreadOp[] {
+  const text = userText.trim();
+  if (!text || !looksLikeCaptureIntent(text)) return [];
+  // Un compte-rendu d'appel déjà couvert ailleurs.
+  if (looksLikeCallReport(text)) return [];
+
+  const day = parseTargetDay(text, at);
+  const existing = uniqueThreadFromAnchor(threads, text);
+  if (existing && !isContainerThread(existing)) {
+    if (!day) return [];
+    const ops: ThreadOp[] = [
+      { op: "set", id: existing.id, plannedFor: `${day}T12:00:00.000Z` },
+    ];
+    return ops;
+  }
+
+  const title = captureTitleFromText(text);
+  if (!title) return [];
+  // Déjà une ligne ouverte avec le même libellé.
+  if (
+    threads.some(
+      (t) =>
+        t.status === "open" &&
+        fold(t.text) === fold(title),
+    )
+  ) {
+    return [];
+  }
+
+  const add: ThreadOp = {
+    op: "add",
+    text: title,
+    kind: "action",
+  };
+  if (day) add.plannedFor = `${day}T12:00:00.000Z`;
+  return [add];
+}
+
 function looksLikeCallReport(text: string): boolean {
   const f = fold(text);
   if (!f) return false;
@@ -888,6 +953,7 @@ export function mergeTurnWrites(
   const ours = [
     ...extractRelanceTurnOps(threads, blob, at),
     ...extractCallFollowUpOps(threads, blob, at),
+    ...extractCaptureIntentOps(threads, blob, at),
   ];
   let merged = scoped;
   for (const op of inferredDone) {
@@ -919,6 +985,7 @@ export function mergeTurnWrites(
   }
   if (ours.length === 0) return merged;
 
+  const hasOurAdd = ours.some((o) => o.op === "add");
   const targetIds = new Set(
     ours
       .map((o) => ("id" in o && typeof o.id === "string" ? o.id : ""))
@@ -927,6 +994,7 @@ export function mergeTurnWrites(
   const filtered = merged.filter((raw) => {
     if (typeof raw !== "object" || raw === null) return true;
     const item = raw as Record<string, unknown>;
+    if (hasOurAdd && item.op === "add") return false;
     if (item.op === "done" && typeof item.id === "string" && targetIds.has(item.id)) {
       return false;
     }
@@ -954,6 +1022,7 @@ export function expectsListWrite(
   if (!blob.trim()) return false;
   if (extractCallFollowUpOps(threads, blob, at).length > 0) return true;
   if (extractRelanceTurnOps(threads, blob, at).length > 0) return true;
+  if (extractCaptureIntentOps(threads, blob, at).length > 0) return true;
   if (looksLikeCaptureIntent(blob)) return true;
   if (looksLikeStatusReport(blob) && uniqueThreadFromAnchor(threads, blob)) {
     return true;

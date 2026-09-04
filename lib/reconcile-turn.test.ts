@@ -3,6 +3,7 @@ import type { Thread } from "@/lib/types";
 import {
   expectsListWrite,
   extractCallFollowUpOps,
+  extractCaptureIntentOps,
   extractRelanceTurnOps,
   isCarryForwardTurn,
   looksLikeCaptureIntent,
@@ -545,6 +546,52 @@ describe("confirm « action à faire » — dépôt Juliette", () => {
     expect(
       looksLikeCaptureIntent("tu penses que je devrais sortir marcher ?"),
     ).toBe(false);
+  });
+
+  it("crée l'action Juliette même si le modèle n'écrit rien", () => {
+    const merged = mergeTurnWrites(
+      [],
+      [{ role: "user", content: JULIETTE }],
+      [],
+      sep4,
+    );
+    expect(
+      merged.some(
+        (o) =>
+          typeof o === "object" &&
+          o !== null &&
+          (o as { op?: string }).op === "add" &&
+          /juliette/i.test((o as { text?: string }).text ?? ""),
+      ),
+    ).toBe(true);
+    expect(
+      merged.some(
+        (o) =>
+          typeof o === "object" &&
+          o !== null &&
+          (o as { plannedFor?: string }).plannedFor?.startsWith("2026-09-09"),
+      ),
+    ).toBe(true);
+  });
+
+  it("crée aussi sur « Dire à Juliette mercredi… »", () => {
+    const line =
+      "Dire à Juliette mercredi de prendre un rdv pour checker son cœur";
+    const merged = mergeTurnWrites(
+      [],
+      [{ role: "user", content: line }],
+      [],
+      sep4,
+    );
+    const add = merged.find(
+      (o) =>
+        typeof o === "object" &&
+        o !== null &&
+        (o as { op?: string }).op === "add",
+    ) as { text?: string; plannedFor?: string } | undefined;
+    expect(add?.text).toMatch(/juliette/i);
+    expect(add?.text).not.toMatch(/mercredi/i);
+    expect(add?.plannedFor?.startsWith("2026-09-09")).toBe(true);
   });
 
   it("entend « action à faire » comme confirm d'écriture après un dépôt", () => {
