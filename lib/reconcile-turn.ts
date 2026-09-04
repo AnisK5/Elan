@@ -6,6 +6,7 @@ import {
   isReguliersContainerName,
 } from "@/lib/entretiens";
 import { COURSES_THREAD_TEXT } from "@/lib/shopping-write";
+import { hasRegulierCadence } from "@/lib/reguliers-write";
 import { resolveThreadId } from "@/lib/ops";
 
 const STOP = new Set([
@@ -109,6 +110,19 @@ export function looksLikeDoneClaim(userText: string): boolean {
       f,
     )
   ) {
+    return true;
+  }
+  if (
+    /\b(j ai|je l ai|je les ai)\s+(deja\s+)?(achete|pris|reserve|paye)s?\s+(le|la|les|mes|mon|ma|l)\b/.test(
+      f,
+    ) ||
+    /\b(j ai|je les ai)\s+(deja\s+)?(achete|pris|reserve|paye)s?\s+[a-z]{4,}/.test(
+      f,
+    )
+  ) {
+    return true;
+  }
+  if (/\b(billets?|hebergements?)\s+(pris|achetes?|reserves?)\b/.test(f)) {
     return true;
   }
   return (
@@ -266,8 +280,10 @@ function containerAllowedInTurn(
 ): boolean {
   const user = fold(userText);
   if (isReguliersContainerName(thread.text)) {
-    return /regulier|rythme|entretien|linge|drap|urssaf|loyer|frigo/.test(
-      user,
+    return (
+      /regulier|rythme|entretien|linge|drap|urssaf|loyer|frigo|habitude|bilan|dentiste/.test(
+        user,
+      ) || hasRegulierCadence(userText)
     );
   }
   if (thread.text.trim().toLowerCase() === COURSES_THREAD_TEXT.toLowerCase()) {
@@ -406,6 +422,68 @@ function parseTargetDay(userText: string, at = new Date()): string | null {
   return null;
 }
 
+const GAP_WHEN =
+  /\bpas avant\b|\ba partir\b|\bvers le\b|\bautour de\b/;
+
+const HARD_DUE =
+  /\bau plus tard\b|\bdeadline\b|\becheance\b|\bavant demain\b|\bavant lundi\b|\bavant mardi\b|\bavant mercredi\b|\bavant jeudi\b|\bavant vendredi\b/;
+
+function anchorRelativeWhen(note: string, iso: string): string {
+  const label = frDayLabel(iso);
+  return note
+    .replace(/\bdemain matin\b/gi, `${label} matin`)
+    .replace(/\bpour demain\b/gi, `pour le ${label}`)
+    .replace(/\ba faire demain\b/gi, `à faire ${label}`)
+    .replace(/\bà faire demain\b/gi, `à faire ${label}`)
+    .replace(/\bdemain\b/gi, label);
+}
+
+/**
+ * Un « demain » / « lundi » sur un add : jour prévu (plannedFor),
+ * pas une note qui dit encore « demain ».
+ */
+export function stampWhenOnAdds(
+  messages: Pick<ChatMessage, "role" | "content">[],
+  updates: unknown[],
+  at = new Date(),
+): unknown[] {
+  const userText = lastUserMessage(messages);
+  const blob = fold(`${userText}\n${updates.map((u) => {
+    if (typeof u !== "object" || u === null) return "";
+    const item = u as { note?: unknown; text?: unknown };
+    return `${item.text ?? ""} ${item.note ?? ""}`;
+  }).join("\n")}`);
+  if (GAP_WHEN.test(blob)) return updates;
+
+  return updates.map((raw) => {
+    if (typeof raw !== "object" || raw === null) return raw;
+    const item = raw as Record<string, unknown>;
+    if (item.op !== "add" || typeof item.text !== "string") return raw;
+    const text = item.text.trim();
+    if (!text) return raw;
+    if (isReguliersContainerName(text)) return raw;
+    if (text.toLowerCase() === COURSES_THREAD_TEXT.toLowerCase()) return raw;
+
+    const note = typeof item.note === "string" ? item.note : "";
+    const target =
+      parseTargetDay(userText, at) ??
+      parseTargetDay(note, at) ??
+      parseTargetDay(text, at);
+    if (!target) return raw;
+
+    const next: Record<string, unknown> = { ...item };
+    const hasDue = typeof item.due === "string" && item.due.trim();
+    const hasPlan = typeof item.plannedFor === "string" && item.plannedFor.trim();
+    if (!hasDue && !hasPlan) {
+      const source = fold(`${userText}\n${note}\n${text}`);
+      if (HARD_DUE.test(source)) next.due = target;
+      else next.plannedFor = target;
+    }
+    if (note) next.note = anchorRelativeWhen(note, target);
+    return next;
+  });
+}
+
 const FUTURE_RELANCE =
   /\b(?:je\s+)?(?:prefere|prefère|plutot|plutôt|vais|veux|compte|reporte|reporter|plutot\s+la|plutôt\s+la)\b.*\b(?:relanc|recontact)/i;
 
@@ -453,7 +531,11 @@ export function mergeTurnWrites(
   at = new Date(),
 ): unknown[] {
   const userText = lastUserMessage(messages);
-  const scoped = scopeGreffierUpdates(threads, messages, greffierUpdates);
+  const scoped = stampWhenOnAdds(
+    messages,
+    scopeGreffierUpdates(threads, messages, greffierUpdates),
+    at,
+  );
   const inferredDone = inferConfirmedDoneOps(threads, messages);
   const inferredDelete = inferConfirmedDeleteOps(threads, messages);
   const ours = extractRelanceTurnOps(threads, userText, at);

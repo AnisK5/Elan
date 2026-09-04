@@ -76,6 +76,47 @@ describe("extractReguliersFromConvo", () => {
     ];
     expect(extractReguliersFromConvo(messages, at)).toEqual([]);
   });
+
+  it("met un bilan sanguin tous les 4 mois dans Réguliers, pas en tâche", () => {
+    const messages: ChatMessage[] = [
+      {
+        role: "user",
+        content:
+          "tous les 4 mois, c'est super important que je fasse un bilan sanguin pour voir l'evolution santé",
+      },
+    ];
+    expect(extractReguliersFromConvo(messages, at)).toEqual([
+      { label: "bilan sanguin", cadence: "~4mois", lastDone: "2026-04-20" },
+    ]);
+  });
+
+  it("n'attrape pas une relance à cadence comme un régulier", () => {
+    expect(
+      extractReguliersFromConvo(
+        [
+          {
+            role: "user",
+            content: "je dois relancer Laura toutes les 2 semaines",
+          },
+        ],
+        at,
+      ),
+    ).toEqual([]);
+  });
+
+  it("n'attrape pas « dans 4 mois » comme une cadence de vie", () => {
+    expect(
+      extractReguliersFromConvo(
+        [
+          {
+            role: "user",
+            content: "je dois faire un bilan sanguin dans 4 mois",
+          },
+        ],
+        at,
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe("upsertRegulierOps", () => {
@@ -150,6 +191,45 @@ describe("mergeRegulierWrites", () => {
         text: "Réguliers",
         kind: "action",
         note: "linge de lit · ~2sem · 2026-08-04",
+      },
+    ]);
+  });
+
+  it("écarte l'add tâche du greffier au profit de Réguliers", () => {
+    const messages: ChatMessage[] = [
+      {
+        role: "user",
+        content:
+          "tous les 4 mois, c'est super important que je fasse un bilan sanguin pour voir l'evolution santé",
+      },
+    ];
+    const merged = mergeRegulierWrites(
+      [],
+      messages,
+      [
+        {
+          op: "add",
+          text: "Bilan sanguin tous les 4 mois — évolution santé",
+          kind: "action",
+        },
+      ],
+      at,
+    );
+    expect(
+      merged.some(
+        (o) =>
+          typeof o === "object" &&
+          o !== null &&
+          (o as { text?: string }).text !== "Réguliers" &&
+          (o as { op?: string }).op === "add",
+      ),
+    ).toBe(false);
+    expect(merged).toEqual([
+      {
+        op: "add",
+        text: "Réguliers",
+        kind: "action",
+        note: "bilan sanguin · ~4mois · 2026-04-20",
       },
     ]);
   });

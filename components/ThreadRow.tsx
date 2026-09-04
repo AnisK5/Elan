@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Effort, Thread, ThreadKind } from "@/lib/types";
+import { isSameCalendarDay } from "@/lib/session-progress";
 
 export default function ThreadRow({
   thread,
@@ -18,7 +19,8 @@ export default function ThreadRow({
   const [text, setText] = useState(thread.text);
   const [note, setNote] = useState(thread.note ?? "");
 
-  const dueValue = thread.due ? thread.due.slice(0, 10) : "";
+  const dateField = thread.due ? "due" : thread.plannedFor ? "plannedFor" : "due";
+  const dateValue = (thread.due ?? thread.plannedFor)?.slice(0, 10) ?? "";
 
   function reopen() {
     patch(thread.id, { status: "open", snoozedUntil: undefined });
@@ -65,11 +67,16 @@ export default function ThreadRow({
           {thread.text}
         </span>
 
-        {thread.due && (
+        {(thread.due || thread.plannedFor) && (
           <span className="shrink-0 text-[11px] text-muted">
-            {formatDue(thread.due)}
+            {formatDue(thread.due ?? thread.plannedFor ?? "")}
           </span>
         )}
+        {thread.status === "open" &&
+          thread.touchedAt &&
+          isSameCalendarDay(thread.touchedAt) && (
+            <span className="shrink-0 text-[11px] text-teal">avancé</span>
+          )}
         {thread.effort && (
           <span className="shrink-0 rounded bg-sink px-1 text-[10px] font-medium text-muted">
             {thread.effort}
@@ -130,10 +137,10 @@ export default function ThreadRow({
           />
           <input
             type="date"
-            value={dueValue}
+            value={dateValue}
             onChange={(e) =>
               patch(thread.id, {
-                due: e.target.value
+                [dateField]: e.target.value
                   ? new Date(e.target.value).toISOString()
                   : undefined,
               })

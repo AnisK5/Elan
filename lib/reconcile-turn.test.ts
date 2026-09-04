@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { Thread } from "@/lib/types";
 import {
   extractRelanceTurnOps,
+  looksLikeDoneClaim,
   mergeTurnWrites,
   scopeGreffierUpdates,
+  stampWhenOnAdds,
   threadMentionedInTurn,
 } from "./reconcile-turn";
 
@@ -34,6 +36,19 @@ describe("threadMentionedInTurn", () => {
     expect(
       threadMentionedInTurn(t, "laura kici je prefere la relancer lundi"),
     ).toBe(false);
+  });
+});
+
+describe("looksLikeDoneClaim", () => {
+  it("entend un achat / une résa nommée", () => {
+    expect(looksLikeDoneClaim("j'ai pris mes billets et réservé")).toBe(true);
+    expect(looksLikeDoneClaim("j'ai acheté le billet Bangkok")).toBe(true);
+    expect(looksLikeDoneClaim("billets pris")).toBe(true);
+  });
+
+  it("n'entend pas un « je réserve » au futur", () => {
+    expect(looksLikeDoneClaim("je réserve ça pour plus tard")).toBe(false);
+    expect(looksLikeDoneClaim("j'ai réservé")).toBe(false);
   });
 });
 
@@ -110,6 +125,34 @@ describe("scopeGreffierUpdates", () => {
         [{ op: "done", id: "f" }],
       ),
     ).toEqual([{ op: "done", id: "f" }]);
+  });
+
+  it("laisse écrire Réguliers quand le tour pose une cadence de vie", () => {
+    expect(
+      scopeGreffierUpdates(
+        threads,
+        [
+          {
+            role: "user",
+            content:
+              "tous les 4 mois, c'est super important que je fasse un bilan sanguin",
+          },
+        ],
+        [
+          {
+            op: "note",
+            id: "r",
+            note: "bilan sanguin · ~4mois · 2026-04-20",
+          },
+        ],
+      ),
+    ).toEqual([
+      {
+        op: "note",
+        id: "r",
+        note: "bilan sanguin · ~4mois · 2026-04-20",
+      },
+    ]);
   });
 });
 
@@ -240,5 +283,45 @@ describe("mergeTurnWrites", () => {
       [],
     );
     expect(merged).toEqual([{ op: "delete", id: "papa" }]);
+  });
+});
+
+describe("stampWhenOnAdds", () => {
+  it("pose le jour sur l'add et ancre la note au lieu de laisser « demain »", () => {
+    const stamped = stampWhenOnAdds(
+      [
+        {
+          role: "user",
+          content: "je dois poser 30€ en commission demain matin",
+        },
+      ],
+      [
+        {
+          op: "add",
+          text: "Poser 30€ en comm",
+          kind: "action",
+          note: "À faire demain matin — rappel pour demain.",
+        },
+      ],
+      at,
+    );
+    expect(stamped[0]).toMatchObject({
+      op: "add",
+      text: "Poser 30€ en comm",
+      plannedFor: "2026-08-29",
+    });
+    const note = (stamped[0] as { note: string }).note;
+    expect(note).not.toMatch(/demain/i);
+    expect(note).toMatch(/samedi 29\/08\/2026/);
+  });
+
+  it("n'invente pas une intention sur « pas avant demain »", () => {
+    expect(
+      stampWhenOnAdds(
+        [{ role: "user", content: "pas avant demain pour le colis" }],
+        [{ op: "add", text: "Poster le colis", kind: "action" }],
+        at,
+      ),
+    ).toEqual([{ op: "add", text: "Poster le colis", kind: "action" }]);
   });
 });

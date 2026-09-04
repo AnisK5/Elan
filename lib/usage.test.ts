@@ -68,5 +68,6 @@ describe("done in usage week", () => {
     ] as Thread[];
     const week = computeUsageWeek([], [], threads, wednesday.getTime());
     expect(week.doneToday).toBe(1);
+    expect(week.movedToday).toBe(1);
   });
 });

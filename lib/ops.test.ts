@@ -71,6 +71,24 @@ describe("parseThreadOps — la porte d'entrée des écritures du modèle", () =
     expect(new Date((op as { due: string }).due).getFullYear()).toBe(2026);
   });
 
+  it("garde plannedFor sur un add", () => {
+    const [op] = parseThreadOps(
+      [
+        {
+          op: "add",
+          text: "Poser 30€ en commission",
+          kind: "action",
+          plannedFor: "2026-08-29",
+        },
+      ],
+      new Set(),
+    );
+    expect(op).toMatchObject({ op: "add", text: "Poser 30€ en commission" });
+    expect((op as { plannedFor: string }).plannedFor.slice(0, 10)).toBe(
+      "2026-08-29",
+    );
+  });
+
   it("distingue mettre en pause de prévoir", () => {
     expect(parseThreadOps([{ op: "snooze", id: "a", until: "2026-08-01" }], known))
       .toHaveLength(1);

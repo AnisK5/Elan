@@ -5,14 +5,22 @@ export function completionAt(t: Thread): string | undefined {
   return t.doneAt ?? t.touchedAt;
 }
 
-export function doneCountsThisWeek(
+/** Jour où ça a bougé : clôturé, ou travaillé sans clôturer. */
+export function movementAt(t: Thread): string | undefined {
+  if (t.status === "done") return t.doneAt ?? t.touchedAt;
+  return t.touchedAt;
+}
+
+function countsThisWeek(
   threads: Thread[],
   dayStartMs: number,
+  when: (t: Thread) => string | undefined,
+  include: (t: Thread) => boolean,
 ): {
   days: number[];
   todayIdx: number;
-  doneToday: number;
-  doneWeek: number;
+  today: number;
+  week: number;
 } {
   const start = new Date(dayStartMs);
   start.setHours(0, 0, 0, 0);
@@ -24,8 +32,8 @@ export function doneCountsThisWeek(
   const todayIdx = (start.getDay() + 6) % 7;
 
   for (const t of threads) {
-    if (t.status !== "done") continue;
-    const at = completionAt(t);
+    if (!include(t)) continue;
+    const at = when(t);
     if (!at) continue;
     const ts = new Date(at);
     ts.setHours(0, 0, 0, 0);
@@ -36,7 +44,48 @@ export function doneCountsThisWeek(
   return {
     days,
     todayIdx,
-    doneToday: days[todayIdx],
-    doneWeek: days.reduce((a, b) => a + b, 0),
+    today: days[todayIdx],
+    week: days.reduce((a, b) => a + b, 0),
+  };
+}
+
+export function doneCountsThisWeek(
+  threads: Thread[],
+  dayStartMs: number,
+): {
+  days: number[];
+  todayIdx: number;
+  doneToday: number;
+  doneWeek: number;
+} {
+  const c = countsThisWeek(
+    threads,
+    dayStartMs,
+    completionAt,
+    (t) => t.status === "done",
+  );
+  return {
+    days: c.days,
+    todayIdx: c.todayIdx,
+    doneToday: c.today,
+    doneWeek: c.week,
+  };
+}
+
+export function movedCountsThisWeek(
+  threads: Thread[],
+  dayStartMs: number,
+): {
+  days: number[];
+  todayIdx: number;
+  movedToday: number;
+  movedWeek: number;
+} {
+  const c = countsThisWeek(threads, dayStartMs, movementAt, () => true);
+  return {
+    days: c.days,
+    todayIdx: c.todayIdx,
+    movedToday: c.today,
+    movedWeek: c.week,
   };
 }

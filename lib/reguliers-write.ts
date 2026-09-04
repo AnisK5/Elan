@@ -18,6 +18,12 @@ const HABITS: { label: string; re: RegExp }[] = [
   { label: "loyer", re: /\bloyer\b/i },
   { label: "URSSAF", re: /\burssaf\b/i },
   { label: "frigo", re: /\bfrigos?\b|réfrigérateur/i },
+  {
+    label: "bilan sanguin",
+    re: /bilan\s+sanguin|prise\s+de\s+sang/i,
+  },
+  { label: "dentiste", re: /\bdentiste\b/i },
+  { label: "ophtalmo", re: /\bophtalmo|ophtalmolog/i },
 ];
 
 function isoDayParis(at: Date): string {
@@ -46,11 +52,59 @@ function inferCadence(text: string): string | null {
   ) {
     return "~1sem";
   }
+  const nMois =
+    text.match(/tous les (\d+)\s*mois/i) ??
+    text.match(/toutes les (\d+)\s*mois/i);
+  if (nMois) return `~${nMois[1]}mois`;
+  if (
+    /tous les trimestres|chaque trimestre|une fois par trimestre/i.test(text)
+  ) {
+    return "~3mois";
+  }
+  const nAn = text.match(/(\d+)\s*fois par an/i);
+  if (nAn) {
+    const n = Number(nAn[1]);
+    if (Number.isFinite(n) && n >= 1 && n <= 12) {
+      return `~${Math.max(1, Math.round(12 / n))}mois`;
+    }
+  }
+  if (
+    /tous les ans|chaque ann[ée]e|une fois par an|annuellement/i.test(text)
+  ) {
+    return "~12mois";
+  }
   if (/tous les mois|chaque mois|une fois par mois|~1\s*mois/i.test(text)) {
     return "~1mois";
   }
   const nJ = text.match(/tous les (\d+)\s*jours/i);
   if (nJ) return `~${nJ[1]}j`;
+  return null;
+}
+
+/** Fréquence de vie (« tous les 4 mois ») — pas « dans 4 mois ». */
+export function hasRegulierCadence(text: string): boolean {
+  return inferCadence(text) !== null;
+}
+
+function tidyLabel(raw: string): string | null {
+  let s = raw.trim();
+  s = s.replace(/\s+(?:pour|afin|parce|histoire)\b[\s\S]*$/i, "");
+  s = s.replace(/[.!?…]+$/g, "").replace(/\s+/g, " ").trim();
+  if (s.length < 3 || s.length > 48) return null;
+  if (/^(super|important|que(?:\s+je)?)$/i.test(s)) return null;
+  return s;
+}
+
+/** « je fasse un bilan sanguin pour… » → bilan sanguin */
+function labelFromFaire(text: string): string | null {
+  const faire = text.match(
+    /(?:faire|fasse|fais|feras?|ferai)\s+(?:un|une|le|la|l['’]|mon|ma|mes|ton|ta)\s+([^,.;\n]+)/i,
+  );
+  if (faire?.[1]) return tidyLabel(faire[1]);
+  const chez = text.match(
+    /chez\s+(?:le|la|l['’]|mon|ma)\s+([^,.;\n]+)/i,
+  );
+  if (chez?.[1]) return tidyLabel(chez[1]);
   return null;
 }
 
@@ -85,6 +139,10 @@ export function extractReguliersFromConvo(
   for (const habit of HABITS) {
     if (!habit.re.test(blob)) continue;
     items.push({ label: habit.label, cadence, lastDone });
+  }
+  if (items.length === 0 && !/\brelanc/i.test(lastUser.content)) {
+    const label = labelFromFaire(lastUser.content);
+    if (label) items.push({ label, cadence, lastDone });
   }
   return items;
 }
@@ -150,13 +208,25 @@ export function mergeRegulierWrites(
   const containerIds = new Set(
     threads.filter((t) => isReguliersContainerName(t.text)).map((t) => t.id),
   );
-  const labels = new Set(items.map((it) => it.label.toLowerCase()));
+  const labels = items.map((it) =>
+    it.label
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, ""),
+  );
   const filtered = greffier.filter((raw) => {
     if (!isRecord(raw)) return true;
     if (raw.op === "add" && typeof raw.text === "string") {
-      const text = raw.text.trim().toLowerCase();
       if (isReguliersContainerName(raw.text)) return false;
-      if (labels.has(text)) return false;
+      const text = raw.text
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+      if (labels.some((lab) => text === lab || text.includes(lab))) {
+        return false;
+      }
     }
     if (
       raw.op === "note" &&

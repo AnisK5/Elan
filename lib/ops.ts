@@ -101,6 +101,7 @@ export function parseThreadOps(
         text,
         kind: kind as ThreadKind,
         due: date(item.due),
+        plannedFor: date(item.plannedFor),
         effort,
         note: clean(str(item.note)) || undefined,
       });

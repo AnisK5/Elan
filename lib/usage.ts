@@ -1,5 +1,5 @@
 import type { SessionLog, Thread } from "./types";
-import { doneCountsThisWeek } from "./week-stats";
+import { doneCountsThisWeek, movedCountsThisWeek } from "./week-stats";
 
 export type UsageKind =
   | "open"
@@ -32,6 +32,9 @@ export interface UsageWeek {
   doneToday: number;
   doneWeek: number;
   doneDays: number[];
+  movedToday: number;
+  movedWeek: number;
+  movedDays: number[];
 }
 
 export function dayKey(d: Date = new Date()): string {
@@ -108,6 +111,7 @@ export function computeUsageWeek(
   }
 
   const done = doneCountsThisWeek(threads, dayStartMs);
+  const moved = movedCountsThisWeek(threads, dayStartMs);
   return {
     days,
     todayIdx,
@@ -117,6 +121,9 @@ export function computeUsageWeek(
     doneToday: done.doneToday,
     doneWeek: done.doneWeek,
     doneDays: done.days,
+    movedToday: moved.movedToday,
+    movedWeek: moved.movedWeek,
+    movedDays: moved.days,
   };
 }
 

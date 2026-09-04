@@ -10,6 +10,7 @@ import {
   restoreThreads,
   snapshotThreads,
   wakeSnoozed,
+  compactThreadNotes,
   readChat,
   writeChat,
   clearChat,
@@ -74,6 +75,10 @@ import {
 } from "@/lib/acquisition";
 import { logUsage, startDwellTracker, useUsageEvents } from "@/lib/usage-log";
 import { sessionsToday } from "@/lib/session-memory";
+import {
+  progressDuringSession,
+  wrapUpHeadline,
+} from "@/lib/session-progress";
 import { apiFetch, anthropicFailMessage, parseStreamError, type AnthropicFailKind } from "@/lib/anthropic";
 import { aiRetryHint, reportAiRecovered } from "@/lib/ai-fail-client";
 import { probeAiRecovery, reportAiFailUnlessRecovered } from "@/lib/ai-recovery-client";
@@ -162,7 +167,8 @@ export default function Home() {
   // Une fois qu'on a choisi soi-même pour ce backlog, la reco générique n'a
   // plus le droit de reprendre la main.
   const manualPickSig = useRef("");
-  const [wrapUpCount, setWrapUpCount] = useState(0);
+  const [wrapUpDone, setWrapUpDone] = useState(0);
+  const [wrapUpAdvanced, setWrapUpAdvanced] = useState(0);
   const sessionStartRef = useRef("");
   const [ritualBrief, setRitualBrief] = useState<{ message: string } | null>(
     null,
@@ -259,7 +265,10 @@ export default function Home() {
 
   // Les trucs mis en pause reviennent d'eux-mêmes le jour dit.
   useEffect(() => {
-    if (ready) wakeSnoozed();
+    if (ready) {
+      wakeSnoozed();
+      compactThreadNotes();
+    }
   }, [ready]);
 
   // Reprise : on rentre dans la séance, chrono figé. Au-delà de 2 h d'absence,
@@ -968,13 +977,11 @@ export default function Home() {
 
   function endSession(transcript: ChatMessage[], sessionId?: string) {
     saveSessionRecord(transcript, { sessionId });
-    // Combien de trucs bouclés pendant CETTE séance (depuis son début).
+    // Ce qui a vraiment bougé dans CETTE séance : réglé, ou avancé sans clôturer.
     const start = sessionStartRef.current;
-    const count = start
-      ? snapshotThreads().filter(
-          (t) => t.status === "done" && t.touchedAt && t.touchedAt >= start,
-        ).length
-      : 0;
+    const { done, advanced } = start
+      ? progressDuringSession(snapshotThreads(), start)
+      : { done: 0, advanced: 0 };
     const sessionCtx = context;
     // Valider le prochain moment de la carte du jour (séance ≠ tâches).
     let momentsStillOpen = false;
@@ -1032,7 +1039,8 @@ export default function Home() {
     setRitualBrief(null);
     sessionBriefRef.current = null;
     ritualLockRef.current = false;
-    setWrapUpCount(count);
+    setWrapUpDone(done);
+    setWrapUpAdvanced(advanced);
     setWrapUp(true);
     setTimeout(() => setWrapUp(false), 6000);
   }
@@ -1682,21 +1690,17 @@ function restoreDeskDayCard(): boolean {
       {wrapUp && (
         <div className="animate-rise mb-4 flex flex-col gap-3">
           <div className="rounded-2xl border border-teal-soft bg-teal-soft px-4 py-3 text-sm text-teal-ink">
-            {wrapUpCount > 0 ? (
-              <>
-                Séance bouclée —{" "}
-                <b>
-                  {wrapUpCount} truc{wrapUpCount > 1 ? "s" : ""} réglé
-                  {wrapUpCount > 1 ? "s" : ""} 🎉
-                </b>{" "}
-                Le reste attend sagement, tu n&apos;as pas à y penser.
-              </>
-            ) : (
-              <>
-                Séance bouclée. Le reste attend sagement — tu n&apos;as pas à y
-                penser jusqu&apos;à demain.
-              </>
-            )}
+            {(() => {
+              const line = wrapUpHeadline(wrapUpDone, wrapUpAdvanced);
+              return line.celebrate ? (
+                <>
+                  Séance bouclée — <b>{line.lead}</b>
+                  {wrapUpDone > 0 ? " 🎉" : "."} {line.rest}
+                </>
+              ) : (
+                <>Séance bouclée. {line.rest}</>
+              );
+            })()}
           </div>
           <SessionPulseFeedback />
         </div>

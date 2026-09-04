@@ -23,7 +23,7 @@ class MemoryStorage {
 const storage = new MemoryStorage();
 vi.stubGlobal("window", { localStorage: storage, dispatchEvent: () => true });
 
-const { applyThreadOps, snapshotThreads, restoreThreads, wakeSnoozed, mergeThreadNotes } = await import(
+const { applyThreadOps, snapshotThreads, restoreThreads, wakeSnoozed, mergeThreadNotes, compactThreadNotes } = await import(
   "./store"
 );
 const { parseThreadOps } = await import("./ops");
@@ -207,6 +207,19 @@ describe("écriture des notes greffier", () => {
     // pas savoir que celui-ci a déjà été fait.
     expect(snapshotThreads()).toHaveLength(2);
   });
+
+  it("retient plannedFor à la création", () => {
+    applyThreadOps([
+      {
+        op: "add",
+        text: "Poser 30€ en commission",
+        kind: "action",
+        plannedFor: "2026-08-29T12:00:00.000Z",
+      },
+    ]);
+    expect(snapshotThreads()[0]?.plannedFor).toBeTruthy();
+    expect(snapshotThreads()[0]?.plannedFor?.slice(0, 10)).toBe("2026-08-29");
+  });
 });
 
 describe("snapshot / restore — le filet de l'annulation", () => {
@@ -231,5 +244,22 @@ describe("mergeThreadNotes", () => {
     ).toBe(
       "À faire vite. · Patins à acheter — pas encore disponible · listé sur Courses",
     );
+  });
+});
+
+describe("compactThreadNotes", () => {
+  it("dégonfle une pile de prochaines étapes dès l'ouverture", () => {
+    seed([
+      thread({
+        id: "asie",
+        text: "Réserver hébergements Asie du Sud-Est",
+        note: "Dates calées. Prochaine étape : choisir le billet. Objectif initial : bloquer un billet. · Billet Paris–Bangkok acheté. Prochaine étape : réserver les hébergements. · Billet A/R Paris–Bangkok acheté. Prochaine étape : réserver les hébergements.",
+      }),
+    ]);
+    expect(compactThreadNotes()).toBe(1);
+    const note = byId("asie")?.note ?? "";
+    expect(note.match(/Prochaine étape/gi)?.length ?? 0).toBe(1);
+    expect(note).not.toMatch(/Objectif initial/i);
+    expect(note).toMatch(/Billet Paris–Bangkok acheté/);
   });
 });

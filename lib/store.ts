@@ -24,10 +24,7 @@ import {
   parseDayPlan,
   type DayPlanCache,
 } from "./day-plan";
-import {
-  conditionAnsweredInNote,
-  stripUnverifiedConditionClause,
-} from "./plan-candidates";
+import { mergeNoteTexts } from "./note-merge";
 
 const THREADS_KEY = "elan.threads.v1";
 const PROJECTS_KEY = "elan.projects.v1";
@@ -481,6 +478,7 @@ export type ThreadOp =
       text: string;
       kind: ThreadKind;
       due?: string;
+      plannedFor?: string;
       effort?: Effort;
       note?: string;
     };
@@ -584,30 +582,14 @@ export function clean(s: string | undefined): string {
  * Le greffier doit fusionner, mais il renvoie souvent une note courte qui
  * écrase le contexte. On garde l'ancien dès que le nouveau ne le contient pas.
  * Les listes structurées (Courses / Réguliers avec « · » ou lignes) remplacent.
+ * Doublons, « prochaine étape » périmée et objectifs déjà faits : écartés ici,
+ * pas dans le modèle.
  */
 export function mergeThreadNotes(
   prev: string | undefined,
   next: string | undefined,
 ): string {
-  let a = clean(prev);
-  const b = clean(next);
-  if (!b) return a;
-  if (!a) return b;
-  if (a === b) return a;
-  if (conditionAnsweredInNote(b)) {
-    a = stripUnverifiedConditionClause(a);
-    if (!a) return b;
-    if (b.includes(a)) return b;
-    if (a.includes(b)) return a;
-    return `${a} · ${b}`;
-  }
-  if (b.includes(a)) return b;
-  if (a.includes(b)) return a;
-  const listLike =
-    b.includes("\n") ||
-    (b.includes(" · ") && (b.match(/ · /g) || []).length >= 1);
-  if (listLike && b.length >= a.length * 0.6) return b;
-  return `${a} · ${b}`;
+  return mergeNoteTexts(clean(prev), clean(next));
 }
 
 // Un truc mis en pause doit revenir tout seul le jour dit — sinon la promesse
@@ -628,6 +610,21 @@ export function wakeSnoozed(): number {
   });
   if (woken > 0) write(THREADS_KEY, next);
   return woken;
+}
+
+export function compactThreadNotes(): number {
+  if (typeof window === "undefined") return 0;
+  const list = read<Thread[]>(THREADS_KEY, []);
+  let n = 0;
+  const next = list.map((t) => {
+    if (!t.note) return t;
+    const compacted = mergeThreadNotes(t.note, t.note);
+    if (compacted === t.note) return t;
+    n++;
+    return { ...t, note: compacted };
+  });
+  if (n > 0) write(THREADS_KEY, next);
+  return n;
 }
 
 export function applyThreadOps(ops: ThreadOp[]): void {
@@ -652,6 +649,7 @@ export function applyThreadOps(ops: ThreadOp[]): void {
           status: "open",
           createdAt: now,
           due: normalizeDue(op.due),
+          plannedFor: normalizeDue(op.plannedFor),
           effort: op.effort,
           note: clean(op.note) || undefined,
         },
