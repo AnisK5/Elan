@@ -25,7 +25,7 @@ import {
   type ActiveSession,
 } from "@/lib/store";
 import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
-import { isDeleteConfirmationTurn, isDoneConfirmationTurn } from "@/lib/reconcile-turn";
+import { isDeleteConfirmationTurn, isDoneConfirmationTurn, messagesForReconcile } from "@/lib/reconcile-turn";
 import { AssistantSpeech } from "@/components/HighlightEncart";
 import { isUntimedSession } from "@/lib/session-mode";
 import { trucLabels } from "@/lib/emphasize-truc";
@@ -344,8 +344,7 @@ export default function Session({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           threads: threadsRef.current,
-          // Derniers tours : assez pour le contexte, pas tout le transcript.
-          messages: msgs.slice(-10),
+          messages: messagesForReconcile(msgs),
           situation: prevSit?.text ?? null,
         }),
       });

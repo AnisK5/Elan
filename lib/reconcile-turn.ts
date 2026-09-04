@@ -59,6 +59,128 @@ function tokens(text: string): string[] {
     .filter((t) => t.length >= 3 && !STOP.has(t));
 }
 
+/** « sg sur » → Sogessur : initiale + suffixe collés en un nom du libellé. */
+function aliasHitsThread(userText: string, threadToks: string[]): boolean {
+  const raw = fold(userText).split(/\s+/).filter(Boolean);
+  for (let i = 0; i < raw.length - 1; i++) {
+    const a = raw[i];
+    const b = raw[i + 1];
+    if (a.length !== 2 || b.length < 3 || b.length > 5) continue;
+    const initial = a[0];
+    if (
+      threadToks.some(
+        (tt) =>
+          tt.startsWith(initial) &&
+          tt.endsWith(b) &&
+          tt.length >= b.length + 2,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * « maj », « pardon », « c'est pas à jour » : le tour utile est le dump
+ * d'avant, pas ces deux mots. Sans ça le greffier « range » du vide.
+ */
+export function isCarryForwardTurn(userText: string): boolean {
+  const t = userText.trim();
+  if (!t) return false;
+  const f = fold(t);
+  if (/^(maj|update|ok maj)[\s.!?]*$/.test(f)) return true;
+  if (t.length > 220) return false;
+  return (
+    /\b(pardon|pas a jour|c est pas a jour|cest pas a jour|la desc|la description|pas ecrit|la suite|c est ecrit|cest ecrit|mets a jour|met a jour)\b/.test(
+      f,
+    )
+  );
+}
+
+/** Messages utilisateur du tour réel (dump + corrections), pas seulement « maj ». */
+export function tourUserBlob(
+  messages: Pick<ChatMessage, "role" | "content">[],
+  maxUsers = 8,
+): string {
+  const users = messages
+    .filter((m) => m.role === "user")
+    .map((m) => m.content.trim())
+    .filter(Boolean);
+  if (users.length === 0) return "";
+  const last = users[users.length - 1];
+  if (!isCarryForwardTurn(last)) return last;
+  const picked: string[] = [];
+  for (let i = users.length - 1; i >= 0 && picked.length < maxUsers; i--) {
+    picked.unshift(users[i]);
+    if (!isCarryForwardTurn(users[i])) break;
+  }
+  return picked.join("\n");
+}
+
+/** Texte pour ancrer les ops : confirmation → Élan ; correction → dump d'avant. */
+export function mentionSourceForTurn(
+  messages: Pick<ChatMessage, "role" | "content">[],
+): string {
+  const userText = lastUserMessage(messages);
+  if (
+    isDoneConfirmationTurn(messages) ||
+    isDeleteConfirmationTurn(messages)
+  ) {
+    return assistantBeforeLastUser(messages) || userText;
+  }
+  if (isCarryForwardTurn(userText)) return tourUserBlob(messages);
+  return userText;
+}
+
+/** Texte utilisateur pour les écritures déterministes (jamais la réplique d'Élan). */
+export function writeSourceForTurn(
+  messages: Pick<ChatMessage, "role" | "content">[],
+): string {
+  const userText = lastUserMessage(messages);
+  if (isCarryForwardTurn(userText)) return tourUserBlob(messages);
+  return userText;
+}
+
+/** Garde le dump d'avant quand le dernier mot est « maj » / « pas à jour ». */
+export function messagesForReconcile<
+  T extends { role: string; content: string },
+>(messages: T[]): T[] {
+  if (messages.length === 0) return messages;
+  const last = lastUserMessage(messages);
+  if (!isCarryForwardTurn(last)) {
+    return messages.length <= 8 ? messages : messages.slice(-8);
+  }
+  let start = Math.max(0, messages.length - 8);
+  let users = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role !== "user") continue;
+    users++;
+    start = i;
+    const t = messages[i]?.content ?? "";
+    if (!isCarryForwardTurn(t) || users >= 8) break;
+  }
+  const sliced = messages.slice(start);
+  return sliced.length > 16 ? sliced.slice(-16) : sliced;
+}
+
+/** Index (dans CE tableau) où commence le tour à ranger. */
+export function tourActuelFromIndex(
+  messages: Pick<ChatMessage, "role" | "content">[],
+): number | undefined {
+  const userIdxs: number[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i]?.role === "user") userIdxs.push(i);
+  }
+  if (userIdxs.length === 0) return undefined;
+  let start = userIdxs[userIdxs.length - 1]!;
+  for (let k = userIdxs.length - 1; k >= 0; k--) {
+    start = userIdxs[k]!;
+    if (!isCarryForwardTurn(messages[start]?.content ?? "")) break;
+  }
+  return start;
+}
+
 export function lastUserMessage(
   messages: Pick<ChatMessage, "role" | "content">[],
 ): string {
@@ -200,12 +322,14 @@ export function threadMentionedInTurn(
   const label = fold(thread.text);
   if (label.length >= 8 && user.includes(label)) return true;
 
+  // « sg sur » pour Sogessur — les initiales passent sous le seuil de 3 lettres.
+  if (aliasHitsThread(userText, threadToks)) return true;
+
   return false;
 }
 
 function mentionScore(thread: Thread, text: string): number {
   if (!text.trim()) return 0;
-  const blob = fold(`${thread.text} ${thread.note ?? ""}`);
   const textToks = tokens(text);
   const threadToks = tokens(`${thread.text} ${thread.note ?? ""}`);
   let score = 0;
@@ -216,6 +340,7 @@ function mentionScore(thread: Thread, text: string): number {
   }
   const label = fold(thread.text);
   if (label.length >= 8 && fold(text).includes(label)) score += 4;
+  if (aliasHitsThread(text, threadToks)) score += 3;
   if (score === 0 && threadMentionedInTurn(thread, text)) return 1;
   if (score === 0 && containerAllowedInTurn(thread, text)) return 1;
   return score;
@@ -304,12 +429,13 @@ function resolveOpThread(
 }
 
 /**
- * Ne garde que les ops qui touchent un truc nommé dans le TOUR ACTUEL
- * (dernier message utilisateur). Évite qu'un vieux contexte fasse cocher
- * France Travail ou le linge alors qu'on parle de Laura.
+ * Ne garde que les ops qui touchent un truc nommé dans le TOUR ACTUEL.
+ * Évite qu'un vieux contexte fasse cocher France Travail alors qu'on
+ * parle de Laura.
  *
  * Exception : confirmation courte (« oui », « c'est fait ») — on ancre
- * alors sur le dernier message d'Élan (le truc qu'on vient de proposer).
+ * sur le dernier message d'Élan. Correction / « maj » — on ancre sur
+ * le dump d'avant, pas sur les deux mots.
  */
 export function scopeGreffierUpdates(
   threads: Thread[],
@@ -319,11 +445,7 @@ export function scopeGreffierUpdates(
   const userText = lastUserMessage(messages);
   if (!userText.trim()) return [];
   const reguliersId = findReguliersThread(threads)?.id;
-  const confirm =
-    isDoneConfirmationTurn(messages) || isDeleteConfirmationTurn(messages);
-  const mentionSource = confirm
-    ? assistantBeforeLastUser(messages) || userText
-    : userText;
+  const mentionSource = mentionSourceForTurn(messages);
 
   return updates.filter((raw) => {
     if (typeof raw !== "object" || raw === null) return false;
@@ -447,7 +569,7 @@ export function stampWhenOnAdds(
   updates: unknown[],
   at = new Date(),
 ): unknown[] {
-  const userText = lastUserMessage(messages);
+  const userText = writeSourceForTurn(messages);
   const blob = fold(`${userText}\n${updates.map((u) => {
     if (typeof u !== "object" || u === null) return "";
     const item = u as { note?: unknown; text?: unknown };
@@ -524,13 +646,112 @@ export function extractRelanceTurnOps(
   return ops;
 }
 
+function looksLikeCallReport(text: string): boolean {
+  const f = fold(text);
+  if (!f) return false;
+  return (
+    /\b(viens d appeler|je viens d appeler|j ai appele|j ai contacte)\b/.test(
+      f,
+    ) ||
+    (/\b(appele|appeler)\b/.test(f) &&
+      /\b(pas recu|pas encore recu|attendent|en attente|semaine prochaine)\b/.test(
+        f,
+      ))
+  );
+}
+
+function callReportNeedsFollowUp(text: string): boolean {
+  const f = fold(text);
+  return (
+    /\b(pas recu|pas encore recu|en attente|attendent|semaine prochaine|par mail|tiendr)\b/.test(
+      f,
+    ) ||
+    (/\b(pere|papa)\b/.test(f) &&
+      /\b(verif|contact|relanc|recontact)\b/.test(f))
+  );
+}
+
+function suiviTitleFromCall(text: string): string | null {
+  const m = text.match(/^(?:appeler|contacter|relancer)\s+(.+)$/i);
+  if (!m) return null;
+  const entity = m[1].split(/\s+pour\b/i)[0]?.trim() ?? "";
+  if (!entity || entity.length > 48) return null;
+  return `Suivi ${entity}`;
+}
+
+function buildCallFollowUpNote(
+  blob: string,
+  at: Date,
+  day: string | null,
+): string {
+  const f = fold(blob);
+  const today = isoDayParis(at);
+  const [, month, d] = today.split("-");
+  const parts = [`Appelé le ${d}/${month}.`];
+  if (
+    /pas recu|pas encore recu|attendent le document|pas encore recu le document/.test(
+      f,
+    )
+  ) {
+    parts.push(
+      "Document de notification pas encore reçu ; retour prévu par mail.",
+    );
+  }
+  if (/\b(pere|papa)\b/.test(f)) {
+    const when = day ? frDayLabel(day) : "le jour dit";
+    parts.push(
+      `Prochaine étape : vérifier avec papa ${when} s'il a reçu quelque chose ; sinon relancer.`,
+    );
+  } else if (day) {
+    parts.push(
+      `Prochaine étape : vérifier ${frDayLabel(day)} ; sinon relancer.`,
+    );
+  }
+  return parts.join(" ");
+}
+
+/**
+ * « je viens d'appeler X, ils n'ont pas le document, je vérifie vendredi
+ * avec papa » → suivi, note, jour prévu, et on retire « Appeler » du titre.
+ * Filet si le greffier renvoie vide (tour « maj », nom corrigé trop tard).
+ */
+export function extractCallFollowUpOps(
+  threads: Thread[],
+  userText: string,
+  at = new Date(),
+): ThreadOp[] {
+  const text = userText.trim();
+  if (!text || !looksLikeCallReport(text)) return [];
+  if (looksLikeDoneClaim(text) && !callReportNeedsFollowUp(text)) return [];
+  if (!callReportNeedsFollowUp(text)) return [];
+
+  const target = uniqueThreadFromAnchor(threads, text);
+  if (!target || isContainerThread(target)) return [];
+
+  const day = parseTargetDay(text, at);
+  const ops: ThreadOp[] = [];
+  const renamed = suiviTitleFromCall(target.text);
+  if (renamed) {
+    ops.push({ op: "rename", id: target.id, text: renamed });
+  }
+  const setOp: ThreadOp = { op: "set", id: target.id, kind: "suivi" };
+  if (day) setOp.plannedFor = `${day}T12:00:00.000Z`;
+  ops.push(setOp);
+  ops.push({
+    op: "note",
+    id: target.id,
+    note: buildCallFollowUpNote(text, at, day),
+  });
+  return ops;
+}
+
 export function mergeTurnWrites(
   threads: Thread[],
   messages: Pick<ChatMessage, "role" | "content">[],
   greffierUpdates: unknown[],
   at = new Date(),
 ): unknown[] {
-  const userText = lastUserMessage(messages);
+  const blob = writeSourceForTurn(messages);
   const scoped = stampWhenOnAdds(
     messages,
     scopeGreffierUpdates(threads, messages, greffierUpdates),
@@ -538,7 +759,10 @@ export function mergeTurnWrites(
   );
   const inferredDone = inferConfirmedDoneOps(threads, messages);
   const inferredDelete = inferConfirmedDeleteOps(threads, messages);
-  const ours = extractRelanceTurnOps(threads, userText, at);
+  const ours = [
+    ...extractRelanceTurnOps(threads, blob, at),
+    ...extractCallFollowUpOps(threads, blob, at),
+  ];
   let merged = scoped;
   for (const op of inferredDone) {
     if (op.op !== "done") continue;
@@ -569,11 +793,17 @@ export function mergeTurnWrites(
   }
   if (ours.length === 0) return merged;
 
-  const targetId = ours.find((o) => o.op === "set" && "id" in o)?.id;
+  const targetIds = new Set(
+    ours
+      .map((o) => ("id" in o && typeof o.id === "string" ? o.id : ""))
+      .filter(Boolean),
+  );
   const filtered = merged.filter((raw) => {
-    if (typeof raw !== "object" || raw === null || !targetId) return true;
+    if (typeof raw !== "object" || raw === null) return true;
     const item = raw as Record<string, unknown>;
-    if (item.op === "done" && item.id === targetId) return false;
+    if (item.op === "done" && typeof item.id === "string" && targetIds.has(item.id)) {
+      return false;
+    }
     return true;
   });
   return [...filtered, ...ours];

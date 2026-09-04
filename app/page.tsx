@@ -64,6 +64,7 @@ import { greeting, Logo, welcomeLine } from "@/components/home/Branding";
 import { useAuth } from "@/components/AuthProvider";
 import { filterEffectiveOps, noteFromTurnOps, parseThreadOps } from "@/lib/ops";
 import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
+import { messagesForReconcile } from "@/lib/reconcile-turn";
 import { completionAt } from "@/lib/week-stats";
 import { computeUsageWeek } from "@/lib/usage";
 import {
@@ -1421,8 +1422,7 @@ function restoreDeskDayCard(): boolean {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           threads: snapshotThreads(),
-          // Assez de contexte pour le greffier, sans ruminer tout le fil.
-          messages: messages.slice(-8).map((m) => ({
+          messages: messagesForReconcile(messages).map((m) => ({
             role: m.role,
             content: m.content,
           })),
