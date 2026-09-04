@@ -59,254 +59,6 @@ function tokens(text: string): string[] {
     .filter((t) => t.length >= 3 && !STOP.has(t));
 }
 
-/** « sg sur » → Sogessur : initiale + suffixe collés en un nom du libellé. */
-function aliasHitsThread(userText: string, threadToks: string[]): boolean {
-  const raw = fold(userText).split(/\s+/).filter(Boolean);
-  for (let i = 0; i < raw.length - 1; i++) {
-    const a = raw[i];
-    const b = raw[i + 1];
-    if (a.length !== 2 || b.length < 3 || b.length > 5) continue;
-    const initial = a[0];
-    if (
-      threadToks.some(
-        (tt) =>
-          tt.startsWith(initial) &&
-          tt.endsWith(b) &&
-          tt.length >= b.length + 2,
-      )
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/** Compte-rendu d'action / d'attente — un seul filet, pas une liste de cas. */
-export function looksLikeStatusReport(text: string): boolean {
-  const f = fold(text);
-  if (!f) return false;
-  if (looksLikeDoneClaim(text)) return true;
-  return (
-    /\b(j ai|je viens|c est|cest|ils ont|on a)\b/.test(f) &&
-    /\b(appel|contact|envoy|relanc|fait|rendu|regle|recu|attente|verifi|notifie|document|mail)\b/.test(
-      f,
-    )
-  );
-}
-
-/**
- * Elle dépose clairement un truc à faire (pas une question de conseil).
- * Doit s'écrire tout de suite — sans attendre « action à faire ».
- */
-export function looksLikeCaptureIntent(text: string): boolean {
-  const t = text.trim();
-  if (t.length < 25) return false;
-  const f = fold(t);
-  // Question pure de conseil (« tu penses que… ? ») sans dépôt.
-  if (
-    /\?/.test(t) &&
-    !/\b(je (veux|dois|voudrais|compte)|faut que|il faut)\b/.test(f)
-  ) {
-    return false;
-  }
-  const intent =
-    /\b(je (veux|dois|voudrais|compte)|faut que|il faut|penser a|pense a|n oubli|rappelle[- ]?moi)\b/.test(
-      f,
-    );
-  const action =
-    /\b(dire|appel|envoy|ecrire|message|mail|sms|relanc|prendre|rdv|verifi|check|contacter|previen)\b/.test(
-      f,
-    );
-  const when =
-    /\b(demain|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|vers|semaine prochaine|prochain)\b/.test(
-      f,
-    );
-  return (intent && action) || (action && when && t.length >= 40);
-}
-
-export const WRITE_FAIL_NOTE =
-  "je n'ai pas réussi à mettre ça à jour — reformule ou corrige dans Mes trucs";
-
-/** Dernier message user « racine » avant i : long, ou compte-rendu. */
-function priorAnchor(users: string[], beforeIndex: number): string {
-  for (let j = beforeIndex - 1; j >= 0; j--) {
-    const u = users[j]!;
-    if (u.length >= 80 || looksLikeStatusReport(u)) return u;
-  }
-  return beforeIndex > 0 ? users[beforeIndex - 1]! : "";
-}
-
-function userTexts(
-  messages: Pick<ChatMessage, "role" | "content">[],
-): string[] {
-  return messages
-    .filter((m) => m.role === "user")
-    .map((m) => m.content.trim())
-    .filter(Boolean);
-}
-
-function prevUserBeforeLast(
-  messages: Pick<ChatMessage, "role" | "content">[],
-): string {
-  const users = userTexts(messages);
-  if (users.length < 2) return "";
-  return priorAnchor(users, users.length - 1);
-}
-
-/**
- * « maj », plainte d'écriture, confirm court (« action à faire »), ou suite
- * d'un compte-rendu : le tour utile est le dump d'avant, pas ces deux mots.
- * Structure : explicite, confirm d'écriture, ou court après un long report —
- * pas un inventaire de synonymes métier.
- */
-export function looksLikeWriteConfirm(userText: string): boolean {
-  const f = fold(userText.trim());
-  if (!f || f.length > 100) return false;
-  if (
-    /^(non|nan|annule|laisse|pas maintenant|pas la peine|oublie)([\s.!]|$)/.test(
-      f,
-    )
-  ) {
-    return false;
-  }
-  if (
-    /^(ok|merci|nickel|parfait|top|daccord|d accord|recu)([\s.!]|$)/.test(f)
-  ) {
-    return false;
-  }
-  return (
-    /\b(action|a faire|cale|calons|ajoute|ajoutes|note le|notes le|mets le|met le|vas y|go)\b/.test(
-      f,
-    ) || /^(oui|ouais)([\s.!]|$)/.test(f)
-  );
-}
-
-export function isCarryForwardTurn(
-  userText: string,
-  prevUserText?: string,
-): boolean {
-  const t = userText.trim();
-  if (!t) return false;
-  const f = fold(t);
-  if (/^(maj|update|ok maj)[\s.!?]*$/.test(f)) return true;
-  if (/\b(pas a jour|mets a jour|met a jour)\b/.test(f)) return true;
-  if (
-    /^(ok|oui|ouais|merci|nickel|parfait|top|daccord|d accord|recu|note)[\s.!?]*$/.test(
-      f,
-    )
-  ) {
-    // « oui » seul : seulement si le message d'avant est un vrai dépôt (confirm).
-    if (/^(oui|ouais)[\s.!?]*$/.test(f)) {
-      const prev = (prevUserText ?? "").trim();
-      return prev.length >= 60;
-    }
-    return false;
-  }
-  const prev = (prevUserText ?? "").trim();
-  // « action à faire », « cale »… après un dépôt — sans ça le filtre n'a plus
-  // Juliette / mercredi et jette l'add.
-  if (prev.length >= 60 && looksLikeWriteConfirm(t)) return true;
-  // Suite courte d'un compte-rendu : correction de nom, précision, plainte.
-  if (prev.length >= 80 && t.length <= 200 && looksLikeStatusReport(prev)) {
-    return true;
-  }
-  return false;
-}
-
-/** Messages utilisateur du tour réel (dump + corrections), pas seulement « maj ». */
-export function tourUserBlob(
-  messages: Pick<ChatMessage, "role" | "content">[],
-  maxUsers = 8,
-): string {
-  const users = userTexts(messages);
-  if (users.length === 0) return "";
-  const last = users[users.length - 1]!;
-  if (!isCarryForwardTurn(last, priorAnchor(users, users.length - 1))) {
-    return last;
-  }
-  const picked: string[] = [];
-  for (let i = users.length - 1; i >= 0 && picked.length < maxUsers; i--) {
-    picked.unshift(users[i]!);
-    if (!isCarryForwardTurn(users[i]!, priorAnchor(users, i))) break;
-  }
-  return picked.join("\n");
-}
-
-/** Texte pour ancrer les ops : confirmation → Élan ; correction → dump d'avant. */
-export function mentionSourceForTurn(
-  messages: Pick<ChatMessage, "role" | "content">[],
-): string {
-  const userText = lastUserMessage(messages);
-  if (
-    isDoneConfirmationTurn(messages) ||
-    isDeleteConfirmationTurn(messages)
-  ) {
-    return assistantBeforeLastUser(messages) || userText;
-  }
-  if (isCarryForwardTurn(userText, prevUserBeforeLast(messages))) {
-    return tourUserBlob(messages);
-  }
-  return userText;
-}
-
-/** Texte utilisateur pour les écritures déterministes (jamais la réplique d'Élan). */
-export function writeSourceForTurn(
-  messages: Pick<ChatMessage, "role" | "content">[],
-): string {
-  const userText = lastUserMessage(messages);
-  if (isCarryForwardTurn(userText, prevUserBeforeLast(messages))) {
-    return tourUserBlob(messages);
-  }
-  return userText;
-}
-
-/** Garde le dump d'avant quand le dernier mot est « maj » / suite courte. */
-export function messagesForReconcile<
-  T extends Pick<ChatMessage, "role" | "content">,
->(messages: T[]): T[] {
-  if (messages.length === 0) return messages;
-  const last = lastUserMessage(messages);
-  if (!isCarryForwardTurn(last, prevUserBeforeLast(messages))) {
-    return messages.length <= 8 ? messages : messages.slice(-8);
-  }
-  const userIdxs: number[] = [];
-  for (let i = 0; i < messages.length; i++) {
-    if (messages[i]?.role === "user") userIdxs.push(i);
-  }
-  let start = userIdxs[userIdxs.length - 1] ?? 0;
-  let users = 0;
-  const userContents = userIdxs.map((i) => messages[i]?.content.trim() ?? "");
-  for (let k = userContents.length - 1; k >= 0; k--) {
-    const t = userContents[k]!;
-    start = userIdxs[k]!;
-    users++;
-    if (!isCarryForwardTurn(t, priorAnchor(userContents, k)) || users >= 8) {
-      break;
-    }
-  }
-  const sliced = messages.slice(start);
-  return sliced.length > 16 ? sliced.slice(-16) : sliced;
-}
-
-/** Index (dans CE tableau) où commence le tour à ranger. */
-export function tourActuelFromIndex(
-  messages: Pick<ChatMessage, "role" | "content">[],
-): number | undefined {
-  const userIdxs: number[] = [];
-  for (let i = 0; i < messages.length; i++) {
-    if (messages[i]?.role === "user") userIdxs.push(i);
-  }
-  if (userIdxs.length === 0) return undefined;
-  const userContents = userIdxs.map((i) => messages[i]?.content.trim() ?? "");
-  let start = userIdxs[userIdxs.length - 1]!;
-  for (let k = userContents.length - 1; k >= 0; k--) {
-    start = userIdxs[k]!;
-    const t = userContents[k]!;
-    if (!isCarryForwardTurn(t, priorAnchor(userContents, k))) break;
-  }
-  return start;
-}
-
 export function lastUserMessage(
   messages: Pick<ChatMessage, "role" | "content">[],
 ): string {
@@ -448,14 +200,12 @@ export function threadMentionedInTurn(
   const label = fold(thread.text);
   if (label.length >= 8 && user.includes(label)) return true;
 
-  // « sg sur » pour Sogessur — les initiales passent sous le seuil de 3 lettres.
-  if (aliasHitsThread(userText, threadToks)) return true;
-
   return false;
 }
 
 function mentionScore(thread: Thread, text: string): number {
   if (!text.trim()) return 0;
+  const blob = fold(`${thread.text} ${thread.note ?? ""}`);
   const textToks = tokens(text);
   const threadToks = tokens(`${thread.text} ${thread.note ?? ""}`);
   let score = 0;
@@ -466,7 +216,6 @@ function mentionScore(thread: Thread, text: string): number {
   }
   const label = fold(thread.text);
   if (label.length >= 8 && fold(text).includes(label)) score += 4;
-  if (aliasHitsThread(text, threadToks)) score += 3;
   if (score === 0 && threadMentionedInTurn(thread, text)) return 1;
   if (score === 0 && containerAllowedInTurn(thread, text)) return 1;
   return score;
@@ -555,13 +304,12 @@ function resolveOpThread(
 }
 
 /**
- * Ne garde que les ops qui touchent un truc nommé dans le TOUR ACTUEL.
- * Évite qu'un vieux contexte fasse cocher France Travail alors qu'on
- * parle de Laura.
+ * Ne garde que les ops qui touchent un truc nommé dans le TOUR ACTUEL
+ * (dernier message utilisateur). Évite qu'un vieux contexte fasse cocher
+ * France Travail ou le linge alors qu'on parle de Laura.
  *
  * Exception : confirmation courte (« oui », « c'est fait ») — on ancre
- * sur le dernier message d'Élan. Correction / « maj » — on ancre sur
- * le dump d'avant, pas sur les deux mots.
+ * alors sur le dernier message d'Élan (le truc qu'on vient de proposer).
  */
 export function scopeGreffierUpdates(
   threads: Thread[],
@@ -571,7 +319,11 @@ export function scopeGreffierUpdates(
   const userText = lastUserMessage(messages);
   if (!userText.trim()) return [];
   const reguliersId = findReguliersThread(threads)?.id;
-  const mentionSource = mentionSourceForTurn(messages);
+  const confirm =
+    isDoneConfirmationTurn(messages) || isDeleteConfirmationTurn(messages);
+  const mentionSource = confirm
+    ? assistantBeforeLastUser(messages) || userText
+    : userText;
 
   return updates.filter((raw) => {
     if (typeof raw !== "object" || raw === null) return false;
@@ -695,7 +447,7 @@ export function stampWhenOnAdds(
   updates: unknown[],
   at = new Date(),
 ): unknown[] {
-  const userText = writeSourceForTurn(messages);
+  const userText = lastUserMessage(messages);
   const blob = fold(`${userText}\n${updates.map((u) => {
     if (typeof u !== "object" || u === null) return "";
     const item = u as { note?: unknown; text?: unknown };
@@ -772,177 +524,13 @@ export function extractRelanceTurnOps(
   return ops;
 }
 
-const DAY_IN_TITLE =
-  /\b(vers\s+)?(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)(\s+prochain(e)?)?\b/gi;
-
-/** Titre court pour un dépôt clair — le jour va dans plannedFor, pas dans le libellé. */
-export function captureTitleFromText(text: string): string | null {
-  let t = text.trim().replace(/\s+/g, " ");
-  t = t.replace(
-    /^(je (veux|dois|voudrais|compte)\s+|faut que (je\s+)?|il faut (que je\s+)?)/i,
-    "",
-  );
-  t = t.replace(DAY_IN_TITLE, " ").replace(/\bdemain\b/gi, " ");
-  t = t.replace(/\s+/g, " ").trim();
-  t = t.replace(/^(de|d'|à|a)\s+/i, "").trim();
-  if (t.length < 8) return null;
-  t = t.charAt(0).toUpperCase() + t.slice(1);
-  if (t.length > 72) t = `${t.slice(0, 70).trim()}…`;
-  return t;
-}
-
-/**
- * Dépôt clair (« Dire à Juliette mercredi… ») → add + jour, sans attendre
- * le modèle. Filet : avant on comptait sur lui, et un {} vide = silence.
- */
-export function extractCaptureIntentOps(
-  threads: Thread[],
-  userText: string,
-  at = new Date(),
-): ThreadOp[] {
-  const text = userText.trim();
-  if (!text || !looksLikeCaptureIntent(text)) return [];
-  // Un compte-rendu d'appel déjà couvert ailleurs.
-  if (looksLikeCallReport(text)) return [];
-
-  const day = parseTargetDay(text, at);
-  const existing = uniqueThreadFromAnchor(threads, text);
-  if (existing && !isContainerThread(existing)) {
-    if (!day) return [];
-    const ops: ThreadOp[] = [
-      { op: "set", id: existing.id, plannedFor: `${day}T12:00:00.000Z` },
-    ];
-    return ops;
-  }
-
-  const title = captureTitleFromText(text);
-  if (!title) return [];
-  // Déjà une ligne ouverte avec le même libellé.
-  if (
-    threads.some(
-      (t) =>
-        t.status === "open" &&
-        fold(t.text) === fold(title),
-    )
-  ) {
-    return [];
-  }
-
-  const add: ThreadOp = {
-    op: "add",
-    text: title,
-    kind: "action",
-  };
-  if (day) add.plannedFor = `${day}T12:00:00.000Z`;
-  return [add];
-}
-
-function looksLikeCallReport(text: string): boolean {
-  const f = fold(text);
-  if (!f) return false;
-  return (
-    /\b(viens d appeler|je viens d appeler|j ai appele|j ai contacte)\b/.test(
-      f,
-    ) ||
-    (/\b(appele|appeler)\b/.test(f) &&
-      /\b(pas recu|pas encore recu|attendent|en attente|semaine prochaine)\b/.test(
-        f,
-      ))
-  );
-}
-
-function callReportNeedsFollowUp(text: string): boolean {
-  const f = fold(text);
-  return (
-    /\b(pas recu|pas encore recu|en attente|attendent|semaine prochaine|par mail|tiendr)\b/.test(
-      f,
-    ) ||
-    (/\b(pere|papa)\b/.test(f) &&
-      /\b(verif|contact|relanc|recontact)\b/.test(f))
-  );
-}
-
-function suiviTitleFromCall(text: string): string | null {
-  const m = text.match(/^(?:appeler|contacter|relancer)\s+(.+)$/i);
-  if (!m) return null;
-  const entity = m[1].split(/\s+pour\b/i)[0]?.trim() ?? "";
-  if (!entity || entity.length > 48) return null;
-  return `Suivi ${entity}`;
-}
-
-function buildCallFollowUpNote(
-  blob: string,
-  at: Date,
-  day: string | null,
-): string {
-  const f = fold(blob);
-  const today = isoDayParis(at);
-  const [, month, d] = today.split("-");
-  const parts = [`Appelé le ${d}/${month}.`];
-  if (
-    /pas recu|pas encore recu|attendent le document|pas encore recu le document/.test(
-      f,
-    )
-  ) {
-    parts.push(
-      "Document de notification pas encore reçu ; retour prévu par mail.",
-    );
-  }
-  if (/\b(pere|papa)\b/.test(f)) {
-    const when = day ? frDayLabel(day) : "le jour dit";
-    parts.push(
-      `Prochaine étape : vérifier avec papa ${when} s'il a reçu quelque chose ; sinon relancer.`,
-    );
-  } else if (day) {
-    parts.push(
-      `Prochaine étape : vérifier ${frDayLabel(day)} ; sinon relancer.`,
-    );
-  }
-  return parts.join(" ");
-}
-
-/**
- * « je viens d'appeler X, ils n'ont pas le document, je vérifie vendredi
- * avec papa » → suivi, note, jour prévu, et on retire « Appeler » du titre.
- * Filet si le greffier renvoie vide (tour « maj », nom corrigé trop tard).
- */
-export function extractCallFollowUpOps(
-  threads: Thread[],
-  userText: string,
-  at = new Date(),
-): ThreadOp[] {
-  const text = userText.trim();
-  if (!text || !looksLikeCallReport(text)) return [];
-  if (looksLikeDoneClaim(text) && !callReportNeedsFollowUp(text)) return [];
-  if (!callReportNeedsFollowUp(text)) return [];
-
-  const target = uniqueThreadFromAnchor(threads, text);
-  if (!target || isContainerThread(target)) return [];
-
-  const day = parseTargetDay(text, at);
-  const ops: ThreadOp[] = [];
-  const renamed = suiviTitleFromCall(target.text);
-  if (renamed) {
-    ops.push({ op: "rename", id: target.id, text: renamed });
-  }
-  const setOp: ThreadOp = { op: "set", id: target.id, kind: "suivi" };
-  if (day) setOp.plannedFor = `${day}T12:00:00.000Z`;
-  ops.push(setOp);
-  ops.push({
-    op: "note",
-    id: target.id,
-    note: buildCallFollowUpNote(text, at, day),
-  });
-  return ops;
-}
-
 export function mergeTurnWrites(
   threads: Thread[],
   messages: Pick<ChatMessage, "role" | "content">[],
   greffierUpdates: unknown[],
   at = new Date(),
 ): unknown[] {
-  const blob = writeSourceForTurn(messages);
+  const userText = lastUserMessage(messages);
   const scoped = stampWhenOnAdds(
     messages,
     scopeGreffierUpdates(threads, messages, greffierUpdates),
@@ -950,11 +538,7 @@ export function mergeTurnWrites(
   );
   const inferredDone = inferConfirmedDoneOps(threads, messages);
   const inferredDelete = inferConfirmedDeleteOps(threads, messages);
-  const ours = [
-    ...extractRelanceTurnOps(threads, blob, at),
-    ...extractCallFollowUpOps(threads, blob, at),
-    ...extractCaptureIntentOps(threads, blob, at),
-  ];
+  const ours = extractRelanceTurnOps(threads, userText, at);
   let merged = scoped;
   for (const op of inferredDone) {
     if (op.op !== "done") continue;
@@ -985,47 +569,12 @@ export function mergeTurnWrites(
   }
   if (ours.length === 0) return merged;
 
-  const hasOurAdd = ours.some((o) => o.op === "add");
-  const targetIds = new Set(
-    ours
-      .map((o) => ("id" in o && typeof o.id === "string" ? o.id : ""))
-      .filter(Boolean),
-  );
+  const targetId = ours.find((o) => o.op === "set" && "id" in o)?.id;
   const filtered = merged.filter((raw) => {
-    if (typeof raw !== "object" || raw === null) return true;
+    if (typeof raw !== "object" || raw === null || !targetId) return true;
     const item = raw as Record<string, unknown>;
-    if (hasOurAdd && item.op === "add") return false;
-    if (item.op === "done" && typeof item.id === "string" && targetIds.has(item.id)) {
-      return false;
-    }
+    if (item.op === "done" && item.id === targetId) return false;
     return true;
   });
   return [...filtered, ...ours];
-}
-
-/**
- * Ce tour DOIT laisser une trace dans les trucs (ou on avertit).
- * Forme du tour + ancrage — pas une liste de mots-clés métier.
- */
-export function expectsListWrite(
-  threads: Thread[],
-  messages: Pick<ChatMessage, "role" | "content">[],
-  at = new Date(),
-): boolean {
-  if (isDoneConfirmationTurn(messages) || isDeleteConfirmationTurn(messages)) {
-    return true;
-  }
-  const last = lastUserMessage(messages);
-  if (isCarryForwardTurn(last, prevUserBeforeLast(messages))) return true;
-
-  const blob = writeSourceForTurn(messages);
-  if (!blob.trim()) return false;
-  if (extractCallFollowUpOps(threads, blob, at).length > 0) return true;
-  if (extractRelanceTurnOps(threads, blob, at).length > 0) return true;
-  if (extractCaptureIntentOps(threads, blob, at).length > 0) return true;
-  if (looksLikeCaptureIntent(blob)) return true;
-  if (looksLikeStatusReport(blob) && uniqueThreadFromAnchor(threads, blob)) {
-    return true;
-  }
-  return false;
 }

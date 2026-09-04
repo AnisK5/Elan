@@ -12,26 +12,17 @@ function ClerkNote({
   note,
   undo,
   onUndo,
-  tone = "ok",
 }: {
   note: string;
   undo: Thread[] | null;
   onUndo: () => void;
-  tone?: "ok" | "warn";
 }) {
   if (!note) return null;
-  const warn = tone === "warn";
   return (
-    <div
-      className={`animate-rise flex items-center gap-2 rounded-2xl border px-3.5 py-2 text-[13px] leading-snug ${
-        warn
-          ? "border-line bg-sink text-muted"
-          : "border-teal-soft bg-teal-soft/80 text-teal-ink"
-      }`}
-    >
-      <span aria-hidden>{warn ? "⚠️" : "✏️"}</span>
+    <div className="animate-rise flex items-center gap-2 rounded-2xl border border-teal-soft bg-teal-soft/80 px-3.5 py-2 text-[13px] leading-snug text-teal-ink">
+      <span aria-hidden>✏️</span>
       <span className="flex-1">{note}</span>
-      {!warn && undo && (
+      {undo && (
         <button
           type="button"
           onClick={onUndo}
@@ -111,7 +102,6 @@ export default function ChatBubble({
   error,
   onRetry,
   note,
-  noteTone = "ok",
   undo,
   onUndo,
   onReset,
@@ -125,7 +115,6 @@ export default function ChatBubble({
   error: string;
   onRetry: () => void;
   note: string;
-  noteTone?: "ok" | "warn";
   undo: Thread[] | null;
   onUndo: () => void;
   onReset: () => void;
@@ -157,7 +146,7 @@ export default function ChatBubble({
       <div className="mx-auto flex max-w-xl flex-col gap-2 px-5 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pt-2">
         {!open && note ? (
           <div className="pointer-events-auto">
-            <ClerkNote note={note} undo={undo} onUndo={onUndo} tone={noteTone} />
+            <ClerkNote note={note} undo={undo} onUndo={onUndo} />
           </div>
         ) : null}
         {!open && error ? (
@@ -260,7 +249,7 @@ export default function ChatBubble({
               ) : null}
               {note ? (
                 <div className="px-2 pb-1 pt-1">
-                  <ClerkNote note={note} undo={undo} onUndo={onUndo} tone={noteTone} />
+                  <ClerkNote note={note} undo={undo} onUndo={onUndo} />
                 </div>
               ) : null}
             </div>

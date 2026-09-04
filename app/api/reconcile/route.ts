@@ -8,7 +8,7 @@ import { systemPromptBlocks } from "@/lib/prompt-cache";
 import type { ChatMessage, Thread } from "@/lib/types";
 import { mergeRegulierWrites } from "@/lib/reguliers-write";
 import { mergeShoppingWrites, shoppingOpsForThreads } from "@/lib/shopping-write";
-import { mergeTurnWrites, messagesForReconcile, tourActuelFromIndex } from "@/lib/reconcile-turn";
+import { mergeTurnWrites } from "@/lib/reconcile-turn";
 import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
 import { noteFromTurnOps, parseThreadOps } from "@/lib/ops";
 
@@ -38,14 +38,17 @@ function renderThreads(threads: Thread[]): string {
 }
 
 function renderConvo(messages: ChatMessage[]): string {
-  const recent = messagesForReconcile(messages);
+  const recent = messages.slice(-8);
   if (recent.length === 0) return "(vide)";
-  const start = tourActuelFromIndex(recent);
+  const lastUserIdx = [...recent]
+    .map((m, i) => (m.role === "user" ? i : -1))
+    .filter((i) => i >= 0)
+    .pop();
   return recent
     .map((m, i) => {
       const who = m.role === "user" ? "MOI" : "ÉLAN";
       const tag =
-        start !== undefined && i >= start ? " ← TOUR ACTUEL" : "";
+        lastUserIdx !== undefined && i >= lastUserIdx ? " ← TOUR ACTUEL" : "";
       return `${who}${tag}: ${m.content}`;
     })
     .join("\n");
@@ -54,12 +57,10 @@ function renderConvo(messages: ChatMessage[]): string {
 const RECONCILE_CORE = `Tu es le "greffier" d'Élan. Ton seul rôle : après un échange — séance OU une info glissée hors séance — mettre à jour les trucs de la personne à partir de ce qui vient d'être dit, pour qu'elle n'ait jamais à le faire elle-même.
 
 RÈGLES (tu es CONSERVATEUR) :
-- TOUR ACTUEL SEULEMENT : les messages marqués « ← TOUR ACTUEL » sont ce que tu ranges MAINTENANT. Le reste de l'échange est du CONTEXTE déjà traité — ne le re-range pas, ne le re-résume pas.
-- EXCEPTION CORRECTION / MAJ / CONFIRM : si le dernier message est « maj », « pardon », « c'est pas à jour », « action à faire », « cale », « oui » après une proposition d'Élan — le message utilisateur d'AVANT fait AUSSI partie du TOUR ACTUEL (il est marqué). Relis-le et ÉCRIS les ops (souvent un "add" + plannedFor). Un {"updates":[]} après une confirmation d'enregistrement est une faute.
+- TOUR ACTUEL SEULEMENT : les messages marqués « ← TOUR ACTUEL » (dernier message utilisateur + éventuelle réplique) sont ce que tu ranges MAINTENANT. Le reste de l'échange est du CONTEXTE déjà traité — ne le re-range pas, ne le re-résume pas.
 - EXCEPTION RÉGULIERS — passe AVANT le conservatisme : si l'échange parle d'un rythme de vie OU de santé (linge, draps, loyer, URSSAF, bilan sanguin, dentiste…) AVEC une fréquence (« tous les 4 mois », « toutes les 2 semaines ») — même seulement recommandée par Élan et non refusée — tu DOIS l'écrire dans le fil "Réguliers". Ce n'est PAS une tâche ponctuelle, même si c'est « super important ». Un « c'est déjà noté » d'Élan ne compte PAS : vérifie LES TRUCS ACTUELS. Fil absent ou ligne absente → add/note. Elle qui dit que le fil est vide = tu écris MAINTENANT.
 - N'agis QUE sur ce qui est clairement dit ou confirmé dans le TOUR ACTUEL. Dans le doute, ne fais rien.
 - HORS SÉANCE (« j'ai appelé », « c'est envoyé », « c'est fait », « c'est rendu », un détail, une date) : elle a parlé POUR que tu ranges. C'est aussi net qu'une séance. Écris les ops. Ne reste pas les bras croisés parce que l'échange est court. Si elle nomme un truc ouvert et dit que c'est fait / rendu / réglé / plus à faire — "done" sur CET id, tout de suite.
-- DÉPÔT / INTENTION CLAIRE (« je veux dire à X… », « faut que j'appelle… », « je dois… mercredi », « penser à envoyer… ») : c'est un "add" MAINTENANT (ou une "note"/"set" si le truc existe déjà), avec "plannedFor" si un jour est dit. N'attends PAS qu'elle confirme « action à faire » / « cale » / « oui ». Un {"updates":[]} sur un dépôt clair est une faute.
 - CONTEXTE DE VIE : si elle dit où elle est, jusqu'à quand, ce qui change ce qui est faisable (« je suis à Vienne », « pas chez moi », « je reviens le 28 ») — écris-le dans le champ "situation" (une phrase factuelle, date ancrée). Ce n'est PAS un truc : ne snooze pas tout le lot. Le conseil du matin lira ce cadre.
 - N'invente jamais un truc qui n'a pas été évoqué.
 - Si elle demande d'ENLEVER / SUPPRIMER un truc (« supprime cette tâche », « enlève le message à papa ») : {"op":"delete","id":"..."} — ce n'est PAS un "done". "done" = c'est fait. "delete" = on n'en veut plus dans la liste. INTERDIT de refuser ou d'ignorer une suppression claire.
@@ -67,8 +68,7 @@ RÈGLES (tu es CONSERVATEUR) :
 - L'id d'une op, c'est le champ id= de la ligne, PAS le libellé. Si tu vises « Rendre argent au coffre », copie l'id tel quel.
 - ENVOYÉ / CONTACTÉ / RELANCÉ = ACTION FAITE. Si la personne dit qu'elle a envoyé un mail, passé un appel, fait une relance, posté, soumis, commandé — l'action correspondante EST faite. Ne laisse JAMAIS un truc « relancer X » / « contacter X » / « envoyer X » ouvert et inchangé alors qu'elle vient de le faire (sinon le conseil du matin lui re-proposera de le refaire — confiance brisée). Deux cas, et tu DOIS écrire les ops dans les DEUX :
   · Si l'action clôt le truc (rien de plus à attendre) → "done".
-  · Si ça met le truc EN ATTENTE d'une réponse d'un tiers → OBLIGATOIREMENT les trois à la fois : (1) kind "suivi", (2) "note" qui commence par « relancé le [date d'aujourd'hui JJ/MM] » ou « appelé le [JJ/MM] » ou « envoyé le [JJ/MM] », en attente de réponse, (3) "plannedFor" (ou "due" si un tiers impose un délai) pour la PROCHAINE vérif / relance (le jour dit, sinon ~1 semaine), PAS aujourd'hui. Sans la note datée du jour, le plan du lendemain croira que ce n'est pas fait.
-  · Si le titre est encore « Appeler X » / « Contacter X » / « Relancer X » alors que l'appel ou le contact VIENT D'ÊTRE FAIT : "rename" — l'action n'est plus d'appeler. Ex. « Appeler Sogessur pour… » → « Suivi Sogessur ». INTERDIT de laisser « Appeler X » ouvert et inchangé : le conseil du matin re-proposerait d'appeler.
+  · Si ça met le truc EN ATTENTE d'une réponse d'un tiers → OBLIGATOIREMENT les trois à la fois : (1) kind "suivi", (2) "note" qui commence par « relancé le [date d'aujourd'hui JJ/MM] » ou « envoyé le [JJ/MM] », en attente de réponse, (3) "due" pour la PROCHAINE relance (typiquement dans ~1 semaine si aucun délai dit), PAS aujourd'hui. Sans la note datée du jour, le plan du lendemain croira que ce n'est pas fait.
 - REPORTER / PRÉFÉRER UN JOUR (crucial) : « je préfère relancer X lundi », « plutôt demain », « on reporte à vendredi » = ce n'est PAS fait. Interdit de "done" ou d'écrire « relancé » / « relancée ». Utilise {"op":"set","id":"...","plannedFor":"YYYY-MM-DD"} pour le jour visé + une "note" « Relance prévue [jour JJ/MM] ». Ne touche AUCUN autre truc que celui nommé dans le message.
 - Améliore un nom ("rename") seulement si l'échange apporte une formulation plus juste/précise (ex. "appeler le garage" → "appeler le garage pour le contrôle technique").
 - Complète des infos ("set") seulement si elles sont explicites (une date mentionnée, un effort évoqué, un changement action↔suivi).

@@ -25,13 +25,7 @@ import {
   type ActiveSession,
 } from "@/lib/store";
 import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
-import {
-  expectsListWrite,
-  isDeleteConfirmationTurn,
-  isDoneConfirmationTurn,
-  messagesForReconcile,
-  WRITE_FAIL_NOTE,
-} from "@/lib/reconcile-turn";
+import { isDeleteConfirmationTurn, isDoneConfirmationTurn } from "@/lib/reconcile-turn";
 import { AssistantSpeech } from "@/components/HighlightEncart";
 import { isUntimedSession } from "@/lib/session-mode";
 import { trucLabels } from "@/lib/emphasize-truc";
@@ -339,12 +333,10 @@ export default function Session({
   async function reconcile(msgs: ChatMessage[]) {
     const claimedDone = isDoneConfirmationTurn(msgs);
     const claimedDelete = isDeleteConfirmationTurn(msgs);
-    const claimedWrite = expectsListWrite(threadsRef.current, msgs);
+    const claimedWrite = claimedDone || claimedDelete;
     const writeFailNote = claimedDelete
       ? "je n'ai pas réussi à l'enlever — reformule (ex. « enlève le message à papa ») ou supprime-le dans Mes trucs"
-      : claimedDone
-        ? "je n'ai pas réussi à cocher ça — reformule (ex. « draps faits ») ou marque-le dans Mes trucs"
-        : WRITE_FAIL_NOTE;
+      : "je n'ai pas réussi à cocher ça — reformule (ex. « draps faits ») ou marque-le dans Mes trucs";
     try {
       const prevSit = readSituation();
       const res = await apiFetch("/api/reconcile", {
@@ -352,7 +344,8 @@ export default function Session({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           threads: threadsRef.current,
-          messages: messagesForReconcile(msgs),
+          // Derniers tours : assez pour le contexte, pas tout le transcript.
+          messages: msgs.slice(-10),
           situation: prevSit?.text ?? null,
         }),
       });
