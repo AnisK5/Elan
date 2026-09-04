@@ -745,6 +745,95 @@ export function extractCallFollowUpOps(
   return ops;
 }
 
+/**
+ * Elle dépose clairement un truc à faire (pas une question de conseil).
+ * Doit s'écrire tout de suite — sans attendre « action à faire ».
+ */
+export function looksLikeCaptureIntent(text: string): boolean {
+  const t = text.trim();
+  if (t.length < 25) return false;
+  const f = fold(t);
+  if (
+    /\?/.test(t) &&
+    !/\b(je (veux|dois|voudrais|compte)|faut que|il faut)\b/.test(f)
+  ) {
+    return false;
+  }
+  const intent =
+    /\b(je (veux|dois|voudrais|compte)|faut que|il faut|penser a|pense a|n oubli|rappelle[- ]?moi)\b/.test(
+      f,
+    );
+  const action =
+    /\b(dire|appel|envoy|ecrire|message|mail|sms|relanc|prendre|rdv|verifi|check|contacter|previen)\b/.test(
+      f,
+    );
+  const when =
+    /\b(demain|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|vers|semaine prochaine|prochain)\b/.test(
+      f,
+    );
+  return (intent && action) || (action && when && t.length >= 40);
+}
+
+const DAY_IN_TITLE =
+  /\b(vers\s+)?(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)(\s+prochain(e)?)?\b/gi;
+
+/** Titre court pour un dépôt clair — le jour va dans plannedFor, pas dans le libellé. */
+export function captureTitleFromText(text: string): string | null {
+  let t = text.trim().replace(/\s+/g, " ");
+  t = t.replace(
+    /^(je (veux|dois|voudrais|compte)\s+|faut que (je\s+)?|il faut (que je\s+)?)/i,
+    "",
+  );
+  t = t.replace(DAY_IN_TITLE, " ").replace(/\bdemain\b/gi, " ");
+  t = t.replace(/\s+/g, " ").trim();
+  t = t.replace(/^(de|d'|à|a)\s+/i, "").trim();
+  if (t.length < 8) return null;
+  t = t.charAt(0).toUpperCase() + t.slice(1);
+  if (t.length > 72) t = `${t.slice(0, 70).trim()}…`;
+  return t;
+}
+
+/**
+ * Dépôt clair (« Dire à Juliette mercredi… ») → add + jour, sans attendre
+ * le modèle. Filet : avant on comptait sur lui, et un {} vide = silence.
+ */
+export function extractCaptureIntentOps(
+  threads: Thread[],
+  userText: string,
+  at = new Date(),
+): ThreadOp[] {
+  const text = userText.trim();
+  if (!text || !looksLikeCaptureIntent(text)) return [];
+  if (looksLikeCallReport(text)) return [];
+
+  const day = parseTargetDay(text, at);
+  const existing = uniqueThreadFromAnchor(threads, text);
+  if (existing && !isContainerThread(existing)) {
+    if (!day) return [];
+    return [
+      { op: "set", id: existing.id, plannedFor: `${day}T12:00:00.000Z` },
+    ];
+  }
+
+  const title = captureTitleFromText(text);
+  if (!title) return [];
+  if (
+    threads.some(
+      (t) => t.status === "open" && fold(t.text) === fold(title),
+    )
+  ) {
+    return [];
+  }
+
+  const add: ThreadOp = {
+    op: "add",
+    text: title,
+    kind: "action",
+  };
+  if (day) add.plannedFor = `${day}T12:00:00.000Z`;
+  return [add];
+}
+
 export function mergeTurnWrites(
   threads: Thread[],
   messages: Pick<ChatMessage, "role" | "content">[],
@@ -762,6 +851,7 @@ export function mergeTurnWrites(
   const ours = [
     ...extractRelanceTurnOps(threads, blob, at),
     ...extractCallFollowUpOps(threads, blob, at),
+    ...extractCaptureIntentOps(threads, blob, at),
   ];
   let merged = scoped;
   for (const op of inferredDone) {
@@ -793,6 +883,7 @@ export function mergeTurnWrites(
   }
   if (ours.length === 0) return merged;
 
+  const hasOurAdd = ours.some((o) => o.op === "add");
   const targetIds = new Set(
     ours
       .map((o) => ("id" in o && typeof o.id === "string" ? o.id : ""))
@@ -801,6 +892,7 @@ export function mergeTurnWrites(
   const filtered = merged.filter((raw) => {
     if (typeof raw !== "object" || raw === null) return true;
     const item = raw as Record<string, unknown>;
+    if (hasOurAdd && item.op === "add") return false;
     if (item.op === "done" && typeof item.id === "string" && targetIds.has(item.id)) {
       return false;
     }

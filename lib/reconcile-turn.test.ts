@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { Thread } from "@/lib/types";
 import {
   extractCallFollowUpOps,
+  extractCaptureIntentOps,
   extractRelanceTurnOps,
   isCarryForwardTurn,
+  looksLikeCaptureIntent,
   looksLikeDoneClaim,
   mergeTurnWrites,
   messagesForReconcile,
@@ -487,6 +489,85 @@ describe("suivi d'appel — Sogessur", () => {
         sep4,
       ),
     ).toEqual([]);
+  });
+});
+
+const JULIETTE =
+  "Je veux dire a juliette vers mercredi prochain de prendre rdv pour check si son coeur va bien";
+
+describe("dépôt clair — Juliette", () => {
+  it("détecte le dépôt dès le premier message", () => {
+    expect(looksLikeCaptureIntent(JULIETTE)).toBe(true);
+    expect(
+      looksLikeCaptureIntent(
+        "Dire à Juliette mercredi de prendre un rdv pour checker son cœur",
+      ),
+    ).toBe(true);
+    expect(
+      looksLikeCaptureIntent("tu penses que je devrais sortir marcher ?"),
+    ).toBe(false);
+  });
+
+  it("crée l'action même si le modèle n'écrit rien", () => {
+    const merged = mergeTurnWrites(
+      [],
+      [{ role: "user", content: JULIETTE }],
+      [],
+      sep4,
+    );
+    expect(
+      merged.some(
+        (o) =>
+          typeof o === "object" &&
+          o !== null &&
+          (o as { op?: string }).op === "add" &&
+          /juliette/i.test((o as { text?: string }).text ?? ""),
+      ),
+    ).toBe(true);
+    expect(
+      merged.some(
+        (o) =>
+          typeof o === "object" &&
+          o !== null &&
+          (o as { plannedFor?: string }).plannedFor?.startsWith("2026-09-09"),
+      ),
+    ).toBe(true);
+  });
+
+  it("crée aussi sur « Dire à Juliette mercredi… »", () => {
+    const line =
+      "Dire à Juliette mercredi de prendre un rdv pour checker son cœur";
+    const merged = mergeTurnWrites(
+      [],
+      [{ role: "user", content: line }],
+      [],
+      sep4,
+    );
+    const add = merged.find(
+      (o) =>
+        typeof o === "object" &&
+        o !== null &&
+        (o as { op?: string }).op === "add",
+    ) as { text?: string; plannedFor?: string } | undefined;
+    expect(add?.text).toMatch(/juliette/i);
+    expect(add?.text).not.toMatch(/mercredi/i);
+    expect(add?.plannedFor?.startsWith("2026-09-09")).toBe(true);
+  });
+
+  it("extractCaptureIntentOps pose le jour sans le coller au titre", () => {
+    const ops = extractCaptureIntentOps(
+      [],
+      "Dire à Juliette mercredi de prendre un rdv pour checker son cœur",
+      sep4,
+    );
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({
+      op: "add",
+      kind: "action",
+      plannedFor: "2026-09-09T12:00:00.000Z",
+    });
+    expect((ops[0] as { text: string }).text).toMatch(/juliette/i);
+    expect((ops[0] as { text: string }).text).not.toMatch(/mercredi/i);
   });
 });
 
