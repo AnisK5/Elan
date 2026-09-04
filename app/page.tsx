@@ -102,6 +102,7 @@ import {
   dayPlanMatches,
   dayPlanPileMatches,
   isDayPlanContext,
+  introFromMoments,
   mergeDayMoments,
   momentIsOpen,
   planDateKey,
@@ -400,21 +401,34 @@ export default function Home() {
     next: DayPlanMoment[],
     opts?: { proposeOther?: boolean },
   ) {
+    const caption = introFromMoments(next);
     const cached = readDayPlan();
     const slot = todaySlot(cached, "desk");
     if (!slot) {
-      setPlan((prev) => (prev ? { ...prev, moments: next } : prev));
+      setPlan((prev) =>
+        prev
+          ? { ...prev, moments: next, ...(caption ? { message: caption } : {}) }
+          : prev,
+      );
     } else {
       writeDayPlan(
         upsertDayPlanSlot(
           cached,
           cached?.sig ?? planSig,
           "desk",
-          { ...slot, moments: next },
+          {
+            ...slot,
+            moments: next,
+            ...(caption ? { message: caption } : {}),
+          },
           planDateKey(),
         ),
       );
-      setPlan((prev) => (prev ? { ...prev, moments: next } : prev));
+      setPlan((prev) =>
+        prev
+          ? { ...prev, moments: next, ...(caption ? { message: caption } : {}) }
+          : prev,
+      );
     }
     // Remplacement demandé (↻ sur une piste).
     if (opts?.proposeOther) {
@@ -838,8 +852,9 @@ export default function Home() {
         const moments = incoming
           ? mergeDayMoments(softSlot?.moments, incoming)
           : softSlot?.moments;
-        const effective = msg
-          ? { message: msg, pick, moments }
+        const caption = introFromMoments(moments);
+        const effective = caption || msg
+          ? { message: caption || msg, pick, moments }
           : softSlot
             ? {
                 message: softSlot.message,
@@ -857,7 +872,7 @@ export default function Home() {
           if (why && !wantDebug && isDayPlanContext(context)) {
             persistPlanSlot(context, {
               why,
-              message: msg,
+              message: effective.message,
               pick: effective.pick,
               moments,
             });
@@ -977,16 +992,29 @@ export default function Home() {
             : undefined;
         const next = completeNextMoment(slot.moments, prefer);
         if (next) {
+          const caption = introFromMoments(next);
           writeDayPlan(
             upsertDayPlanSlot(
               cached,
               cached?.sig ?? planSig,
               "desk",
-              { ...slot, moments: next },
+              {
+                ...slot,
+                moments: next,
+                ...(caption ? { message: caption } : {}),
+              },
               planDateKey(),
             ),
           );
-          setPlan((prev) => (prev ? { ...prev, moments: next } : prev));
+          setPlan((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  moments: next,
+                  ...(caption ? { message: caption } : {}),
+                }
+              : prev,
+          );
           momentsStillOpen = next.some(momentIsOpen);
         }
       }
@@ -1216,8 +1244,9 @@ function restoreDeskDayCard(): boolean {
           const moments = incoming
             ? mergeDayMoments(soft?.moments, incoming)
             : soft?.moments;
-          const effective = msg
-            ? { message: msg, pick, moments }
+          const caption = introFromMoments(moments);
+          const effective = caption || msg
+            ? { message: caption || msg, pick, moments }
             : soft
               ? {
                   message: soft.message,
@@ -1235,7 +1264,7 @@ function restoreDeskDayCard(): boolean {
             if (why && !wantDebug && isDayPlanContext(ctx)) {
               persistPlanSlot(ctx, {
                 why,
-                message: msg,
+                message: effective.message,
                 pick: effective.pick,
                 moments,
               });

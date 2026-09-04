@@ -109,6 +109,36 @@ export function momentIsOpen(m: DayPlanMoment): boolean {
   return !m.done && !m.skipped;
 }
 
+/**
+ * Intro de la carte = les créneaux réellement listés (même nombre, mêmes sujets).
+ * Évite d'annoncer un linge / une 3ᵉ séance qui n'est pas dans moments.
+ */
+export function introFromMoments(moments: DayPlanMoment[] | undefined): string {
+  if (!moments?.length) return "";
+  const open = moments.filter(momentIsOpen);
+  const use = open.length > 0 ? open : moments;
+
+  const bit = (m: DayPlanMoment): string => {
+    const label = m.label.trim();
+    if (m.mode === "sortie") return `une Sortie pour « ${label} »`;
+    if (m.mode === "courses") return "un passage Courses";
+    const mins =
+      typeof m.mins === "number" && m.mins > 0 ? `${m.mins} min` : null;
+    if (m.mode === "regulier") {
+      return mins
+        ? `un Régulier de ${mins} (« ${label} »)`
+        : `un passage Régulier (« ${label} »)`;
+    }
+    return mins ? `${mins} pour « ${label} »` : `un créneau pour « ${label} »`;
+  };
+
+  if (use.length === 1) return `Aujourd'hui, je te propose ${bit(use[0])}.`;
+  if (use.length === 2) {
+    return `Aujourd'hui, je te propose ${bit(use[0])}, puis ${bit(use[1])}.`;
+  }
+  return `Aujourd'hui, je te propose ${bit(use[0])}, ${bit(use[1])}, et ${bit(use[2])}.`;
+}
+
 function momentDeskMins(m: DayPlanMoment): 5 | 15 | 30 | 50 | null {
   // Sortie / courses : signal sur le bouton mode. Le reste (y compris
   // régulier avec durée) reste lançable en séance bureau.

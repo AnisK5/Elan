@@ -1,7 +1,7 @@
 /** Réglages globaux de l'app (durées, cache plan, reprise de séance). */
 
 // Bump à chaque changement du prompt de reco (app/api/plan) : invalide le cache local.
-export const PLAN_VERSION = 39;
+export const PLAN_VERSION = 41;
 
 export const DURATIONS = [5, 15, 30, 50] as const;
 

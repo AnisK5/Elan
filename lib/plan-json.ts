@@ -27,24 +27,24 @@ export const CONSEIL_TOOL_NAME = "conseil_du_jour";
 export const CONSEIL_TOOL = {
   name: CONSEIL_TOOL_NAME,
   description:
-    "Carte du jour. Ordre : why (6 points), review, message (1 phrase d'intro), pick (prochain lancement), moments (1–3 séances avec mins).",
+    "Carte du jour. Ordre : why, review, moments, pick, message (légende fidèle des moments).",
   input_schema: {
     type: "object" as const,
     properties: {
       why: {
         type: "string",
         description:
-          "Les 6 points d'ARBITRAGE SILENCIEUX, une phrase courte chacun, numérotés 1) à 6). Le point 5 doit répondre « déborde ? NON — parce que … » avec la forme. Factuel, pour le développeur. JAMAIS repris dans message.",
+          "Les 6 points d'ARBITRAGE SILENCIEUX, une phrase courte chacun, numérotés 1) à 6). Point 3 = mix couverture. Point 5 = « déborde ? NON — parce que … » (fenêtres + un tour de mix). JAMAIS repris dans message.",
       },
       review: {
         type: "string",
         description:
-          "Relecture INVISIBLE (jamais dans message). Réponds en 1–3 phrases à : « Un pas ou une question serait-il mal calé — condition déjà tranchée (à acheter, pas dispo, relancé récemment), mauvais lieu, relance reportée, question absurde ? Capacité des moments ≥ CHARGE FENÊTRES ? » Si oui, dis ce que tu corriges. Sinon « OK » + une phrase. message, pick et moments DOIVENT suivre.",
+          "Relecture INVISIBLE (jamais dans message). Réponds en 1–3 phrases à : « Pas mal calé ? Mix couverture tenu ? Capacité ≥ fenêtres ? Pas saucissonné un gros bloc ? » Si oui, dis ce que tu corriges. Sinon « OK » + une phrase. message, pick et moments DOIVENT suivre.",
       },
       message: {
         type: "string",
         description:
-          "UNE seule phrase d'intro humaine (ex. « Aujourd'hui, je te propose 2 séances de 25 min pour avancer sur des urgences et tes habitudes. »). Pas de détail des tâches — ça va dans moments. Français, sans markdown.",
+          "UNE phrase, écrite en dernier, qui décrit UNIQUEMENT les moments : même nombre, mêmes sujets. Interdit d'annoncer un linge / une séance absente de moments. Français, sans markdown.",
       },
       pick: {
         type: "string",

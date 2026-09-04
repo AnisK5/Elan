@@ -12,6 +12,7 @@ import {
   skipMomentAt,
   toggleMomentDoneAt,
   mergeDayMoments,
+  introFromMoments,
   todaySlot,
   upsertDayPlanSlot,
   whySignature,
@@ -208,5 +209,24 @@ describe("snapDeskMins + durationHintSet + completeNextMoment", () => {
       { label: "Draps", mins: 15, skipped: true },
       { label: "Ranger le lit", mins: 15 },
     ]);
+  });
+});
+
+describe("introFromMoments", () => {
+  it("nomme uniquement les créneaux listés", () => {
+    expect(
+      introFromMoments([
+        { label: "Billet Bangkok — choisir et réserver", mins: 50 },
+        { label: "65€ agence + message à papa", mins: 30 },
+      ]),
+    ).toBe(
+      "Aujourd'hui, je te propose 50 min pour « Billet Bangkok — choisir et réserver », puis 30 min pour « 65€ agence + message à papa ».",
+    );
+  });
+
+  it("n'annonce pas un régulier absent des moments", () => {
+    expect(introFromMoments([{ label: "Billet Bangkok", mins: 50 }])).not.toMatch(
+      /linge/i,
+    );
   });
 });

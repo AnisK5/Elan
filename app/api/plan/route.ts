@@ -27,11 +27,13 @@ import {
 } from "@/lib/plan-candidates";
 import { extractSituationFromConvo } from "@/lib/situation";
 import { renderDeadlineCharge } from "@/lib/deadline-load";
+import { renderCoverageCharge } from "@/lib/coverage";
 import {
   CONSEIL_TOOL,
   PHRASE_TOOL,
   extractPlanFromContent,
 } from "@/lib/plan-json";
+import { introFromMoments } from "@/lib/day-plan";
 import { identity, socle, today, TON, VOIX } from "@/lib/voice";
 import { DEPOSER_PLAN_MESSAGE } from "@/lib/session-mode";
 import { buildOfflinePlanHint } from "@/lib/notifications";
@@ -207,45 +209,48 @@ function deskPlanPrompt(
       : "";
   const render = renderLines(threads);
   const charge = renderDeadlineCharge(allThreads);
+  const coverage = renderCoverageCharge(allThreads, stats);
 
   return `${socle(name, situation)}
 
-TON RÔLE ICI : à partir de ses trucs en cours, tu dessines la FORME de sa journée — une carte, pas un bouton. Tu es GARDIEN des fenêtres : le calcul CHARGE FENÊTRES prime sur l'intuition « un petit pas suffit ».
+TON RÔLE ICI : à partir de ses trucs en cours, tu dessines la FORME de sa journée — une carte, pas un bouton. Tu es GARDIEN des fenêtres ET de la couverture : CHARGE FENÊTRES + CHARGE COUVERTURE priment sur l'intuition « un petit pas suffit ». Un gros bloc focus reste une forme valide.
 
 ${charge}
 
+${coverage}
+
 STRUCTURE DE LA CARTE (strict) :
-- "message" = UNE seule phrase d'intro humaine. Ex. « Aujourd'hui, je te propose 2 séances de 15 min pour avancer sur des tâches urgentes et sur tes habitudes. » Pas de détail des tâches ici. Pas de 2ᵉ phrase. Pas de question.
-- "moments" (OBLIGATOIRE) = 1 à 3 séances. Chaque objet : {label, mins?, mode?}. label = titre court SANS durée (ex. « Message à papa + PS », « Linge de lit »). mins = UNIQUEMENT 5, 15, 30 ou 50 (jamais 20, 25, 40…). Obligatoire pour desk/regulier. Si charge élevée : plusieurs courtes OU une/deux longues — la capacité compte plus que le « petit premier pas ». Le détail vit DANS la séance, pas sur la carte.
+- "message" = UNE phrase d'intro, ÉCRITE EN DERNIER, qui décrit UNIQUEMENT les moments que tu viens de poser : même nombre, mêmes sujets. Si tu as 2 moments Bangkok + papa, tu n'as PAS le droit d'annoncer le linge. Si tu veux le linge, il DOIT être un 3ᵉ moment. Pas de 2ᵉ phrase. Pas de question.
+- "moments" (OBLIGATOIRE) = 1 à 3 séances. Chaque objet : {label, mins?, mode?}. label = titre court SANS durée (ex. « Message à papa + PS », « Linge de lit »). mins = UNIQUEMENT 5, 15, 30 ou 50. Obligatoire pour desk/regulier. Un seul 50 sur un gros truc = forme valide. Plusieurs moments seulement si mix + DL, ou VOLUME. Le détail vit DANS la séance, pas sur la carte.
 - "pick" = suggestion pour COMMENCER MAINTENANT (premier moment) — "5"|"15"|"30"|"50"|"sortie". Ce n'est pas « toute la journée = ce bouton ».
-Exemples message + moments :
-- message: « Aujourd'hui, je te propose 2 séances de 15 min pour avancer sur des urgences et tes habitudes. »
+Exemples message + moments (le message reprend LES moments, rien d'autre) :
+- message: « Aujourd'hui, je te propose 15 min pour « Message à papa + PS », puis un Régulier de 15 min (« Linge de lit »). »
   moments: [{label:"Message à papa + PS", mins:15, mode:"desk"}, {label:"Linge de lit", mins:15, mode:"regulier"}]
-- message: « Aujourd'hui, une Sortie pour le doc de ton père, puis un petit passage bureau ce soir. »
+- message: « Aujourd'hui, je te propose une Sortie pour « Doc papa — pharmacie », puis 15 min pour « Draps ». »
   moments: [{label:"Doc papa — pharmacie", mode:"sortie"}, {label:"Draps", mins:15, mode:"desk"}]
 INTERDIT : proposer une relance / un contact « parce que c'est dans X jours ». « C'est dans 12j » veut dire ATTENDRE, pas agir aujourd'hui. Ne cite un délai futur que pour une vraie fenêtre externe à saisir (déclaration, inscription…), jamais pour justifier une relance anticipée.
 
 ARBITRAGE SILENCIEUX (OBLIGATOIRE — avant de choisir la forme du jour ; NE PAS écrire ces étapes dans "message") :
 1) CONTEXTE DE VIE : lis-le. D'où elle est, jusqu'à quand ? Parmi BUREAU / SORTIE / CONDITIONS, qu'est-ce qui n'est PAS faisable ou demandable aujourd'hui de là où elle est ? Ça n'entre ni dans un moment, ni dans la question — ce n'est pas un oubli, c'est reporté.
 2) URGENCE / FENÊTRE : lis CHARGE FENÊTRES. Parmi ce qui RESTE faisable, qu'est-ce qui presse ? Une envie douce n'est pas une fenêtre. Une condition jamais posée n'est pas « trop tôt » — sauf si le contexte dit qu'elle ne peut pas y répondre aujourd'hui.
-3) RYTHME / STAGNATION / RÉGULIERS : au vu du RYTHME RÉCENT et de RÉGULIERS RETENUS, qu'est-ce qui stagne ou est mûr et mérite de l'oxygène — sans culpabiliser ? Un régulier mûr ne doit PAS disparaître indéfiniment derrière les urgences.
-4) FORME DU JOUR : la capacité des moments DOIT couvrir CHARGE FENÊTRES (±10 min). 1, 2 ou 3 moments ; 15 / 30 / 50 selon le besoin. Parmi 5 / 15 / 30 / 50 / Sortie, quel pick pour le PREMIER lancement ? Petit pas seulement si la charge le permet ; sinon allonge ou multiplie.
-5) DÉBORDE ? — réponds explicitement : « déborde ? NON — parce que [ex. 50+30 couvrent ~80 min] ». Les fenêtres aujourd'hui/retard non faisables ici = reportées AVEC raison (lieu), pas oubliées. « OK au rythme actuel » est FAUX si capacité < total. Le reste non-urgent : le mode normal le portera-t-il ?
-6) VALIDATION : une fois les points tenus, seulement alors tu rédiges "message", "pick", "moments". Le message = 1 phrase d'intro ; le détail = moments.
+3) RYTHME / MIX / RÉGULIERS : lis CHARGE COUVERTURE. Mix obligatoire ? Un affamé ou un régulier mûr doit avoir UN tour (pas toute la liste). Un 50 sur CET item compte. N'ignore pas la file parce que des DL existent.
+4) FORME DU JOUR : capacité ≥ CHARGE FENÊTRES (±10 min). 1, 2 ou 3 moments. Un gros 50 le matin EST ok (y compris à la place de plusieurs petits). Multiplie seulement si mix + DL durent, ou si VOLUME le demande — jamais 3×15 à la place d'un vrai focus.
+5) DÉBORDE ? — « déborde ? NON — parce que [forme] ». Fenêtres aujourd'hui/retard nommées (ou report lieu). Mix tenu (un tour file/régulier/affamé, ou le gros bloc EST cet item). Le reste de la file n'a pas à figurer sur la carte : tu le tiens, prochain droit cette semaine.
+6) VALIDATION : une fois les points tenus, seulement alors tu rédiges "moments", "pick", puis "message" (légende des moments, rien d'autre).
 
 CHAMP "review" (OBLIGATOIRE — invisible pour la personne, JAMAIS copié dans "message") :
 Avant message/pick/moments, réponds en 1–3 phrases à cette question interne :
-« Est-ce qu'un des pas que je m'apprête à proposer serait mal calé — condition déjà tranchée dans une note (à acheter, pas encore dispo, relancé récemment), mauvais lieu (vérifier chez elle alors qu'elle n'y est pas), relance alors qu'on vient de reporter, ou pas absurde ? Un régulier mûr est-il totalement ignoré alors qu'il devrait être un moment ? La capacité des moments couvre-t-elle CHARGE FENÊTRES ? »
+« Est-ce qu'un des pas que je m'apprête à proposer serait mal calé — condition déjà tranchée dans une note (à acheter, pas encore dispo, relancé récemment), mauvais lieu (vérifier chez elle alors qu'elle n'y est pas), relance alors qu'on vient de reporter, ou pas absurde ? Mix CHARGE COUVERTURE tenu (un affamé / régulier / file si dû) ? Capacité ≥ CHARGE FENÊTRES ? Ai-je saucissonné un gros bloc sans besoin ? »
 Si oui : dis ce que tu corriges (pick ou moment). Si non : « OK » + une phrase. message, pick et moments DOIVENT respecter review — en cas de doute mineur, préfère couvrir les fenêtres plutôt que sous-proposer.
 
-RÉPONDS via l'outil conseil_du_jour, rien d'autre. Ordre strict dans l'outil : "why" (6 points), "review", "message", "pick", "moments".
-"message" = UNE phrase d'intro — jamais le parcours ni review ni le détail des tâches. "pick" = "5"|"15"|"30"|"50"|"sortie" pour le prochain lancement. "moments" = 1 à 3 avec mins.
+RÉPONDS via l'outil conseil_du_jour, rien d'autre. Ordre strict dans l'outil : "why" (6 points), "review", "moments", "pick", "message".
+"moments" d'abord, "message" en dernier = légende fidèle. INTERDIT d'annoncer un sujet (linge, sortie…) qui n'est pas un moment.
 
 DURÉE / FORME :
 - "sortie" en pick = le prochain lancement EST une Sortie.
 - "5" / "15" / "30" / "50" = suggestion pour le prochain bouton bureau — et mins des moments AUSSI (jamais 25).
-- Tu PEUX proposer deux séances (ex. 2× 15 min) même si un seul pick est renvoyé.
-- LE VOLUME SEUL NE CRÉE PAS D'URGENCE : une longue liste où tout avance normalement → un seul moment court suffit.
+- Tu PEUX proposer deux séances (ex. 50 + 15) même si un seul pick est renvoyé. Un seul 50 sur un gros truc EST préférable à trois petits, si c'est ce truc qui a son tour.
+- LE VOLUME SEUL NE CRÉE PAS D'URGENCE : une longue liste où tout a encore son prochain droit → un seul moment (court ou long) suffit.
 - MAIS LA TENDANCE COMPTE — lis le RYTHME RÉCENT :
   · Si on dépose nettement plus qu'on ne boucle, ou séances espacées, ou paquet >2 semaines sans bouger : OFFRE plus de capacité — séance plus longue, OU deux moments nommés dans la journée, OU Sortie si ça stagne dehors.
   · Si le rythme tient ET rien de lourd dehors : reste sur la plus petite forme sensée.
@@ -254,7 +259,7 @@ DURÉE / FORME :
 - Constater honnêtement que ça s'accumule N'EST PAS stresser. Ce qui est interdit, c'est la culpabilité, le reproche et le décompte accusateur — pas le constat lucide. Une personne à qui on cache que le rythme décroche n'est pas rassurée, elle est abandonnée.
 - INTENTION DE JOUR : un truc marqué « intention : prévu aujourd'hui » (ou passé) est un signal à peser avec le reste — conséquences, stagnation, fenêtre — pas une priorité absolue qui écrase tout. Si elle s'était donné un rendez-vous avec elle-même et que ça stagne, nomme-le et propose-le dans la composition du jour, sans reproche.
 - FENÊTRES SAISONNIÈRES : certains trucs n'ont pas de date mais perdent leur sens passé un moment (organiser un voyage ou une activité d'été, un cadeau avant une fête, une inscription avant la rentrée). Déduis-le du texte et de la saison actuelle : si la fenêtre se referme bientôt, c'est le moment de le dire, même sans échéance saisie. Une envie douce (« aimerait essayer ce mois-ci ») n'est PAS une fenêtre qui se ferme — ne la transforme pas en deadline, et ne la mets jamais devant quelqu'un qui attend.
-- TÂCHE AFFAMÉE : si un truc important est vieux et manifestement toujours doublé (déposé il y a longtemps, jamais avancé), tu peux soit le désigner comme LE pas à faire aujourd'hui dans une séance normale (lui donner de l'oxygène), soit — s'il a besoin d'un vrai bloc — OFFRIR un peu plus de temps. Toujours comme une option calme et bienveillante, jamais une pression ni un reproche de l'avoir laissé traîner.
+- TÂCHE AFFAMÉE : lis CHARGE COUVERTURE. Un affamé (≥14j sans passage) DOIT avoir son tour aujourd'hui — souvent comme LE gros bloc (30/50), pas comme un 5 min coincé. Un seul affamé à la fois.
 - CONTEXTE : si un truc porte un « contexte » (enjeux, qui attend, intention douce, conséquence), tiens-en compte pour juger son importance et pour le formuler avec justesse (« ton père attend toujours ça »). Une intention douce (« aimerait cette semaine ») → un rappel léger si la semaine avance, jamais une urgence artificielle.
 - NE RE-PROPOSE JAMAIS CE QUI VIENT D'ÊTRE FAIT. Si un truc porte une note indiquant qu'il a été fait / envoyé / relancé récemment (« relancé le 17/07, en attente de réponse »), NE suggère PAS de le refaire ni de le relancer. On ne relance un suivi que si son délai d'attente est réellement passé — un truc contacté aujourd'hui se laisse tranquille. Regarde les notes, « revu aujourd'hui », et les échéances avant de proposer quoi que ce soit.
 - SÉMANTIQUE DES DATES (crucial — ne pas confondre) :
@@ -738,8 +743,9 @@ export async function POST(req: Request) {
       pick = String(body.chosen);
     }
     const why = phraseOnly ? reusedWhy : parsed.why;
+    const caption = introFromMoments(parsed.moments);
     return Response.json({
-      message: parsed.message,
+      message: caption || parsed.message,
       pick,
       ...(why ? { why } : {}),
       ...(parsed.moments ? { moments: parsed.moments } : {}),
