@@ -6,10 +6,11 @@ import { recordMessageUsage } from "@/lib/api-usage";
 import { resolveUtilityModel } from "@/lib/models";
 import { systemPromptBlocks } from "@/lib/prompt-cache";
 import type { ChatMessage, Thread } from "@/lib/types";
-import { mergeRegulierWrites, reguliersWriteNote, upsertRegulierOps, extractReguliersFromConvo } from "@/lib/reguliers-write";
-import { mergeShoppingWrites, shoppingWriteNote, shoppingOpsForThreads } from "@/lib/shopping-write";
+import { mergeRegulierWrites } from "@/lib/reguliers-write";
+import { mergeShoppingWrites, shoppingOpsForThreads } from "@/lib/shopping-write";
 import { mergeTurnWrites } from "@/lib/reconcile-turn";
 import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
+import { noteFromTurnOps, parseThreadOps } from "@/lib/ops";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -111,7 +112,7 @@ Chaque update est un de ces objets :
 - {"op":"set","id":"<id>","due":"YYYY-MM-DD","effort":"S|M|L","kind":"action|suivi","plannedFor":"YYYY-MM-DD"}  (mets seulement les champs concernés ; plannedFor = jour où elle veut s'en occuper, null pour l'annuler)
 - {"op":"add","text":"<nom>","kind":"action|suivi","due":"YYYY-MM-DD","effort":"S|M|L","note":"<contexte>"}  (due/effort/note optionnels)
 
-"note" : un résumé TRÈS court et humain de ce que tu as changé DANS CE TOUR SEULEMENT, en français, pour l'afficher à la personne (ex. "impôts ✓ · Paul repoussé à vendredi"). Jamais un récap de l'historique ni des tours précédents. Si tu ne changes rien, renvoie {"updates": [], "note": ""}.
+"note" : UNIQUEMENT ce que tu viens d'écrire dans "updates" de CE tour — une courte phrase humaine (ex. "linge · régulier à jour"). INTERDIT de rappeler d'autres trucs de la séance ou de l'historique (« papa », « psy », un ✓ d'avant) s'ils ne sont PAS dans updates. Si updates n'a qu'une op sur Réguliers, note = seulement ça. Si tu ne changes rien, renvoie {"updates": [], "note": ""}.
 "situation" : seulement si le TOUR ACTUEL pose ou met à jour le cadre de vie (où elle est, jusqu'à quand). Une phrase. Sinon omets le champ.`;
 
 function reconcileDynamic(threads: Thread[], messages: ChatMessage[]): string {
@@ -169,14 +170,7 @@ function withShopping(
   const filtered = mergeShoppingWrites(threads, messages, greffier.updates);
   const ours = shoppingOpsForThreads(threads, filtered);
   const updates = ours.length > 0 ? [...filtered, ...ours] : filtered;
-  if (ours.length === 0) return { ...greffier, updates };
-  const extra = shoppingWriteNote(ours);
-  const note = greffier.note?.trim()
-    ? greffier.note.includes("Courses")
-      ? greffier.note
-      : `${greffier.note} · ${extra}`
-    : extra;
-  return { ...greffier, updates, note };
+  return { ...greffier, updates };
 }
 
 function withReguliers(
@@ -184,19 +178,8 @@ function withReguliers(
   messages: ChatMessage[],
   greffier: { updates: unknown[]; note: string; situation?: string },
 ): { updates: unknown[]; note: string; situation?: string } {
-  const ours = upsertRegulierOps(
-    threads,
-    extractReguliersFromConvo(messages),
-  );
   const updates = mergeRegulierWrites(threads, messages, greffier.updates);
-  if (ours.length === 0) return { ...greffier, updates };
-  const extra = reguliersWriteNote(ours);
-  const note = greffier.note?.trim()
-    ? greffier.note.includes("Réguliers")
-      ? greffier.note
-      : `${greffier.note} · ${extra}`
-    : extra;
-  return { ...greffier, updates, note };
+  return { ...greffier, updates };
 }
 
 function applyTurnScope(
@@ -210,6 +193,18 @@ function applyTurnScope(
   };
 }
 
+function noteForClerk(
+  threads: Thread[],
+  updates: unknown[],
+): string {
+  const ops = parseThreadOps(
+    updates,
+    new Set(threads.map((t) => t.id)),
+    threads,
+  );
+  return noteFromTurnOps(ops, threads);
+}
+
 function withWrites(
   threads: Thread[],
   messages: ChatMessage[],
@@ -221,25 +216,24 @@ function withWrites(
     messages,
     withReguliers(threads, messages, applyTurnScope(threads, messages, greffier)),
   );
+  // Note = ce tour seulement, dérivée des ops — jamais le récap libre du modèle.
+  let note = noteForClerk(threads, after.updates);
+
   const extracted = extractSituationFromConvo(messages);
   const fromModel = after.situation?.trim()
     ? { text: after.situation.trim() }
     : null;
   const situation = mergeSituation(extracted, fromModel);
-  if (!situation) return after;
+  if (!situation) return { ...after, note };
   const prev = previousSituation?.trim() ?? "";
   const changed = situation.text.trim() !== prev;
-  // Ne recolle pas « cadre de vie » à chaque message si c'est déjà retenu.
   if (!changed) {
     const { situation: _drop, ...rest } = after;
-    return rest;
+    return { ...rest, note };
   }
-  const extra = "cadre de vie retenu";
-  const note = after.note?.trim()
-    ? after.note.includes("cadre de vie")
-      ? after.note
-      : `${after.note} · ${extra}`
-    : extra;
+  note = note
+    ? `${note} · cadre de vie retenu`
+    : "cadre de vie retenu";
   return { ...after, note, situation: situation.text };
 }
 

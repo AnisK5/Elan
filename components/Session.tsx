@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage, SessionContext, SessionLog, Thread } from "@/lib/types";
-import { filterEffectiveOps, parseThreadOps } from "@/lib/ops";
+import { filterEffectiveOps, noteFromTurnOps, parseThreadOps } from "@/lib/ops";
 import {
   apiFetch,
   anthropicFailMessage,
@@ -364,14 +364,14 @@ export default function Session({
         applyThreadOps(ops);
         setUndoSnapshot(before);
         setNoteTone("ok");
-        setNote(j.note || "trucs mis à jour");
+        setNote(noteFromTurnOps(ops, before) || j.note || "trucs mis à jour");
         window.setTimeout(() => {
           setNote("");
           setUndoSnapshot(null);
         }, 10000);
       } else if (sitChanged) {
         setNoteTone("ok");
-        setNote(j.note || "c'est noté");
+        setNote("c'est noté");
         window.setTimeout(() => setNote(""), 10000);
       } else if (claimedDone) {
         setNoteTone("warn");

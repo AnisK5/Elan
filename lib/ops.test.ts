@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseThreadOps } from "./ops";
+import { noteFromTurnOps, parseThreadOps } from "./ops";
 import { clean } from "./store";
 
 const known = new Set(["a", "b"]);
@@ -174,6 +174,37 @@ describe("clean — le balisage des modèles ne doit pas atteindre la base", () 
   it("garde les lignes du fil Réguliers", () => {
     expect(clean("linge de lit · ~2sem · 2026-08-18\nURSSAF · ~1mois · 2026-07-01")).toBe(
       "linge de lit · ~2sem · 2026-08-18\nURSSAF · ~1mois · 2026-07-01",
+    );
+  });
+});
+
+describe("noteFromTurnOps — résumé de CE tour seulement", () => {
+  it("ne sort qu'une courte ligne depuis les ops appliquées", () => {
+    const threads = [
+      { id: "a", text: "Réguliers", note: "linge · ~2sem · 2026-08-01" },
+      { id: "b", text: "50€ et RDV psy", note: "" },
+    ];
+    expect(
+      noteFromTurnOps(
+        [
+          {
+            op: "note",
+            id: "a",
+            note: "linge · ~2sem · 2026-09-04",
+          },
+        ],
+        threads,
+      ),
+    ).toBe("linge · régulier à jour");
+  });
+
+  it("ignore l'historique : une seule op done → un seul ✓", () => {
+    const threads = [
+      { id: "a", text: "50€ et RDV psy" },
+      { id: "b", text: "appel papa" },
+    ];
+    expect(noteFromTurnOps([{ op: "done", id: "a" }], threads)).toBe(
+      "50€ et RDV psy ✓",
     );
   });
 });

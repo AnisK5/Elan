@@ -1,4 +1,8 @@
 import type { Effort, ThreadKind } from "@/lib/types";
+import {
+  isReguliersContainerName,
+  parseReguliers,
+} from "@/lib/entretiens";
 import { hasPendingPhysicalWork } from "@/lib/plan-candidates";
 import { clean, type ThreadOp } from "@/lib/store";
 
@@ -254,4 +258,94 @@ export function filterEffectiveOps(
   }
 
   return out;
+}
+
+function shortClerkLabel(text: string): string {
+  const t = text.trim().replace(/\s+/g, " ");
+  if (t.length <= 32) return t;
+  return `${t.slice(0, 30).trim()}…`;
+}
+
+function frDay(iso?: string): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+}
+
+/**
+ * Note ✏️ construite depuis les ops VRAIMENT appliquées ce tour —
+ * pas le récap libre du modèle (qui retombe souvent sur toute la séance).
+ */
+export function noteFromTurnOps(
+  ops: ThreadOp[],
+  threads: { id: string; text: string; note?: string }[],
+): string {
+  if (ops.length === 0) return "";
+  const byId = new Map(threads.map((t) => [t.id, t]));
+  const parts: string[] = [];
+
+  for (const op of ops) {
+    if (op.op === "add") {
+      if (isReguliersContainerName(op.text)) {
+        const first = parseReguliers(op.note)[0];
+        parts.push(
+          first
+            ? `${shortClerkLabel(first.label)} · dans Réguliers`
+            : "régulier retenu",
+        );
+      } else {
+        parts.push(`${shortClerkLabel(op.text)} ajouté`);
+      }
+      continue;
+    }
+
+    const t = byId.get(op.id);
+    const label = shortClerkLabel(t?.text ?? "truc");
+
+    switch (op.op) {
+      case "done":
+        parts.push(`${label} ✓`);
+        break;
+      case "snooze":
+        parts.push(`${label} plus tard`);
+        break;
+      case "rename":
+        parts.push(`renommé · ${shortClerkLabel(op.text)}`);
+        break;
+      case "note":
+        if (t && isReguliersContainerName(t.text)) {
+          const first = parseReguliers(op.note)[0];
+          parts.push(
+            first
+              ? `${shortClerkLabel(first.label)} · régulier à jour`
+              : "réguliers mis à jour",
+          );
+        } else {
+          parts.push(`${label} noté`);
+        }
+        break;
+      case "set": {
+        if (op.plannedFor) {
+          const day = frDay(op.plannedFor);
+          parts.push(day ? `${label} → ${day}` : `${label} reporté`);
+        } else if (op.plannedFor === null) {
+          parts.push(`${label} remis en file`);
+        } else if (op.due) {
+          const day = frDay(op.due);
+          parts.push(day ? `${label} · ${day}` : `${label} daté`);
+        } else if (op.kind === "suivi") {
+          parts.push(`${label} · à suivre`);
+        } else {
+          parts.push(`${label} mis à jour`);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  // Une seule ligne courte : ce tour, pas l'historique.
+  return parts.slice(0, 2).join(" · ");
 }

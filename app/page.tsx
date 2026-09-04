@@ -61,7 +61,7 @@ import ChatBubble from "@/components/home/ChatBubble";
 import UsageWeek from "@/components/home/UsageWeek";
 import { greeting, Logo, welcomeLine } from "@/components/home/Branding";
 import { useAuth } from "@/components/AuthProvider";
-import { filterEffectiveOps, parseThreadOps } from "@/lib/ops";
+import { filterEffectiveOps, noteFromTurnOps, parseThreadOps } from "@/lib/ops";
 import { extractSituationFromConvo, mergeSituation } from "@/lib/situation";
 import { completionAt } from "@/lib/week-stats";
 import { computeUsageWeek } from "@/lib/usage";
@@ -1385,13 +1385,16 @@ function restoreDeskDayCard(): boolean {
       );
       if (ops.length === 0) {
         if (sitChanged) {
-          showPointNote(j.note || "c'est noté", null);
+          showPointNote("c'est noté", null);
           return true;
         }
         return false;
       }
       applyThreadOps(ops);
-      showPointNote(j.note || "trucs mis à jour", before);
+      showPointNote(
+        noteFromTurnOps(ops, before) || j.note || "trucs mis à jour",
+        before,
+      );
       return true;
     } catch {
       return false;
