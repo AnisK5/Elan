@@ -1486,24 +1486,14 @@ export default function Home() {
             </div>
 
             {showPlanBlock ? (
-              <div
-                className={`mt-3 rounded-xl border px-4 py-3 ${
-                  planStale && !planLoading
-                    ? "border-amber/40 bg-amber/10"
-                    : "border-teal-soft bg-teal-soft/50"
-                }`}
-              >
-                <div className="mb-1.5 flex items-center gap-2">
+              <div className="mt-3 rounded-xl border border-teal-soft bg-teal-soft/50 px-4 py-3">
+                <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span
-                    className={`h-2 w-2 rounded-full ${
-                      planStale && !planLoading ? "bg-amber" : "bg-teal"
-                    } ${planLoading ? "animate-breathe" : ""}`}
-                  />
-                  <span
-                    className={`text-xs font-medium tracking-wide ${
-                      planStale && !planLoading ? "text-amber" : "text-teal"
+                    className={`h-2 w-2 shrink-0 rounded-full bg-teal ${
+                      planLoading ? "animate-breathe" : ""
                     }`}
-                  >
+                  />
+                  <span className="text-xs font-medium tracking-wide text-teal">
                     {planLoading
                       ? context === "desk"
                         ? plan?.message
@@ -1514,18 +1504,26 @@ export default function Home() {
                           : context === "deposer"
                             ? "Élan t'attend…"
                             : "Élan regarde ce qu'il y a dehors…"
-                      : planStale
-                        ? "Le conseil n'est plus à jour"
-                        : context === "desk"
-                          ? "Élan te conseille pour aujourd'hui"
-                          : context === "sortie"
-                            ? "Élan pour ta sortie"
-                            : context === "regulier"
-                              ? "Élan pour ton régulier"
-                              : context === "deposer"
-                                ? "Élan pour déposer"
-                                : "Élan pour tes courses"}
+                      : context === "desk"
+                        ? "Élan te conseille pour aujourd'hui"
+                        : context === "sortie"
+                          ? "Élan pour ta sortie"
+                          : context === "regulier"
+                            ? "Élan pour ton régulier"
+                            : context === "deposer"
+                              ? "Élan pour déposer"
+                              : "Élan pour tes courses"}
                   </span>
+                  {planStale && !planLoading && aiOn && context !== "deposer" ? (
+                    <button
+                      type="button"
+                      onClick={() => requestPlanRefresh()}
+                      disabled={planLoading}
+                      className="ml-auto text-[12px] text-muted underline decoration-line underline-offset-2 transition hover:text-teal-ink disabled:opacity-60"
+                    >
+                      Actualiser
+                    </button>
+                  ) : null}
                 </div>
                 {planLoading && !plan?.message ? (
                   <div className="flex flex-col gap-1.5 py-0.5">
@@ -1545,6 +1543,12 @@ export default function Home() {
                           "Conseil de secours — Élan n'a pas répondu à temps."}
                       </p>
                     ) : null}
+                    {planStale && !planLoading ? (
+                      <p className="mt-1.5 text-[12px] leading-relaxed text-faint">
+                        Depuis, la liste a bougé — ce conseil peut être un peu
+                        daté.
+                      </p>
+                    ) : null}
                   </div>
                 ) : (
                   <AssistantSpeech
@@ -1553,18 +1557,6 @@ export default function Home() {
                     trucs={trucs}
                   />
                 )}
-                {planStale && aiOn && context !== "deposer" ? (
-                  <button
-                    type="button"
-                    onClick={() => requestPlanRefresh()}
-                    disabled={planLoading}
-                    className="mt-3 w-full rounded-xl bg-amber py-2.5 text-center font-display text-[15px] font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
-                  >
-                    {planLoading
-                      ? "Mise à jour…"
-                      : "Actualiser le conseil"}
-                  </button>
-                ) : null}
                 {diagnosticOn && planDiag && !planLoading ? (
                   <PlanDiagnostic data={planDiag} />
                 ) : null}
