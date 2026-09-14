@@ -66,6 +66,55 @@ export function lastUserMessage(
   return "";
 }
 
+const SYNC_META =
+  /\b(?:mets?\s*(?:à|a)\s*jour|note\s*(?:ça|ca)|enregistre|actualise)\b/i;
+
+/** « mets à jour », « note ça » — la personne demande explicitement de persister. */
+export function isSyncMetaCommand(userText: string): boolean {
+  return SYNC_META.test(fold(userText));
+}
+
+function previousUserMessage(
+  messages: Pick<ChatMessage, "role" | "content">[],
+): string {
+  let seenLast = false;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role !== "user") continue;
+    const text = messages[i].content.trim();
+    if (!text) continue;
+    if (!seenLast) {
+      seenLast = true;
+      continue;
+    }
+    return text;
+  }
+  return "";
+}
+
+function lastAssistantMessage(
+  messages: Pick<ChatMessage, "role" | "content">[],
+): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === "assistant") return messages[i].content.trim();
+  }
+  return "";
+}
+
+/**
+ * Texte utilisé pour filtrer les ops greffier — élargi sur « mets à jour »
+ * pour inclure l'échange qu'on veut justement persister.
+ */
+export function userTextForTurnScope(
+  messages: Pick<ChatMessage, "role" | "content">[],
+): string {
+  const last = lastUserMessage(messages);
+  if (!last.trim()) return "";
+  if (!isSyncMetaCommand(last)) return last;
+  const prev = previousUserMessage(messages);
+  const assistant = lastAssistantMessage(messages);
+  return [prev, assistant, last].filter(Boolean).join(" ");
+}
+
 /** Le truc est-il nommé dans le dernier message utilisateur ? */
 export function threadMentionedInTurn(
   thread: Thread,
@@ -132,12 +181,47 @@ function resolveOpThread(
  * (dernier message utilisateur). Évite qu'un vieux contexte fasse cocher
  * France Travail ou le linge alors qu'on parle de Laura.
  */
+/** Retrouve le truc de séance à partir des messages récents (ouverture, confirmation…). */
+export function findThreadFromSessionContext(
+  threads: Thread[],
+  messages: Pick<ChatMessage, "role" | "content">[],
+): Thread | undefined {
+  const open = threads.filter((t) => t.status === "open");
+  if (open.length === 0) return undefined;
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const content = messages[i]?.content?.trim() ?? "";
+    if (!content) continue;
+    const matches = open.filter((t) => threadMentionedInTurn(t, content));
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) {
+      const callish = matches.filter((t) =>
+        /\b(appeler|contacter|relancer)\b/i.test(`${t.text} ${t.note ?? ""}`),
+      );
+      if (callish.length === 1) return callish[0];
+    }
+  }
+
+  const userBlob = messages
+    .filter((m) => m.role === "user")
+    .map((m) => m.content)
+    .join(" ");
+  if (
+    /\b(?:appele|appelé|j['']ai appel|c['']est bon j['']ai)\b/i.test(userBlob)
+  ) {
+    const callThreads = open.filter((t) => /\bappeler\b/i.test(t.text));
+    if (callThreads.length === 1) return callThreads[0];
+  }
+
+  return undefined;
+}
+
 export function scopeGreffierUpdates(
   threads: Thread[],
   messages: Pick<ChatMessage, "role" | "content">[],
   updates: unknown[],
 ): unknown[] {
-  const userText = lastUserMessage(messages);
+  const userText = userTextForTurnScope(messages);
   if (!userText.trim()) return [];
   const reguliersId = findReguliersThread(threads)?.id;
 
@@ -243,6 +327,77 @@ const FUTURE_RELANCE =
 const PAST_RELANCE =
   /\b(?:j['']ai|je\s+l['']ai|c['']est|c\s+est)\s+(?:deja\s+)?(?:relanc|contact|envoy|appele|appelé|écrit)/i;
 
+const CALL_REPORT =
+  /\b(?:c est bon|c bon|nickel)\b.*\b(?:appele|contacte)\b|\b(?:j ai|je l ai)\s+(?:deja\s+)?(?:appele|contacte)\b/;
+
+const WAITING_CALLBACK =
+  /\b(?:doit|va)\s+(?:me\s+)?(?:rappeler|recontacter)|en attente (?:de|du|d )?(?:\s|$)|(?:rappellent|recontacte)\b/;
+
+function frDateLabel(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+/**
+ * « j'ai appelé, ils rappellent / plan B demain » — persiste même si le greffier
+ * ou le filtre tour-actuel ratent le coup (ex. « mets à jour » sans nommer Darty).
+ */
+export function extractCallStatusTurnOps(
+  threads: Thread[],
+  messages: Pick<ChatMessage, "role" | "content">[],
+  at = new Date(),
+): ThreadOp[] {
+  const last = lastUserMessage(messages);
+  if (!last.trim()) return [];
+
+  let substance = last;
+  if (isSyncMetaCommand(last)) {
+    substance = [previousUserMessage(messages), lastAssistantMessage(messages)]
+      .filter(Boolean)
+      .join(" ");
+    if (!substance.trim()) return [];
+  } else if (!CALL_REPORT.test(fold(last))) {
+    return [];
+  }
+
+  const foldedSubstance = fold(substance);
+
+  const target = findThreadFromSessionContext(threads, messages);
+  if (!target) return [];
+
+  const todayIso = isoDayParis(at);
+  const parts: string[] = [`Appelé le ${frDateLabel(todayIso)}.`];
+
+  if (WAITING_CALLBACK.test(foldedSubstance) || isSyncMetaCommand(last)) {
+    parts.push("En attente de rappel aujourd'hui.");
+  }
+
+  const planDay =
+    parseTargetDay(substance, at) ??
+    (/\bdemain\b/.test(foldedSubstance)
+      ? parseTargetDay("demain", at)
+      : null);
+  if (planDay) {
+    parts.push(`Plan B ${frDateLabel(planDay)} si pas de nouvelles.`);
+  }
+
+  const note = parts.join(" ");
+  const ops: ThreadOp[] = [
+    { op: "set", id: target.id, kind: "suivi" },
+    { op: "note", id: target.id, note },
+  ];
+
+  if (planDay) {
+    ops.push({
+      op: "set",
+      id: target.id,
+      plannedFor: `${planDay}T12:00:00.000Z`,
+    });
+  }
+
+  return ops;
+}
+
 /**
  * « je préfère la relancer lundi » → intention de relance ce jour-là,
  * pas une relance déjà faite.
@@ -285,15 +440,33 @@ export function mergeTurnWrites(
 ): unknown[] {
   const userText = lastUserMessage(messages);
   const scoped = scopeGreffierUpdates(threads, messages, greffierUpdates);
-  const ours = extractRelanceTurnOps(threads, userText, at);
-  if (ours.length === 0) return scoped;
+  const relance = extractRelanceTurnOps(threads, userText, at);
+  const callStatus = extractCallStatusTurnOps(threads, messages, at);
 
-  const targetId = ours.find((o) => o.op === "set" && "id" in o)?.id;
-  const filtered = scoped.filter((raw) => {
-    if (typeof raw !== "object" || raw === null || !targetId) return true;
+  let merged = scoped;
+  const codeOps = [...relance, ...callStatus];
+  if (codeOps.length === 0) return merged;
+
+  const targetIds = new Set(
+    codeOps
+      .filter((o) => o.op === "set" && "id" in o)
+      .map((o) => (o as { id: string }).id),
+  );
+  merged = scoped.filter((raw) => {
+    if (typeof raw !== "object" || raw === null) return true;
     const item = raw as Record<string, unknown>;
-    if (item.op === "done" && item.id === targetId) return false;
+    if (item.op === "done" && typeof item.id === "string" && targetIds.has(item.id)) {
+      return false;
+    }
     return true;
   });
-  return [...filtered, ...ours];
+
+  const seen = new Set<string>();
+  for (const op of codeOps) {
+    const key = JSON.stringify(op);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(op);
+  }
+  return merged;
 }
